@@ -24,7 +24,7 @@
 
         devShell = with pkgs;
           mkShell {
-            buildInputs = [ openssl pkg-config rust-toolchain-dev ];
+            buildInputs = [ openssl pkg-config rust-toolchain-dev udev ];
           };
       });
 }

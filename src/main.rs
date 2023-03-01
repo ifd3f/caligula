@@ -1,8 +1,12 @@
 use clap::Parser;
 use cli::Args;
+use outfile::ask_outfile;
 
 pub mod cli;
+pub mod outfile;
 
 fn main() {
-    let args = Args::parse();
+    let _args = Args::parse();
+
+    ask_outfile().unwrap();
 }
