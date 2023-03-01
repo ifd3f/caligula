@@ -25,7 +25,7 @@ pub struct Writing {
     bytes_total: ByteSize,
     written_bytes: Arc<AtomicU64>,
     status_rx: broadcast::Receiver<StatusMessage>,
-    thread: Option<JoinHandle<anyhow::Result<()>>>,
+    thread: Option<JoinHandle<anyhow::Result<TerminateResult>>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -36,6 +36,13 @@ pub enum StatusMessage {
         block_size: usize,
         duration: Duration,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TerminateResult {
+    EndOfInput,
+    EndOfOutput,
+    ThreadAlreadyFinished,
 }
 
 impl BurnThread {
@@ -65,7 +72,7 @@ impl BurnThread {
         mut self,
         report_written_bytes: Arc<AtomicU64>,
         status_tx: broadcast::Sender<StatusMessage>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<TerminateResult> {
         let block_size = ByteSize::kb(128).as_u64() as usize;
         let mut full_block = vec![0; block_size];
 
@@ -120,14 +127,14 @@ impl Writing {
         Ok(self.status_rx.recv().await?)
     }
 
-    pub async fn join(&mut self) -> anyhow::Result<()> {
+    pub async fn join(&mut self) -> anyhow::Result<TerminateResult> {
         let thread = self.thread.take();
         match thread {
             Some(thread) => {
                 let res = thread.await?;
                 Ok(res?)
             }
-            None => Ok(()),
+            None => Ok(TerminateResult::ThreadAlreadyFinished),
         }
     }
 }

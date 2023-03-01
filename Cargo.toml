@@ -9,6 +9,7 @@ edition = "2021"
 anyhow = "1.0.69"
 bytesize = "1.2.0"
 clap = { version = "4.1.8", features = ["derive", "cargo"] }
+crossterm = "0.26.1"
 inquire = "0.5.3"
 is-terminal = "0.4.4"
 serde = { version = "1.0.152", features = ["derive"] }

@@ -33,7 +33,7 @@ pub fn open_or_escalate(path: impl AsRef<Path>) -> Result<File, Error> {
                     Err(Error::UserDidNotEscalate)?
                 }
 
-                sudo::escalate_if_needed().map_err(|e| Error::EscalateFail(e))?;
+                sudo::escalate_if_needed().map_err(|e| Error::EscalateFail(format!("{}", e)))?;
                 open_or_escalate(path)
             }
             _ => todo!(),
@@ -48,7 +48,7 @@ pub enum Error {
     #[error("User did not want to escalate")]
     UserDidNotEscalate,
     #[error("Failed to escalate into sudo: {0}")]
-    EscalateFail(Box<dyn std::error::Error>),
+    EscalateFail(String),
     #[error("Failure during prompt: {0}")]
     PromptFail(#[from] InquireError),
 }
