@@ -1,4 +1,4 @@
-use std::{ffi::OsStr, fmt, num::ParseIntError, path::PathBuf};
+use std::{ffi::OsStr, num::ParseIntError, path::PathBuf};
 
 use bytesize::ByteSize;
 use udev::Device;
@@ -14,22 +14,6 @@ pub struct BurnTarget {
 impl PartialOrd for BurnTarget {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.devnode.partial_cmp(&other.devnode)
-    }
-}
-
-impl fmt::Display for BurnTarget {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let devnode = self.devnode.to_string_lossy();
-        let model = self.model.as_deref().unwrap_or("<unknown model>");
-        let size = self.size;
-        let removable = match self.removable {
-            Some(true) => "Removable",
-            Some(false) => "Not removable",
-            None => "Unknown if removable",
-        };
-
-        write!(f, "{devnode} - {model} {size} ({removable})")?;
-        Ok(())
     }
 }
 

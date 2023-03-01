@@ -12,6 +12,7 @@ clap = { version = "4.1.8", features = ["derive", "cargo"] }
 inquire = "0.5.3"
 is-terminal = "0.4.4"
 serde = { version = "1.0.152", features = ["derive"] }
+sudo = "0.6.0"
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["full"] }
 toml = "0.7.2"

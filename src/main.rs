@@ -7,7 +7,7 @@ mod device;
 mod ui;
 
 fn main() {
-    let _args = Args::parse();
+    let args = Args::parse();
 
-    ask_outfile().unwrap();
+    ask_outfile(&args).unwrap();
 }
