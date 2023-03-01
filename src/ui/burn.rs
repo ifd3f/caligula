@@ -34,8 +34,6 @@ where
 
         self.terminal.draw(|f| {
             let size = f.size();
-
-            let size = f.size();
             let block = Block::default().title("Block").borders(Borders::ALL);
             f.render_widget(block, size);
         })?;

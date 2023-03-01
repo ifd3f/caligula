@@ -81,19 +81,19 @@ impl BurnThread {
         let stat_checkpoints: usize = 128;
         let checkpoint_blocks: usize = 128;
 
-        'outer: loop {
+        loop {
             let start = Instant::now();
             for _ in 0..stat_checkpoints {
                 for _ in 0..checkpoint_blocks {
                     let read_bytes = self.src.read(&mut full_block)?;
                     if read_bytes == 0 {
-                        break 'outer;
+                        return Ok(TerminateResult::EndOfInput);
                     }
 
                     let write_bytes = self.dest.write(&full_block[..read_bytes])?;
                     written_bytes += write_bytes;
                     if written_bytes == 0 {
-                        break 'outer;
+                        return Ok(TerminateResult::EndOfOutput);
                     }
                     self.dest.flush()?;
                 }
@@ -107,10 +107,6 @@ impl BurnThread {
                 duration,
             })?;
         }
-
-        report_written_bytes.store(written_bytes as u64, Ordering::Relaxed);
-
-        Ok(())
     }
 }
 

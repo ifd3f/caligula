@@ -1,4 +1,4 @@
-use std::{io, time::Duration};
+use std::{fs::File, io, time::Duration};
 
 use crate::ui::ask_outfile;
 use burn::BurnThread;
@@ -9,8 +9,9 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use device::BurnTarget;
 use tui::{backend::CrosstermBackend, Terminal};
-use ui::{burn::BurningDisplay, fopen::open_or_escalate};
+use ui::{burn::BurningDisplay, fopen::open_or_escalate, confirm_write};
 
 pub mod burn;
 pub mod cli;
@@ -21,14 +22,26 @@ mod ui;
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
-    let target = ask_outfile(&args)?;
+    let target = match &args.out {
+        Some(f) => {
+            let dev = BurnTarget::try_from(f.as_ref())?;
+            if !confirm_write(&args, &dev)? {
+                eprintln!("Aborting.");
+                return Ok(());
+            }
+            dev
+        }
+        None => {
+            ask_outfile(&args)?
+        }
+    };
 
-    let in_file = open_or_escalate(target.devnode)?;
-    let out_dev = open_or_escalate(&args.input)?;
+    let out_dev = open_or_escalate(target.devnode)?;
+    let in_file = File::open(&args.input)?;
 
     let writing = BurnThread::new(out_dev, in_file).start_write()?;
     begin_writing(writing, &args).await?;
-    
+
     Ok(())
 }
 
@@ -42,7 +55,9 @@ async fn begin_writing(writing: burn::Writing, args: &Args) -> anyhow::Result<()
 
     // create app and run it
     let tick_rate = Duration::from_millis(250);
-    BurningDisplay::new(writing, args, &mut terminal).show().await;
+    BurningDisplay::new(writing, args, &mut terminal)
+        .show()
+        .await;
 
     // restore terminal
     disable_raw_mode()?;

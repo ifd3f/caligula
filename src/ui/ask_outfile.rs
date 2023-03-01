@@ -1,6 +1,6 @@
 use std::fmt;
 
-use inquire::{Confirm, Select};
+use inquire::{Confirm, InquireError, Select};
 
 use crate::{cli::Args, device::BurnTarget};
 
@@ -29,17 +29,22 @@ pub fn ask_outfile(args: &Args) -> anyhow::Result<BurnTarget> {
             }
         };
 
-        if !args.force {
-            let confirm_write = Confirm::new("Is this the right device?")
-                .with_help_message("THIS ACTION WILL DESTROY ALL DATA ON THIS DEVICE!!!")
-                .with_default(false)
-                .prompt()?;
-            if !confirm_write {
-                continue;
-            }
+        if !confirm_write(args, &dev)? {
+            continue;
         }
 
         return Ok(dev);
+    }
+}
+
+pub fn confirm_write(args: &Args, device: &BurnTarget) -> Result<bool, InquireError> {
+    if args.force {
+        Ok(true)
+    } else {
+        Confirm::new("Is this the right device?")
+            .with_help_message("THIS ACTION WILL DESTROY ALL DATA ON THIS DEVICE!!!")
+            .with_default(false)
+            .prompt()
     }
 }
 
@@ -55,14 +60,17 @@ impl fmt::Display for ListOption {
             ListOption::Device(dev) => {
                 let devnode = dev.devnode.to_string_lossy();
                 let model = dev.model.as_deref().unwrap_or("[unknown model]");
-                let size = dev.size;
+                let size = match dev.size {
+                    Some(s) => s.to_string().as_str(),
+                    None => "Unknown size",
+                };
                 let removable = match dev.removable {
                     Some(true) => "yes",
                     Some(false) => "NO",
                     None => "UNKNOWN",
                 };
 
-                write!(f, "{devnode} - {model} {size} (Removable: {removable})")?;
+                write!(f, "{devnode} | {model} - {size} (Removable: {removable})")?;
             }
             ListOption::RetryWithShowAll(true) => {
                 write!(f, "<Show all disks, removable or not>")?;
