@@ -1,10 +1,10 @@
+use crate::ui::ask_outfile;
 use clap::Parser;
 use cli::Args;
-use outfile::ask_outfile;
 
 pub mod cli;
-pub mod outfile;
-pub(crate) mod device;
+mod device;
+mod ui;
 
 fn main() {
     let _args = Args::parse();

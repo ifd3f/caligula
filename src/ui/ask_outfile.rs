@@ -17,6 +17,7 @@ pub fn ask_outfile() -> anyhow::Result<PathBuf> {
 
     if removables.is_empty() {
         eprintln!("No removable devices found!");
+        Err(AskOutfileError::NoDevices)?;
     } else {
         let ans = Select::new("Select a device", removables);
         ans.prompt()?;
