@@ -1,6 +1,6 @@
 use std::fmt;
 
-use inquire::Select;
+use inquire::{Confirm, Select};
 
 use crate::{cli::Args, device::BurnTarget};
 
@@ -9,7 +9,8 @@ pub fn ask_outfile(args: &Args) -> anyhow::Result<BurnTarget> {
 
     loop {
         let targets = enumerate_options(show_all_disks)?;
-        let ans = Select::new("Select a disk", targets)
+
+        let ans = Select::new("Select target disk", targets)
             .with_help_message(if show_all_disks {
                 "Showing all disks. Proceed with caution!"
             } else {
@@ -17,8 +18,8 @@ pub fn ask_outfile(args: &Args) -> anyhow::Result<BurnTarget> {
             })
             .prompt()?;
 
-        match ans {
-            ListOption::Device(dev) => return Ok(dev),
+        let dev = match ans {
+            ListOption::Device(dev) => dev,
             ListOption::RetryWithShowAll(sa) => {
                 show_all_disks = sa;
                 continue;
@@ -26,7 +27,19 @@ pub fn ask_outfile(args: &Args) -> anyhow::Result<BurnTarget> {
             ListOption::Refresh => {
                 continue;
             }
+        };
+
+        if !args.force {
+            let confirm_write = Confirm::new("Is this the right device?")
+                .with_help_message("THIS ACTION WILL DESTROY ALL DATA ON THIS DEVICE!!!")
+                .with_default(false)
+                .prompt()?;
+            if !confirm_write {
+                continue;
+            }
         }
+
+        return Ok(dev);
     }
 }
 
