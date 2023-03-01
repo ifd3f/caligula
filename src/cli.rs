@@ -23,6 +23,11 @@ pub struct Args {
     #[arg(short, long)]
     pub force: bool,
 
+    /// If provided, we will not only show you removable disks, but all disks.
+    /// If you use this option, please proceed with caution!
+    #[arg(long)]
+    pub show_all_disks: bool,
+
     /// Config to use, for advanced usages.
     #[arg(short, long)]
     pub config: Option<PathBuf>,
