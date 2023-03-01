@@ -1,31 +1,32 @@
 use std::{
     fs::File,
     io::{Read, Write},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::{Duration, Instant},
 };
 
 use bytesize::ByteSize;
 use tokio::{
-    sync::{broadcast, watch},
+    sync::broadcast,
     task::{spawn_blocking, JoinHandle},
 };
 
 #[derive(Debug)]
 pub struct BurnThread {
-    src: File,
     dest: File,
+    src: File,
 }
 
 #[derive(Debug)]
 pub struct Writing {
-    pub bytes_total: ByteSize,
-    cursor_rx: watch::Receiver<WrittenBytes>,
+    bytes_total: ByteSize,
+    written_bytes: Arc<AtomicU64>,
     status_rx: broadcast::Receiver<StatusMessage>,
-    thread: JoinHandle<anyhow::Result<()>>,
+    thread: Option<JoinHandle<anyhow::Result<()>>>,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct WrittenBytes(usize);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StatusMessage {
@@ -38,29 +39,31 @@ pub enum StatusMessage {
 }
 
 impl BurnThread {
-    pub fn new(src: File, dest: File) -> anyhow::Result<Self> {
-        Ok(Self { src, dest })
+    pub fn new(dest: File, src: File) -> Self {
+        Self { dest, src }
     }
 
-    pub async fn start_write(self) -> anyhow::Result<Writing> {
+    pub fn start_write(self) -> anyhow::Result<Writing> {
         let bytes_total = self.src.metadata()?.len();
 
-        let (cursor_tx, cursor_rx) = watch::channel(WrittenBytes::default());
         let (status_tx, status_rx) = broadcast::channel(32);
 
-        let thread = spawn_blocking(move || self.write_worker(cursor_tx, status_tx));
+        let written_bytes: Arc<AtomicU64> = Arc::new(0.into());
+
+        let thread_written = written_bytes.clone();
+        let thread = spawn_blocking(move || self.write_worker(thread_written, status_tx));
 
         Ok(Writing {
             bytes_total: ByteSize::b(bytes_total),
-            cursor_rx,
+            written_bytes,
             status_rx,
-            thread,
+            thread: Some(thread),
         })
     }
 
     fn write_worker(
         mut self,
-        cursor_tx: watch::Sender<WrittenBytes>,
+        report_written_bytes: Arc<AtomicU64>,
         status_tx: broadcast::Sender<StatusMessage>,
     ) -> anyhow::Result<()> {
         let block_size = ByteSize::kb(128).as_u64() as usize;
@@ -70,8 +73,6 @@ impl BurnThread {
 
         let stat_checkpoints: usize = 128;
         let checkpoint_blocks: usize = 128;
-
-        cursor_tx.send(WrittenBytes(0))?;
 
         'outer: loop {
             let start = Instant::now();
@@ -89,7 +90,7 @@ impl BurnThread {
                     }
                     self.dest.flush()?;
                 }
-                cursor_tx.send(WrittenBytes(written_bytes))?;
+                report_written_bytes.store(written_bytes as u64, Ordering::Relaxed);
             }
 
             let duration = Instant::now().duration_since(start);
@@ -100,8 +101,33 @@ impl BurnThread {
             })?;
         }
 
-        cursor_tx.send(WrittenBytes(written_bytes))?;
+        report_written_bytes.store(written_bytes as u64, Ordering::Relaxed);
 
         Ok(())
+    }
+}
+
+impl Writing {
+    pub fn bytes_total(&self) -> ByteSize {
+        self.bytes_total
+    }
+
+    pub fn written_bytes(&self) -> ByteSize {
+        ByteSize::b(self.written_bytes.load(Ordering::Relaxed))
+    }
+
+    pub async fn get_update(&mut self) -> Result<StatusMessage, broadcast::error::RecvError> {
+        Ok(self.status_rx.recv().await?)
+    }
+
+    pub async fn join(&mut self) -> anyhow::Result<()> {
+        let thread = self.thread.take();
+        match thread {
+            Some(thread) => {
+                let res = thread.await?;
+                Ok(res?)
+            }
+            None => Ok(()),
+        }
     }
 }
