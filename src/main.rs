@@ -1,7 +1,6 @@
 use std::{fs::File, io, time::Duration};
 
 use crate::ui::ask_outfile;
-use burn::BurnThread;
 use clap::Parser;
 use cli::Args;
 use crossterm::{
@@ -36,8 +35,8 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let out_dev = open_or_escalate(target.devnode)?;
     let in_file = File::open(&args.input)?;
+    let out_dev = open_or_escalate(target.devnode)?;
 
     let writing = BurnThread::new(out_dev, in_file).start_write()?;
     begin_writing(writing, &args).await?;
@@ -54,10 +53,9 @@ async fn begin_writing(writing: burn::Writing, args: &Args) -> anyhow::Result<()
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    let tick_rate = Duration::from_millis(250);
     BurningDisplay::new(writing, args, &mut terminal)
         .show()
-        .await;
+        .await?;
 
     // restore terminal
     disable_raw_mode()?;

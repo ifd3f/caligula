@@ -5,9 +5,10 @@ use std::{
 };
 
 use inquire::{Confirm, InquireError};
-use sudo::RunningAs;
 
 pub fn open_or_escalate(path: impl AsRef<Path>) -> Result<File, Error> {
+    todo!();
+    /*
     match OpenOptions::new().write(true).open(&path) {
         Ok(file) => Ok(file),
         Err(e) => match e.kind() {
@@ -39,6 +40,7 @@ pub fn open_or_escalate(path: impl AsRef<Path>) -> Result<File, Error> {
             _ => todo!(),
         },
     }
+    */
 }
 
 #[derive(Debug, thiserror::Error)]

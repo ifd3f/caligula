@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
+use serde::{Deserialize, Serialize};
 
 /// A safe ISO burner.
 #[derive(Parser, Debug)]
@@ -15,9 +16,10 @@ pub struct Args {
     #[arg(short)]
     pub out: Option<PathBuf>,
 
-    /// How to burn the input file.
-    #[arg(short = 'm', long, value_enum, default_value_t = BurnMode::Standard)]
-    pub burn_mode: BurnMode,
+    /// How to burn the input file. If not supplied, it will be detected from
+    /// the provided ISO.
+    #[arg(short = 'm', long, value_enum)]
+    pub burn_mode: Option<BurnMode>,
 
     /// If supplied, we will not ask for confirmation before destroying your disk.
     #[arg(short, long)]
@@ -37,11 +39,13 @@ pub struct Args {
     pub verbosity: u8,
 }
 
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(
+    Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Deserialize, Serialize,
+)]
 pub enum BurnMode {
     /// Normal mode.
     #[default]
-    Standard,
+    Normal,
 
     /// Treat the input as a Windows ISO.
     Win,
