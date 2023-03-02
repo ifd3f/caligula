@@ -4,13 +4,13 @@ use tui::{
     Terminal,
 };
 
-use crate::cli::Args;
+use crate::{cli::Args, burn};
 
 pub struct BurningDisplay<'a, B>
 where
     B: tui::backend::Backend,
 {
-    writing: Writing,
+    handle: burn::Handle,
     args: &'a Args,
     terminal: &'a mut Terminal<B>,
 }
@@ -19,9 +19,9 @@ impl<'a, B> BurningDisplay<'a, B>
 where
     B: tui::backend::Backend,
 {
-    pub fn new(writing: Writing, args: &'a Args, terminal: &'a mut Terminal<B>) -> Self {
+    pub fn new(handle: burn::Handle, args: &'a Args, terminal: &'a mut Terminal<B>) -> Self {
         Self {
-            writing,
+            handle,
             args,
             terminal,
         }

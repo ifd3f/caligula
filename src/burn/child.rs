@@ -20,14 +20,16 @@ pub fn main() {
         Ok(r) => r,
         Err(r) => r,
     };
-    serde_json::to_writer(std::io::stdout(), &StatusMessage::Terminate(result)).unwrap();
+    send_msg(StatusMessage::Terminate(result));
 }
 
 fn run() -> Result<TerminateResult, TerminateResult> {
     let args: BurnConfig = serde_json::from_reader(std::io::stdin()).unwrap();
 
-    let src = File::open(&args.src)?;
-    let dest = OpenOptions::new().write(true).open(&args.dest)?;
+    let mut src = File::open(&args.src)?;
+    let mut dest = OpenOptions::new().write(true).open(&args.dest)?;
+
+    send_msg(StatusMessage::FileOpenSuccess);
 
     let block_size = ByteSize::kb(128).as_u64() as usize;
     let mut full_block = vec![0; block_size];

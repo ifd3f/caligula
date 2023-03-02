@@ -13,6 +13,7 @@ pub struct BurnConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StatusMessage {
+    FileOpenSuccess,
     TotalBytesWritten(usize),
     BlockSizeChanged(u64),
     BlockSizeSpeedInfo {

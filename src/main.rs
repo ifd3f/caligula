@@ -1,7 +1,7 @@
-use std::{fs::File, io, time::Duration};
+use std::io;
 
 use crate::ui::ask_outfile;
-use burn::child::is_in_burn_mode;
+use burn::{child::is_in_burn_mode, ipc::BurnConfig};
 use clap::Parser;
 use cli::Args;
 use crossterm::{
@@ -11,7 +11,7 @@ use crossterm::{
 };
 use device::BurnTarget;
 use tui::{backend::CrosstermBackend, Terminal};
-use ui::{burn::BurningDisplay, confirm_write, fopen::open_or_escalate};
+use ui::{burn::BurningDisplay, confirm_write};
 
 pub mod burn;
 pub mod cli;
@@ -42,16 +42,19 @@ async fn cli_main() -> anyhow::Result<()> {
         None => ask_outfile(&args)?,
     };
 
-    let in_file = File::open(&args.input)?;
-    let out_dev = open_or_escalate(target.devnode)?;
+    let burn_args = BurnConfig {
+        dest: target.devnode,
+        src: args.input.to_owned(),
+        mode: cli::BurnMode::Normal,
+    };
 
-    let writing = BurnThread::new(out_dev, in_file).start_write()?;
-    begin_writing(writing, &args).await?;
+    let handle = burn::Handle::start(burn_args, false).await?;
+    begin_writing(handle, &args).await?;
 
     Ok(())
 }
 
-async fn begin_writing(writing: burn::Writing, args: &Args) -> anyhow::Result<()> {
+async fn begin_writing(handle: burn::Handle, args: &Args) -> anyhow::Result<()> {
     // setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -60,7 +63,7 @@ async fn begin_writing(writing: burn::Writing, args: &Args) -> anyhow::Result<()
     let mut terminal = Terminal::new(backend)?;
 
     // create app and run it
-    BurningDisplay::new(writing, args, &mut terminal)
+    BurningDisplay::new(handle, args, &mut terminal)
         .show()
         .await?;
 
