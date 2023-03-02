@@ -24,7 +24,7 @@ pub fn main() {
 }
 
 fn run() -> Result<TerminateResult, TerminateResult> {
-    let args: BurnConfig = serde_json::from_reader(std::io::stdin()).unwrap();
+    let args: BurnConfig = bincode::deserialize_from(std::io::stdin()).unwrap();
 
     let mut src = File::open(&args.src)?;
     let mut dest = OpenOptions::new().write(true).open(&args.dest)?;
@@ -69,5 +69,5 @@ fn run() -> Result<TerminateResult, TerminateResult> {
 }
 
 fn send_msg(msg: StatusMessage) {
-    serde_json::to_writer(std::io::stdout(), &msg).unwrap();
+    bincode::serialize_into(std::io::stdout(), &msg);
 }

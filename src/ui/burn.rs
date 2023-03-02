@@ -4,7 +4,10 @@ use tui::{
     Terminal,
 };
 
-use crate::{cli::Args, burn};
+use crate::{
+    burn::{self},
+    cli::Args,
+};
 
 pub struct BurningDisplay<'a, B>
 where
