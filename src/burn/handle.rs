@@ -1,17 +1,15 @@
-use futures::{Sink, StreamExt, SinkExt};
+use futures::{Sink, SinkExt, StreamExt};
 use futures_core::stream::Stream;
 use std::{pin::Pin, process::Stdio};
-use tracing::{debug, info, span, Level};
+use tracing::{debug};
 use valuable::Valuable;
 
 use async_bincode::{
     tokio::{AsyncBincodeReader, AsyncBincodeWriter},
-    BincodeWriterFor,
 };
 use tokio::{
     fs,
-    io::AsyncWriteExt,
-    process::{Child, ChildStderr, Command},
+    process::{Child, Command},
 };
 
 use super::{
@@ -46,7 +44,7 @@ impl Handle {
         cmd.env(BURN_ENV, "1")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
-            // .stderr(Stdio::());
+        // .stderr(Stdio::());
 
         debug!(cmd = format!("{:?}", cmd), "Starting child process");
         let mut child = cmd.spawn()?;
@@ -67,7 +65,10 @@ impl Handle {
 
         debug!("Reading results from stdout");
         let first_msg = proc.next_message().await?;
-        debug!(first_msg = first_msg.as_value(), "Read raw result from stdout");
+        debug!(
+            first_msg = first_msg.as_value(),
+            "Read raw result from stdout"
+        );
 
         match first_msg {
             Some(StatusMessage::FileOpenSuccess) => Ok(proc),

@@ -1,4 +1,4 @@
-use std::{path::PathBuf, time::Duration};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
@@ -40,5 +40,11 @@ impl From<std::io::Error> for TerminateResult {
             std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
             _ => Self::UnknownError(value.to_string()),
         }
+    }
+}
+
+impl From<bincode::Error> for TerminateResult {
+    fn from(value: bincode::Error) -> Self {
+        Self::UnknownError(value.to_string())
     }
 }

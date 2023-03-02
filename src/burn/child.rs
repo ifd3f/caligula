@@ -21,20 +21,20 @@ pub fn main() {
         Ok(r) => r,
         Err(r) => r,
     };
-    send_msg(StatusMessage::Terminate(result));
+    send_msg(StatusMessage::Terminate(result)).unwrap();
 }
 
 fn run() -> Result<TerminateResult, TerminateResult> {
     info!("Running child process");
-    let args: BurnConfig = bincode::deserialize_from(std::io::stdin()).unwrap();
+    let args: BurnConfig = bincode::deserialize_from(std::io::stdin())?;
 
     let mut src = File::open(&args.src)?;
     let mut dest = OpenOptions::new().write(true).open(&args.dest)?;
 
-    send_msg(StatusMessage::FileOpenSuccess);
+    send_msg(StatusMessage::FileOpenSuccess)?;
 
     let block_size = ByteSize::kb(128).as_u64() as usize;
-    let mut full_block = vec![0; block_size];
+    let mut full_block = vec![0u8; block_size];
 
     let mut written_bytes: usize = 0;
 
@@ -58,7 +58,7 @@ fn run() -> Result<TerminateResult, TerminateResult> {
                 dest.flush()?;
             }
 
-            send_msg(StatusMessage::TotalBytesWritten(written_bytes));
+            send_msg(StatusMessage::TotalBytesWritten(written_bytes))?;
         }
 
         let duration = Instant::now().duration_since(start);
@@ -66,10 +66,11 @@ fn run() -> Result<TerminateResult, TerminateResult> {
             blocks_written: checkpoint_blocks,
             block_size,
             duration_millis: duration.as_millis() as u64,
-        });
+        })?;
     }
 }
 
-fn send_msg(msg: StatusMessage) {
-    bincode::serialize_into(std::io::stdout(), &msg);
+fn send_msg(msg: StatusMessage) -> Result<(), bincode::Error> {
+    bincode::serialize_into(std::io::stdout(), &msg)?;
+    Ok(())
 }
