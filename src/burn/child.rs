@@ -1,4 +1,5 @@
 use std::{
+    env,
     fs::{File, OpenOptions},
     io::{Read, Write},
     time::Instant,
@@ -6,7 +7,11 @@ use std::{
 
 use bytesize::ByteSize;
 
-use super::ipc::*;
+use super::{ipc::*, BURN_ENV};
+
+pub fn is_in_burn_mode() -> bool {
+    env::var(BURN_ENV) == Ok("1".to_string())
+}
 
 /// This is intended to be run in a forked child process, possibly with
 /// escalated permissions.
