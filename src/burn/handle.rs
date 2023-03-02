@@ -1,15 +1,11 @@
-use futures::{Sink, SinkExt, StreamExt};
-use futures_core::stream::Stream;
 use std::{pin::Pin, process::Stdio};
-use tracing::{debug};
+use tracing::debug;
 use valuable::Valuable;
 
-use async_bincode::{
-    tokio::{AsyncBincodeReader, AsyncBincodeWriter},
-};
 use tokio::{
     fs,
-    process::{Child, Command},
+    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, BufReader},
+    process::{Child, ChildStdin, ChildStdout, Command},
 };
 
 use super::{
@@ -19,8 +15,8 @@ use super::{
 
 pub struct Handle {
     child: Child,
-    stdin: Pin<Box<dyn Sink<BurnConfig, Error = Box<bincode::ErrorKind>>>>,
-    stdout: Pin<Box<dyn Stream<Item = Result<StatusMessage, Box<bincode::ErrorKind>>>>>,
+    stdin: Pin<Box<dyn AsyncWrite>>,
+    stdout: Pin<Box<dyn AsyncBufRead>>,
 }
 
 impl Handle {
@@ -33,6 +29,9 @@ impl Handle {
             "Read absolute path to this program"
         );
 
+        let args = serde_json::to_string(&args)?;
+        debug!("Converted BurnConfig to JSON: {args}");
+
         let mut cmd = if escalate {
             let mut cmd = Command::new("sudo");
             cmd.arg(proc);
@@ -42,6 +41,7 @@ impl Handle {
         };
 
         cmd.env(BURN_ENV, "1")
+            .arg(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
         // .stderr(Stdio::());
@@ -50,18 +50,14 @@ impl Handle {
         let mut child = cmd.spawn()?;
 
         debug!("Opening pipes");
-        let stdin = child.stdin.take().unwrap();
-        let stdout = child.stdout.take().unwrap();
-        // let stderr = child.stderr.take().unwrap();
+        let stdin = Box::pin(child.stdin.take().unwrap());
+        let stdout = Box::pin(BufReader::new(child.stdout.take().unwrap()));
 
         let mut proc = Self {
             child,
-            stdin: Box::pin(AsyncBincodeWriter::from(stdin)),
-            stdout: Box::pin(AsyncBincodeReader::from(stdout)),
+            stdin,
+            stdout,
         };
-
-        debug!("Writing args to stdin");
-        proc.stdin.send(args).await?;
 
         debug!("Reading results from stdout");
         let first_msg = proc.next_message().await?;
@@ -78,14 +74,19 @@ impl Handle {
         }
     }
 
-    pub async fn next_message(&mut self) -> Result<Option<StatusMessage>, Box<bincode::ErrorKind>> {
-        let message = self.stdout.next().await;
-        debug!(message = format!("{:?}", message), "Got message");
-        match message {
-            Some(Ok(x)) => Ok(Some(x)),
-            Some(Err(e)) => Err(e),
-            None => Ok(None),
+    pub async fn next_message(&mut self) -> anyhow::Result<Option<StatusMessage>> {
+        let mut line = String::new();
+        let count = self.stdout.read_line(&mut line).await?;
+        if count == 0 {
+            return Ok(None);
         }
+
+        debug!(line, "Got line");
+
+        let message = serde_json::from_str::<StatusMessage>(&line)?;
+        debug!(message = format!("{message:?}"), "Parsed message");
+
+        Ok(Some(message))
     }
 }
 

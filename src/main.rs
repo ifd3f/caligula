@@ -10,7 +10,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use device::BurnTarget;
-use tracing::debug;
+use tracing::{debug, Level};
 use tui::{backend::CrosstermBackend, Terminal};
 use ui::{burn::BurningDisplay, confirm_write};
 
@@ -20,7 +20,10 @@ mod device;
 mod ui;
 
 fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_max_level(Level::DEBUG)
+        .init();
 
     if is_in_burn_mode() {
         debug!("We are in child process mode");

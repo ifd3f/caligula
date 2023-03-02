@@ -43,8 +43,8 @@ impl From<std::io::Error> for TerminateResult {
     }
 }
 
-impl From<bincode::Error> for TerminateResult {
-    fn from(value: bincode::Error) -> Self {
+impl From<serde_json::Error> for TerminateResult {
+    fn from(value: serde_json::Error) -> Self {
         Self::UnknownError(value.to_string())
     }
 }

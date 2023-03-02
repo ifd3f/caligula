@@ -17,17 +17,18 @@ pub fn is_in_burn_mode() -> bool {
 /// This is intended to be run in a forked child process, possibly with
 /// escalated permissions.
 pub fn main() {
-    let result = match run() {
+    let cli_args: Vec<String> = env::args().collect();
+    let args = serde_json::from_str(&cli_args[1]).unwrap();
+
+    let result = match run(args) {
         Ok(r) => r,
         Err(r) => r,
     };
     send_msg(StatusMessage::Terminate(result)).unwrap();
 }
 
-fn run() -> Result<TerminateResult, TerminateResult> {
+fn run(args: BurnConfig) -> Result<TerminateResult, TerminateResult> {
     info!("Running child process");
-    let args: BurnConfig = bincode::deserialize_from(std::io::stdin())?;
-
     let mut src = File::open(&args.src)?;
     let mut dest = OpenOptions::new().write(true).open(&args.dest)?;
 
@@ -70,7 +71,8 @@ fn run() -> Result<TerminateResult, TerminateResult> {
     }
 }
 
-fn send_msg(msg: StatusMessage) -> Result<(), bincode::Error> {
-    bincode::serialize_into(std::io::stdout(), &msg)?;
+fn send_msg(msg: StatusMessage) -> Result<(), serde_json::Error> {
+    serde_json::to_writer(std::io::stdout(), &msg)?;
+    println!();
     Ok(())
 }
