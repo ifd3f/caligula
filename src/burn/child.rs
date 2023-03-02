@@ -6,6 +6,7 @@ use std::{
 };
 
 use bytesize::ByteSize;
+use tracing::info;
 
 use super::{ipc::*, BURN_ENV};
 
@@ -24,6 +25,7 @@ pub fn main() {
 }
 
 fn run() -> Result<TerminateResult, TerminateResult> {
+    info!("Running child process");
     let args: BurnConfig = bincode::deserialize_from(std::io::stdin()).unwrap();
 
     let mut src = File::open(&args.src)?;
@@ -63,7 +65,7 @@ fn run() -> Result<TerminateResult, TerminateResult> {
         send_msg(StatusMessage::BlockSizeSpeedInfo {
             blocks_written: checkpoint_blocks,
             block_size,
-            duration,
+            duration_millis: duration.as_millis() as u64,
         });
     }
 }

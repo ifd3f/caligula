@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
+use valuable::Valuable;
 
 /// A safe ISO burner.
 #[derive(Parser, Debug)]
@@ -40,7 +41,18 @@ pub struct Args {
 }
 
 #[derive(
-    Debug, Default, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Deserialize, Serialize,
+    Debug,
+    Default,
+    Copy,
+    Clone,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    ValueEnum,
+    Deserialize,
+    Serialize,
+    Valuable,
 )]
 pub enum BurnMode {
     /// Normal mode.

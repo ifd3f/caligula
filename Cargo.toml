@@ -20,6 +20,8 @@ serde = { version = "1.0.152", features = ["derive"] }
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["full"] }
 toml = "0.7.2"
-tracing = "0.1.37"
+tracing = { version = "0.1.37", features = ["valuable", "async-await", "log"] }
+tracing-subscriber = "0.3.16"
 tui = "0.19.0"
 udev = "0.7.0"
+valuable = { version = "0.1.0", features = ["derive"] }

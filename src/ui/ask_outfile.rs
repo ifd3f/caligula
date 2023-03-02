@@ -1,6 +1,7 @@
 use std::fmt;
 
 use inquire::{Confirm, InquireError, Select};
+use tracing::{debug, event, Level};
 
 use crate::{
     cli::Args,
@@ -11,6 +12,8 @@ pub fn ask_outfile(args: &Args) -> anyhow::Result<BurnTarget> {
     let mut show_all_disks = args.show_all_disks;
 
     loop {
+        debug!(show_all_disks, "Beginning loop");
+
         let targets = enumerate_options(show_all_disks)?;
 
         let ans = Select::new("Select target disk", targets)
@@ -42,6 +45,7 @@ pub fn ask_outfile(args: &Args) -> anyhow::Result<BurnTarget> {
 
 pub fn confirm_write(args: &Args, device: &BurnTarget) -> Result<bool, InquireError> {
     if args.force {
+        debug!("Skipping confirm because of --force");
         Ok(true)
     } else {
         println!("Input: {}", args.input.to_string_lossy());

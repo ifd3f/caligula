@@ -10,6 +10,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use device::BurnTarget;
+use tracing::debug;
 use tui::{backend::CrosstermBackend, Terminal};
 use ui::{burn::BurningDisplay, confirm_write};
 
@@ -19,9 +20,13 @@ mod device;
 mod ui;
 
 fn main() {
+    tracing_subscriber::fmt::init();
+
     if is_in_burn_mode() {
+        debug!("We are in child process mode");
         burn::child::main();
     } else {
+        debug!("Starting primary process");
         cli_main().unwrap();
     }
 }

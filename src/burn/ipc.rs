@@ -3,15 +3,16 @@ use std::{path::PathBuf, time::Duration};
 use serde::{Deserialize, Serialize};
 
 use crate::cli::BurnMode;
+use valuable::Valuable;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub struct BurnConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
     pub mode: BurnMode,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub enum StatusMessage {
     FileOpenSuccess,
     TotalBytesWritten(usize),
@@ -19,12 +20,12 @@ pub enum StatusMessage {
     BlockSizeSpeedInfo {
         blocks_written: usize,
         block_size: usize,
-        duration: Duration,
+        duration_millis: u64,
     },
     Terminate(TerminateResult),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub enum TerminateResult {
     PermissionDenied,
     EndOfInput,

@@ -1,6 +1,8 @@
-use futures::StreamExt;
+use futures::{Sink, StreamExt, SinkExt};
 use futures_core::stream::Stream;
 use std::{pin::Pin, process::Stdio};
+use tracing::{debug, info, span, Level};
+use valuable::Valuable;
 
 use async_bincode::{
     tokio::{AsyncBincodeReader, AsyncBincodeWriter},
@@ -8,6 +10,7 @@ use async_bincode::{
 };
 use tokio::{
     fs,
+    io::AsyncWriteExt,
     process::{Child, ChildStderr, Command},
 };
 
@@ -18,14 +21,19 @@ use super::{
 
 pub struct Handle {
     child: Child,
-    child_stdout: Pin<Box<dyn Stream<Item = Result<StatusMessage, Box<bincode::ErrorKind>>>>>,
-    child_stderr: ChildStderr,
+    stdin: Pin<Box<dyn Sink<BurnConfig, Error = Box<bincode::ErrorKind>>>>,
+    stdout: Pin<Box<dyn Stream<Item = Result<StatusMessage, Box<bincode::ErrorKind>>>>>,
 }
 
 impl Handle {
     pub async fn start(args: BurnConfig, escalate: bool) -> anyhow::Result<Self> {
         // Get path to this process
         let proc = fs::read_link("/proc/self/exe").await?;
+
+        debug!(
+            proc = proc.to_string_lossy().to_string(),
+            "Read absolute path to this program"
+        );
 
         let mut cmd = if escalate {
             let mut cmd = Command::new("sudo");
@@ -35,28 +43,31 @@ impl Handle {
             Command::new(&proc)
         };
 
-        let mut child = cmd
-            .env(BURN_ENV, "1")
+        cmd.env(BURN_ENV, "1")
             .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
+            .stdout(Stdio::piped());
+            // .stderr(Stdio::());
 
-        let child_stdin = child.stdin.take().unwrap();
-        let child_stdout = child.stdout.take().unwrap();
-        let child_stderr = child.stderr.take().unwrap();
+        debug!(cmd = format!("{:?}", cmd), "Starting child process");
+        let mut child = cmd.spawn()?;
 
-        AsyncBincodeWriter::from(child_stdin).append(args)?;
-
-        let child_stdout = Box::pin(AsyncBincodeReader::from(child_stdout));
+        debug!("Opening pipes");
+        let stdin = child.stdin.take().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        // let stderr = child.stderr.take().unwrap();
 
         let mut proc = Self {
             child,
-            child_stdout,
-            child_stderr,
+            stdin: Box::pin(AsyncBincodeWriter::from(stdin)),
+            stdout: Box::pin(AsyncBincodeReader::from(stdout)),
         };
 
+        debug!("Writing args to stdin");
+        proc.stdin.send(args).await?;
+
+        debug!("Reading results from stdout");
         let first_msg = proc.next_message().await?;
+        debug!(first_msg = first_msg.as_value(), "Read raw result from stdout");
 
         match first_msg {
             Some(StatusMessage::FileOpenSuccess) => Ok(proc),
@@ -67,7 +78,9 @@ impl Handle {
     }
 
     pub async fn next_message(&mut self) -> Result<Option<StatusMessage>, Box<bincode::ErrorKind>> {
-        match self.child_stdout.next().await {
+        let message = self.stdout.next().await;
+        debug!(message = format!("{:?}", message), "Got message");
+        match message {
             Some(Ok(x)) => Ok(Some(x)),
             Some(Err(e)) => Err(e),
             None => Ok(None),
