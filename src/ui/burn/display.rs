@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use bytesize::ByteSize;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -9,7 +9,7 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Gauge, Row, Table},
     Terminal,
 };
 
@@ -50,24 +50,24 @@ where
                     Instant::now(),
                     ByteSize::b(handle.initial_info().input_file_bytes),
                 ),
-                child: ChildState::Burning { handle },
+                child: ChildState::Burning { handle: handle },
             },
         }
     }
 
     pub async fn show(mut self) -> anyhow::Result<()> {
         loop {
-            let loop_result: anyhow::Result<()> = self.get_and_handle_events().await;
-
-            if let Err(e) = loop_result {
-                match e.downcast::<Quit>()? {
-                    Quit => return Ok(()),
-                }
+            match self.get_and_handle_events().await {
+                Ok(s) => self = s,
+                Err(e) => match e.downcast::<Quit>()? {
+                    Quit => break,
+                },
             }
         }
+        Ok(())
     }
 
-    async fn get_and_handle_events(&mut self) -> anyhow::Result<()> {
+    async fn get_and_handle_events(mut self) -> anyhow::Result<UI<'a , B>> {
         let msg = {
             let handle = self.state.child.child_process();
             if let Some(handle) = handle {
@@ -76,9 +76,9 @@ where
                 child_dead(&mut self.events).await
             }?
         };
-        self.state.on_message(msg)?;
-        self.state.draw(self.terminal)?;
-        Ok(())
+        self.state = self.state.on_message(msg)?;
+        self.state.draw(&mut self.terminal)?;
+        Ok(self)
     }
 }
 
@@ -128,16 +128,15 @@ enum ChildState {
 }
 
 impl State {
-    fn on_message(&mut self, msg: UIEvent) -> anyhow::Result<()> {
-        match msg {
-            UIEvent::Sleep => {}
+    fn on_message(self, msg: UIEvent) -> anyhow::Result<Self> {
+        Ok(match msg {
+            UIEvent::Sleep => self,
             UIEvent::Child(m) => self.on_child_status(m),
             UIEvent::TermEvent(e) => self.on_term_event(e)?,
-        };
-        Ok(())
+        })
     }
 
-    fn on_term_event(&mut self, ev: Event) -> anyhow::Result<()> {
+    fn on_term_event(self, ev: Event) -> anyhow::Result<Self> {
         match ev {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('c'),
@@ -148,36 +147,58 @@ impl State {
                 debug!("Got CTRL-C, quitting");
                 Err(Quit)?
             }
-            _ => Ok(()),
+            _ => Ok(self),
         }
     }
 
-    fn on_child_status(&mut self, msg: Option<StatusMessage>) {
+    fn on_child_status(mut self, msg: Option<StatusMessage>) -> Self {
         let now = Instant::now();
         match msg {
             Some(StatusMessage::TotalBytes(b)) => {
-                self.history.push(now, b as u64);
+                self.history.push_writing(now, b as u64);
+                self
             }
-            None => {
-                self.child = ChildState::Finished {
+            Some(StatusMessage::FinishedWriting { verifying }) => {
+                let child = match self.child {
+                    ChildState::Burning { handle } => {
+                        if verifying {
+                            ChildState::Verifying { handle }
+                        } else {
+                            ChildState::Finished {
+                                finish_time: now,
+                                error: None,
+                            }
+                        }
+                    }
+                    c => c,
+                };
+                Self { child, ..self }
+            }
+            None => Self {
+                child: ChildState::Finished {
                     finish_time: now,
                     error: None,
-                }
-            }
-            _ => {}
+                },
+                ..self
+            },
+            _ => self,
         }
     }
 
-    fn draw(&mut self, terminal: &mut Terminal<impl tui::backend::Backend>) -> anyhow::Result<()> {
+    fn draw(&self, terminal: &mut Terminal<impl tui::backend::Backend>) -> anyhow::Result<()> {
         let final_time = match self.child {
             ChildState::Finished { finish_time, .. } => finish_time,
             _ => Instant::now(),
         };
 
-        let progress = self
-            .history
-            .make_progress_bar(self.child.bar_text())
-            .gauge_style(self.child.bar_style());
+        let progress = {
+            let bw = self.history.bytes_written();
+            let max = self.history.max_bytes();
+            Gauge::default()
+                .label(format!("{} {} / {}", self.child.bar_text(), bw, max))
+                .ratio((bw.0 as f64) / (max.0 as f64))
+                .gauge_style(self.child.bar_style())
+        };
 
         let chart = self.history.make_speed_chart(final_time);
 

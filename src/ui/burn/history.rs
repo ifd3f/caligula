@@ -6,15 +6,17 @@ use tui::{
     style::{Color, Style},
     symbols,
     text::Span,
-    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
+    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType},
 };
 
 use crate::ui::utils::ByteSpeed;
 
 pub struct History {
     max_bytes: ByteSize,
-    raw: Vec<(f64, ByteSize)>,
-    speed_data: Vec<(f64, f64)>,
+    raw_write: Vec<(f64, ByteSize)>,
+    raw_verify: Vec<(f64, ByteSize)>,
+    write_speed_data: Vec<(f64, f64)>,
+    verify_speed_data: Vec<(f64, f64)>,
     start: Instant,
 }
 
@@ -22,29 +24,42 @@ impl History {
     pub fn new(start: Instant, max_bytes: ByteSize) -> Self {
         Self {
             max_bytes,
-            raw: Vec::new(),
-            speed_data: vec![(0.0, 0.0)],
+            raw_write: Vec::new(),
+            raw_verify: Vec::new(),
+            write_speed_data: vec![(0.0, 0.0)],
+            verify_speed_data: vec![(0.0, 0.0)],
             start,
         }
     }
 
-    pub fn push(&mut self, time: Instant, bytes: u64) {
+    pub fn push_writing(&mut self, time: Instant, bytes: u64) {
         let secs = time.duration_since(self.start).as_secs_f64();
         let (last_time, last_bw) = self.last_datapoint();
         let dt = secs - last_time;
         let diff = bytes - last_bw.0;
         let speed = diff as f64 / dt;
 
-        self.raw.push((secs, ByteSize::b(bytes)));
-        self.speed_data.push((secs, speed));
+        self.raw_write.push((secs, ByteSize::b(bytes)));
+        self.write_speed_data.push((secs, speed));
+    }
+
+    pub fn push_verifying(&mut self, time: Instant, bytes: u64) {
+        let secs = time.duration_since(self.start).as_secs_f64();
+        let (last_time, last_bw) = self.last_datapoint();
+        let dt = secs - last_time;
+        let diff = bytes - last_bw.0;
+        let speed = diff as f64 / dt;
+
+        self.raw_write.push((secs, ByteSize::b(bytes)));
+        self.write_speed_data.push((secs, speed));
     }
 
     pub fn finished_at(&mut self, time: Instant) {
-        self.push(time, self.max_bytes.0);
+        self.push_writing(time, self.max_bytes.0);
     }
 
     pub fn last_datapoint(&self) -> (f64, ByteSize) {
-        self.raw
+        self.raw_write
             .last()
             .map(|x| x.clone())
             .unwrap_or((0.0, ByteSize::b(0)))
@@ -69,7 +84,7 @@ impl History {
     }
 
     pub fn last_speed_data(&self) -> (f64, f64) {
-        self.speed_data
+        self.write_speed_data
             .last()
             .map(|x| x.clone())
             .unwrap_or((0.0, 0.0))
@@ -81,16 +96,12 @@ impl History {
     }
 
     pub fn max_speed(&self) -> ByteSpeed {
-        ByteSpeed(self.speed_data.iter().map(|x| x.1).fold(0.0, f64::max))
-    }
-
-    pub fn make_progress_bar(&self, status: &str) -> Gauge {
-        let bw = self.bytes_written();
-        let max = self.max_bytes();
-
-        Gauge::default()
-            .label(format!("{} {} / {}", status, bw, max))
-            .ratio((bw.0 as f64) / (max.0 as f64))
+        ByteSpeed(
+            self.write_speed_data
+                .iter()
+                .map(|x| x.1)
+                .fold(0.0, f64::max),
+        )
     }
 
     pub fn make_speed_chart(&self, final_time: Instant) -> Chart {
@@ -121,7 +132,7 @@ impl History {
             .marker(symbols::Marker::Braille)
             .style(Style::default().fg(Color::Green).bg(Color::Green))
             .graph_type(GraphType::Line)
-            .data(&self.speed_data);
+            .data(&self.write_speed_data);
 
         let chart = Chart::new(vec![bytes_written_dataset])
             .block(Block::default().title("Speed").borders(Borders::ALL))
