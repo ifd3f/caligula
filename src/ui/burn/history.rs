@@ -2,11 +2,13 @@ use std::time::Instant;
 
 use bytesize::ByteSize;
 use tui::{
-    layout::Alignment,
+    backend::Backend,
+    layout::{Alignment, Rect},
     style::{Color, Style},
     symbols,
     text::Span,
     widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
+    Frame
 };
 
 use super::{byteseries::ByteSeries, state::ChildState};
@@ -71,7 +73,7 @@ impl<'a> History<'a> {
         }
     }
 
-    pub fn make_progress(&self) -> Gauge {
+    pub fn draw_progress(&self, frame: &mut Frame<impl Backend>, area: Rect, final_time: Instant) {
         let (bw, max, label, style) = match self {
             History::Burning { write } => (
                 write.bytes_written(),
@@ -79,18 +81,13 @@ impl<'a> History<'a> {
                 "Burning...",
                 Style::default().fg(Color::Yellow).bg(Color::Black),
             ),
-            History::Verifying { write, verify } => (
+            History::Verifying { verify, .. } => (
                 verify.bytes_written(),
                 verify.max_bytes(),
                 "Verifying...",
                 Style::default().fg(Color::Blue).bg(Color::Yellow),
             ),
-            History::Finished {
-                write,
-                verify,
-                error,
-                ..
-            } => (
+            History::Finished { write, error, .. } => (
                 write.bytes_written(),
                 write.max_bytes(),
                 if *error { "Error!" } else { "Done!" },
@@ -98,13 +95,20 @@ impl<'a> History<'a> {
             ),
         };
 
-        Gauge::default()
+        let gauge = Gauge::default()
             .label(format!("{} {} / {}", label, bw, max))
             .ratio((bw.0 as f64) / (max.0 as f64))
-            .gauge_style(style)
+            .gauge_style(style);
+
+        frame.render_widget(gauge, area);
     }
 
-    pub fn make_speed_chart(&self, final_time: Instant) -> Chart<'_> {
+    pub fn draw_speed_chart(
+        &self,
+        frame: &mut Frame<impl Backend>,
+        area: Rect,
+        final_time: Instant,
+    ) {
         let wdata = self.write_data();
 
         let max_speed = wdata.max_speed();
@@ -128,13 +132,33 @@ impl<'a> History<'a> {
             })
             .collect();
 
-        let datasets = vec![Dataset::default()
-            .name("Bytes written")
+        let mut datasets = vec![Dataset::default()
+            .name("Write")
             .graph_type(GraphType::Scatter)
             .marker(symbols::Marker::Braille)
-            .style(Style::default().fg(Color::Green).bg(Color::Green))
+            .style(Style::default().fg(Color::Green))
             .graph_type(GraphType::Line)
             .data(&wdata.speed_data())];
+
+        let offset_verify_data: Option<Vec<(f64, f64)>> = self.verify_data().map(|vdata| {
+            vdata
+                .speed_data()
+                .into_iter()
+                .map(|(x, y)| (*x + wdata.last_datapoint().0, *y))
+                .collect()
+        });
+
+        if let Some(vdata) = &offset_verify_data {
+            datasets.push(
+                Dataset::default()
+                    .name("Verify")
+                    .graph_type(GraphType::Scatter)
+                    .marker(symbols::Marker::Braille)
+                    .style(Style::default().fg(Color::Blue))
+                    .graph_type(GraphType::Line)
+                    .data(&vdata),
+            );
+        }
 
         let chart = Chart::new(datasets)
             .block(Block::default().title("Speed").borders(Borders::ALL))
@@ -151,6 +175,6 @@ impl<'a> History<'a> {
                     .labels_alignment(Alignment::Right),
             );
 
-        chart
+        frame.render_widget(chart, area);
     }
 }

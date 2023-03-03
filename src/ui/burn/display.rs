@@ -144,9 +144,6 @@ pub fn draw(
         _ => Instant::now(),
     };
 
-    let progress = history.make_progress();
-    let chart = history.make_speed_chart(final_time);
-
     let info_table = Table::new(vec![
         Row::new([
             Cell::from("Input"),
@@ -176,8 +173,8 @@ pub fn draw(
     terminal.draw(|f| {
         let layout = ComputedLayout::from(f.size());
 
-        f.render_widget(progress, layout.progress);
-        f.render_widget(chart, layout.graph);
+        history.draw_progress(f, layout.progress, final_time);
+        history.draw_speed_chart(f, layout.graph, final_time);
         f.render_widget(info_table, layout.args_display);
     })?;
     Ok(())
