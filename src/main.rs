@@ -59,6 +59,7 @@ async fn cli_main() -> anyhow::Result<()> {
         dest: target.devnode.clone(),
         src: args.input.to_owned(),
         mode: cli::BurnMode::Normal,
+        verify: true,
     };
 
     let handle = try_start_burn(&burn_args).await?;
@@ -99,7 +100,11 @@ async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
     }
 }
 
-async fn begin_writing(target: BurnTarget, handle: burn::Handle, args: &Args) -> anyhow::Result<()> {
+async fn begin_writing(
+    target: BurnTarget,
+    handle: burn::Handle,
+    args: &Args,
+) -> anyhow::Result<()> {
     debug!("Opening TUI");
     let mut tui = TUICapture::new()?;
 

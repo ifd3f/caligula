@@ -10,12 +10,16 @@ pub struct BurnConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
     pub mode: BurnMode,
+    pub verify: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub enum StatusMessage {
     InitSuccess(InitialInfo),
-    TotalBytesWritten(usize),
+    TotalBytes(usize),
+    FinishedWriting {
+        verifying: bool,
+    },
     BlockSizeChanged(u64),
     BlockSizeSpeedInfo {
         blocks_written: usize,
@@ -27,14 +31,14 @@ pub enum StatusMessage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub struct InitialInfo {
-    pub input_file_bytes: u64
+    pub input_file_bytes: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub enum TerminateResult {
-    PermissionDenied,
-    EndOfInput,
+    Success,
     EndOfOutput,
+    PermissionDenied,
     ThreadAlreadyFinished,
     UnknownError(String),
 }

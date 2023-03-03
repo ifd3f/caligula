@@ -129,7 +129,7 @@ where
     fn on_message(&mut self, msg: StatusMessage) {
         let now = Instant::now();
         match msg {
-            StatusMessage::TotalBytesWritten(b) => {
+            StatusMessage::TotalBytes(b) => {
                 self.history.push(now, b as u64);
             }
             _ => {}

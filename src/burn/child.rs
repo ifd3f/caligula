@@ -1,7 +1,7 @@
 use std::{
     env,
     fs::{File, OpenOptions},
-    io::{Read, Write},
+    io::{self, Read, Seek, Write},
     path::PathBuf,
     time::Instant,
 };
@@ -21,70 +21,81 @@ pub fn is_in_burn_mode() -> bool {
 pub fn main() {
     let cli_args: Vec<String> = env::args().collect();
     let args = serde_json::from_str(&cli_args[2]).unwrap();
+    let pipe = LocalSocketStream::connect(PathBuf::from(&cli_args[1])).unwrap();
+    let mut ctx = Ctx { args, pipe };
 
-    let mut pipe = LocalSocketStream::connect(PathBuf::from(&cli_args[1])).unwrap();
-
-    let result = match run(&mut pipe, args) {
-        Ok(r) => r,
+    let result = match ctx.run() {
+        Ok(_) => TerminateResult::Success,
         Err(r) => r,
     };
-    send_msg(&mut pipe, StatusMessage::Terminate(result)).unwrap();
+    ctx.send_msg(StatusMessage::Terminate(result)).unwrap();
 }
 
-fn run(mut pipe: impl Write, args: BurnConfig) -> Result<TerminateResult, TerminateResult> {
-    info!("Running child process");
-    let mut src = File::open(&args.src)?;
-    let mut dest = OpenOptions::new().write(true).open(&args.dest)?;
+struct Ctx {
+    pipe: LocalSocketStream,
+    args: BurnConfig,
+}
 
-    send_msg(
-        &mut pipe,
-        StatusMessage::InitSuccess(InitialInfo {
-            input_file_bytes: src.metadata()?.len(),
-        }),
-    )?;
+impl Ctx {
+    fn run(&mut self) -> Result<(), TerminateResult> {
+        info!("Running child process");
 
-    let block_size = ByteSize::kb(128).as_u64() as usize;
-    let mut full_block = vec![0u8; block_size];
+        let mut src = File::open(&self.args.src).unwrap();
+        let size = src.seek(io::SeekFrom::End(0))?;
+        src.seek(io::SeekFrom::Start(0))?;
 
-    let mut written_bytes: usize = 0;
+        self.burn(&mut src, size)?;
 
-    let stat_checkpoints: usize = 128;
-    let checkpoint_blocks: usize = 128;
+        src.seek(io::SeekFrom::Start(0))?;
 
-    loop {
-        let start = Instant::now();
-        for _ in 0..stat_checkpoints {
-            for _ in 0..checkpoint_blocks {
-                let read_bytes = src.read(&mut full_block)?;
-                if read_bytes == 0 {
-                    return Ok(TerminateResult::EndOfInput);
+        Ok(())
+    }
+
+    fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), TerminateResult> {
+        let mut dest = OpenOptions::new().write(true).open(&self.args.dest)?;
+
+        self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }))?;
+
+        let block_size = ByteSize::kb(128).as_u64() as usize;
+        let mut full_block = vec![0u8; block_size];
+
+        let mut written_bytes: usize = 0;
+
+        let stat_checkpoints: usize = 128;
+        let checkpoint_blocks: usize = 128;
+
+        loop {
+            let start = Instant::now();
+            for _ in 0..stat_checkpoints {
+                for _ in 0..checkpoint_blocks {
+                    let read_bytes = src.read(&mut full_block)?;
+                    if read_bytes == 0 {
+                        return Ok(());
+                    }
+
+                    let write_bytes = dest.write(&full_block[..read_bytes])?;
+                    written_bytes += write_bytes;
+                    if written_bytes == 0 {
+                        return Err(TerminateResult::EndOfOutput);
+                    }
+                    dest.flush()?;
                 }
 
-                let write_bytes = dest.write(&full_block[..read_bytes])?;
-                written_bytes += write_bytes;
-                if written_bytes == 0 {
-                    return Ok(TerminateResult::EndOfOutput);
-                }
-                dest.flush()?;
+                self.send_msg(StatusMessage::TotalBytes(written_bytes))?;
             }
 
-            send_msg(&mut pipe, StatusMessage::TotalBytesWritten(written_bytes))?;
-        }
-
-        let duration = Instant::now().duration_since(start);
-        send_msg(
-            &mut pipe,
-            StatusMessage::BlockSizeSpeedInfo {
+            let duration = Instant::now().duration_since(start);
+            self.send_msg(StatusMessage::BlockSizeSpeedInfo {
                 blocks_written: checkpoint_blocks,
                 block_size,
                 duration_millis: duration.as_millis() as u64,
-            },
-        )?;
+            })?;
+        }
     }
-}
 
-fn send_msg(mut pipe: impl Write, msg: StatusMessage) -> Result<(), serde_json::Error> {
-    serde_json::to_writer(&mut pipe, &msg)?;
-    pipe.write(b"\n").unwrap();
-    Ok(())
+    fn send_msg(&mut self, msg: StatusMessage) -> Result<(), serde_json::Error> {
+        serde_json::to_writer(&mut self.pipe, &msg)?;
+        self.pipe.write(b"\n").unwrap();
+        Ok(())
+    }
 }

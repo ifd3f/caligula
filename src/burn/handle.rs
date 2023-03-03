@@ -24,7 +24,6 @@ use super::{
 
 pub struct Handle {
     child: Child,
-    socket: LocalSocketListener,
     initial_info: InitialInfo,
     rx: Pin<Box<dyn AsyncBufRead>>,
     tx: Pin<Box<dyn AsyncWrite>>,
@@ -86,7 +85,6 @@ impl Handle {
 
         Ok(Self {
             child,
-            socket,
             initial_info,
             rx,
             tx,
