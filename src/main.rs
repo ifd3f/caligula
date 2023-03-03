@@ -1,4 +1,4 @@
-use std::io;
+use std::{fs::File, io, sync::Mutex};
 
 use crate::ui::ask_outfile;
 use burn::{
@@ -16,9 +16,10 @@ use crossterm::{
 };
 use device::BurnTarget;
 use inquire::Confirm;
+use tee_readwrite::TeeWriter;
 use tracing::{debug, Level};
 use tui::{backend::CrosstermBackend, Terminal};
-use ui::{burn::BurningDisplay, confirm_write};
+use ui::{burn::BurningDisplay, confirm_write, utils::TUICapture};
 
 pub mod burn;
 pub mod cli;
@@ -26,10 +27,7 @@ mod device;
 mod ui;
 
 fn main() {
-    tracing_subscriber::fmt()
-        .with_writer(std::io::stderr)
-        .with_max_level(Level::DEBUG)
-        .init();
+    init_tracing_subscriber();
 
     if is_in_burn_mode() {
         debug!("We are in child process mode");
@@ -38,6 +36,15 @@ fn main() {
         debug!("Starting primary process");
         cli_main().unwrap();
     }
+}
+
+fn init_tracing_subscriber() {
+    let writer = File::create("dev.log").unwrap();
+
+    tracing_subscriber::fmt()
+        .with_writer(Mutex::new(writer))
+        .with_max_level(Level::DEBUG)
+        .init();
 }
 
 #[tokio::main]
@@ -66,6 +73,7 @@ async fn cli_main() -> anyhow::Result<()> {
 
     begin_writing(handle, &args).await?;
 
+    debug!("Done!");
     Ok(())
 }
 
@@ -98,26 +106,15 @@ async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
 }
 
 async fn begin_writing(handle: burn::Handle, args: &Args) -> anyhow::Result<()> {
-    // setup terminal
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    debug!("Opening TUI");
+    let mut tui = TUICapture::new()?;
 
     // create app and run it
-    BurningDisplay::new(handle, args, &mut terminal)
+    BurningDisplay::new(handle, args, &mut tui.terminal)
         .show()
         .await?;
 
-    // restore terminal
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    debug!("Closing TUI");
 
     Ok(())
 }

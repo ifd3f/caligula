@@ -16,6 +16,7 @@ interprocess = { version = "1.2.1", features = ["tokio", "tokio_support"] }
 is-terminal = "0.4.4"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
+tee_readwrite = "0.1.0"
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["compat"] }
