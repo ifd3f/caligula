@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{fmt::Display, time::Instant};
 
 use bytesize::ByteSize;
 use tui::{
@@ -6,8 +6,10 @@ use tui::{
     style::{Color, Style},
     symbols,
     text::Span,
-    widgets::{Axis, BarChart, Block, Borders, Chart, Dataset, Gauge, GraphType, Widget},
+    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Widget},
 };
+
+use crate::ui::utils::ByteSpeed;
 
 pub struct History {
     max_bytes: ByteSize,
@@ -37,6 +39,10 @@ impl History {
         self.speed_data.push((secs, speed));
     }
 
+    pub fn finished_at(&mut self, time: Instant) {
+        self.push(time, self.max_bytes.0);
+    }
+
     pub fn last_datapoint(&self) -> (f64, ByteSize) {
         self.raw
             .last()
@@ -48,21 +54,42 @@ impl History {
         self.last_datapoint().1
     }
 
-    pub fn latest_time_secs(&self) -> f64 {
-        self.last_datapoint().0
+    pub fn total_avg_speed(&self, final_time: Instant) -> ByteSpeed {
+        let s = self.bytes_written();
+        let dt = final_time.duration_since(self.start).as_secs_f64();
+        let speed = s.0 as f64 / dt;
+        ByteSpeed(if speed.is_nan() { 0.0 } else { speed })
     }
 
-    pub fn max_speed(&self) -> f64 {
-        self.speed_data.iter().map(|x| x.1).fold(0.0, f64::max)
+    pub fn estimated_time_left(&self, final_time: Instant) -> EstimatedTime {
+        let speed = self.total_avg_speed(final_time).0;
+        let bytes_left = self.max_bytes().0 - self.bytes_written().0;
+        let secs_left = bytes_left as f64 / speed;
+        EstimatedTime::from(secs_left)
     }
 
-    pub fn make_progress_bar(&self, done: bool) -> impl Widget {
+    pub fn last_speed_data(&self) -> (f64, f64) {
+        self.speed_data
+            .last()
+            .map(|x| x.clone())
+            .unwrap_or((0.0, 0.0))
+    }
+
+    pub fn last_speed(&self) -> ByteSpeed {
+        let (_, s) = self.last_speed_data();
+        ByteSpeed(s)
+    }
+
+    pub fn max_speed(&self) -> ByteSpeed {
+        ByteSpeed(self.speed_data.iter().map(|x| x.1).fold(0.0, f64::max))
+    }
+
+    pub fn make_progress_bar(&self, status: &str) -> Gauge {
         let bw = self.bytes_written();
         let max = self.max_bytes();
 
         Gauge::default()
-            .label(format!("{} / {}", bw, max))
-            .gauge_style(Style::default().fg(if done { Color::Green } else { Color::Yellow }))
+            .label(format!("{} {} / {}", status, bw, max))
             .ratio((bw.0 as f64) / (max.0 as f64))
     }
 
@@ -82,7 +109,7 @@ impl History {
 
         let y_ticks: Vec<_> = (0..=n_y_ticks)
             .map(|i| {
-                let y = i as f64 * max_speed / n_y_ticks as f64;
+                let y = i as f64 * max_speed.0 / n_y_ticks as f64;
                 let bytes = ByteSize::b(y as u64);
                 Span::from(format!("{bytes}/s"))
             })
@@ -106,7 +133,7 @@ impl History {
             )
             .y_axis(
                 Axis::default()
-                    .bounds([0.0, max_speed])
+                    .bounds([0.0, max_speed.0])
                     .labels(y_ticks)
                     .labels_alignment(Alignment::Right),
             );
@@ -116,5 +143,29 @@ impl History {
 
     pub fn max_bytes(&self) -> ByteSize {
         self.max_bytes
+    }
+}
+
+pub enum EstimatedTime {
+    Known(f64),
+    Unknown,
+}
+
+impl From<f64> for EstimatedTime {
+    fn from(value: f64) -> Self {
+        if value.is_finite() {
+            Self::Known(value)
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
+impl Display for EstimatedTime {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EstimatedTime::Known(x) => write!(f, "{x:.1}s"),
+            EstimatedTime::Unknown => write!(f, "[unknown]"),
+        }
     }
 }

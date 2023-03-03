@@ -81,8 +81,10 @@ where
                         if let Some(m) = msg? {
                             self.on_message(m)
                         } else {
+                            let now = Instant::now();
+                            self.history.finished_at(now);
                             self.state = State::Complete {
-                                finish_time: Instant::now()
+                                finish_time: now
                             };
                         }
                     }
@@ -134,17 +136,17 @@ where
         }
     }
 
-    fn bytes_written(&self) -> ByteSize {
-        self.history.bytes_written()
-    }
-
     fn draw(&mut self) -> anyhow::Result<()> {
         let final_time = match self.state {
             State::Burning { .. } => Instant::now(),
             State::Complete { finish_time } => finish_time,
         };
 
-        let progress = self.history.make_progress_bar(self.state.done());
+        let progress = self
+            .history
+            .make_progress_bar(self.state.bar_text())
+            .gauge_style(Style::default().fg(self.state.bar_color()));
+
         let chart = self.history.make_speed_chart(final_time);
 
         let info_table = Table::new(vec![
@@ -156,9 +158,21 @@ where
                 Cell::from("Output"),
                 Cell::from(self.target_filename.as_str()),
             ]),
+            Row::new([
+                Cell::from("Total Speed"),
+                Cell::from(format!("{}", self.history.total_avg_speed(final_time))),
+            ]),
+            Row::new([
+                Cell::from("Current Speed"),
+                Cell::from(format!("{}", self.history.last_speed())),
+            ]),
+            Row::new([
+                Cell::from("ETA"),
+                Cell::from(format!("{}", self.history.estimated_time_left(final_time))),
+            ]),
         ])
         .style(Style::default())
-        .widths(&[Constraint::Length(7), Constraint::Min(10)])
+        .widths(&[Constraint::Length(16), Constraint::Min(20)])
         .block(Block::default().title("Stats").borders(Borders::ALL));
 
         self.terminal.draw(|f| {
@@ -177,10 +191,17 @@ enum State {
     Complete { finish_time: Instant },
 }
 impl State {
-    fn done(&self) -> bool {
+    fn bar_text(&self) -> &'static str {
         match self {
-            State::Burning { .. } => false,
-            State::Complete { .. } => true,
+            State::Burning { .. } => "Burning...",
+            State::Complete { .. } => "Done!",
+        }
+    }
+
+    fn bar_color(&self) -> Color {
+        match self {
+            State::Burning { .. } => Color::Yellow,
+            State::Complete { .. } => Color::Green,
         }
     }
 }
@@ -207,7 +228,7 @@ impl From<Rect> for ComputedLayout {
 
         let info_children = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
             .split(info_pane);
 
         Self {
