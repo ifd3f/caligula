@@ -20,7 +20,7 @@ pub struct Handle {
 }
 
 impl Handle {
-    pub async fn start(args: BurnConfig, escalate: bool) -> anyhow::Result<Self> {
+    pub async fn start(args: &BurnConfig, escalate: bool) -> anyhow::Result<Self> {
         // Get path to this process
         let proc = fs::read_link("/proc/self/exe").await?;
 
@@ -29,19 +29,21 @@ impl Handle {
             "Read absolute path to this program"
         );
 
-        let args = serde_json::to_string(&args)?;
+        let args = serde_json::to_string(args)?;
         debug!("Converted BurnConfig to JSON: {args}");
 
         let mut cmd = if escalate {
             let mut cmd = Command::new("sudo");
-            cmd.arg(proc);
+            cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
             cmd
         } else {
-            Command::new(&proc)
+            let mut cmd = Command::new(&proc);
+            cmd.env(BURN_ENV, "1");
+            cmd
         };
 
-        cmd.env(BURN_ENV, "1")
-            .arg(args)
+        cmd.arg(args)
+            .kill_on_drop(true)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
         // .stderr(Stdio::());
@@ -90,7 +92,7 @@ impl Handle {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum StartProcessError {
     #[error("Unexpected first status: {0:?}")]
     UnexpectedFirstStatus(StatusMessage),
