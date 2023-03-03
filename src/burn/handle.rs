@@ -58,7 +58,7 @@ impl Handle {
             cmd.env(BURN_ENV, "1");
             cmd
         };
-        cmd.arg(socket_name).arg(args).kill_on_drop(true);
+        cmd.arg(args).arg(socket_name).kill_on_drop(true);
 
         debug!("Starting child process with command: {:?}", cmd.as_std());
         let child = cmd.spawn()?;

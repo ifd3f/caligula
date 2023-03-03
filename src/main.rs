@@ -31,11 +31,17 @@ fn main() {
 }
 
 fn init_tracing_subscriber() {
-    let writer = File::create("dev.log").unwrap();
+    let is_parent = !is_in_burn_mode();
+
+    let writer = File::create(if is_parent { "dev.log" } else { "child.log" }).unwrap();
 
     tracing_subscriber::fmt()
         .with_writer(Mutex::new(writer))
-        .with_max_level(Level::DEBUG)
+        .with_max_level(if is_parent {
+            Level::DEBUG
+        } else {
+            Level::TRACE
+        })
         .init();
 }
 

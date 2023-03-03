@@ -8,7 +8,7 @@ use std::{
 
 use bytesize::ByteSize;
 use interprocess::local_socket::LocalSocketStream;
-use tracing::info;
+use tracing::{debug, info};
 
 use super::{ipc::*, BURN_ENV};
 
@@ -21,28 +21,46 @@ pub fn is_in_burn_mode() -> bool {
 pub fn main() {
     let cli_args: Vec<String> = env::args().collect();
     let args = serde_json::from_str(&cli_args[1]).unwrap();
-    let pipe = LocalSocketStream::connect(PathBuf::from(&cli_args[2])).unwrap();
-    let mut ctx = Ctx { args, pipe };
 
-    let result = match ctx.run() {
-        Ok(_) => TerminateResult::Success,
-        Err(r) => r,
+    let pipe = cli_args[2].as_str();
+    info!(pipe, "Got args {:#?}", args);
+
+    match pipe {
+        "-" => run_with_pipe(args, std::io::stdout()),
+        path => run_with_pipe(
+            args,
+            LocalSocketStream::connect(PathBuf::from(path)).unwrap(),
+        ),
     };
-    ctx.send_msg(StatusMessage::Terminate(result)).unwrap();
+
+    fn run_with_pipe(args: BurnConfig, pipe: impl Write) {
+        let mut ctx = Ctx { args, pipe };
+        let result = match ctx.run() {
+            Ok(_) => TerminateResult::Success,
+            Err(r) => r,
+        };
+        ctx.send_msg(StatusMessage::Terminate(result)).unwrap();
+    }
 }
 
-struct Ctx {
-    pipe: LocalSocketStream,
+struct Ctx<P>
+where
+    P: Write,
+{
+    pipe: P,
     args: BurnConfig,
 }
 
-impl Ctx {
+impl<P> Ctx<P>
+where
+    P: Write,
+{
     fn run(&mut self) -> Result<(), TerminateResult> {
-        info!("Running child process");
-
         let mut src = File::open(&self.args.src).unwrap();
         let size = src.seek(io::SeekFrom::End(0))?;
         src.seek(io::SeekFrom::Start(0))?;
+
+        debug!(size, "Got input file size");
 
         self.burn(&mut src, size)?;
 
@@ -52,6 +70,8 @@ impl Ctx {
     }
 
     fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), TerminateResult> {
+        debug!("Running burn");
+
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }))?;
 
         let mut dest = OpenOptions::new().write(true).open(&self.args.dest)?;
@@ -71,6 +91,7 @@ impl Ctx {
     }
 
     fn send_msg(&mut self, msg: StatusMessage) -> Result<(), serde_json::Error> {
+        debug!("Sending message {:?}", msg);
         serde_json::to_writer(&mut self.pipe, &msg)?;
         self.pipe.write(b"\n").unwrap();
         Ok(())
@@ -79,7 +100,7 @@ impl Ctx {
 
 #[inline]
 fn for_each_block(
-    ctx: &mut Ctx,
+    ctx: &mut Ctx<impl Write>,
     src: &mut File,
     mut action: impl FnMut(&[u8]) -> Result<(), TerminateResult>,
 ) -> Result<(), TerminateResult> {
@@ -88,30 +109,19 @@ fn for_each_block(
 
     let mut written_bytes: usize = 0;
 
-    let stat_checkpoints: usize = 128;
     let checkpoint_blocks: usize = 128;
 
     loop {
-        let start = Instant::now();
-        for _ in 0..stat_checkpoints {
-            for _ in 0..checkpoint_blocks {
-                let read_bytes = src.read(&mut full_block)?;
-                if read_bytes == 0 {
-                    return Ok(());
-                }
-
-                action(&full_block[..read_bytes])?;
-                written_bytes += read_bytes;
+        for _ in 0..checkpoint_blocks {
+            let read_bytes = src.read(&mut full_block)?;
+            if read_bytes == 0 {
+                return Ok(());
             }
 
-            ctx.send_msg(StatusMessage::TotalBytes(written_bytes))?;
+            action(&full_block[..read_bytes])?;
+            written_bytes += read_bytes;
         }
 
-        let duration = Instant::now().duration_since(start);
-        ctx.send_msg(StatusMessage::BlockSizeSpeedInfo {
-            blocks_written: checkpoint_blocks,
-            block_size,
-            duration_millis: duration.as_millis() as u64,
-        })?;
+        ctx.send_msg(StatusMessage::TotalBytes(written_bytes))?;
     }
 }

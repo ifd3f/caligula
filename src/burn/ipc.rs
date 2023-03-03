@@ -47,7 +47,7 @@ impl From<std::io::Error> for TerminateResult {
     fn from(value: std::io::Error) -> Self {
         match value.kind() {
             std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
-            _ => Self::UnknownError(value.to_string()),
+            _ => Self::UnknownError(format!("{value}")),
         }
     }
 }
