@@ -66,9 +66,9 @@ impl History {
             .ratio((bw.0 as f64) / (max.0 as f64))
     }
 
-    pub fn make_speed_chart(&self) -> Chart {
+    pub fn make_speed_chart(&self, final_time: Instant) -> Chart {
         let max_speed = self.max_speed();
-        let max_time = f64::max(self.latest_time_secs(), 3.0);
+        let max_time = f64::max(final_time.duration_since(self.start).as_secs_f64(), 3.0);
 
         let n_x_ticks = 5;
         let n_y_ticks = 4;
@@ -92,7 +92,7 @@ impl History {
             .name("Bytes written")
             .graph_type(GraphType::Scatter)
             .marker(symbols::Marker::Braille)
-            .style(Style::default().fg(Color::Green))
+            .style(Style::default().fg(Color::Green).bg(Color::Green))
             .graph_type(GraphType::Line)
             .data(&self.speed_data);
 
@@ -100,7 +100,6 @@ impl History {
             .block(Block::default().title("Speed").borders(Borders::ALL))
             .x_axis(
                 Axis::default()
-                    .title("Time")
                     .bounds([0.0, max_time])
                     .labels(x_ticks)
                     .labels_alignment(Alignment::Right),

@@ -56,7 +56,7 @@ where
     }
 
     pub async fn show(&mut self) -> anyhow::Result<()> {
-        let mut interval = time::interval(time::Duration::from_secs(1));
+        let mut interval = time::interval(time::Duration::from_millis(250));
         let mut events = EventStream::new();
 
         loop {
@@ -81,11 +81,13 @@ where
                         if let Some(m) = msg? {
                             self.on_message(m)
                         } else {
-                            self.state = State::Complete;
+                            self.state = State::Complete {
+                                finish_time: Instant::now()
+                            };
                         }
                     }
                 },
-                State::Complete => select! {
+                State::Complete { .. } => select! {
                     _ = interval.tick() => {
                         debug!("Got interval tick");
                     }
@@ -137,8 +139,13 @@ where
     }
 
     fn draw(&mut self) -> anyhow::Result<()> {
+        let final_time = match self.state {
+            State::Burning { .. } => Instant::now(),
+            State::Complete { finish_time } => finish_time,
+        };
+
         let progress = self.history.make_progress_bar(self.state.done());
-        let chart = self.history.make_speed_chart();
+        let chart = self.history.make_speed_chart(final_time);
 
         let info_table = Table::new(vec![
             Row::new([
@@ -167,13 +174,13 @@ where
 
 enum State {
     Burning { handle: Handle },
-    Complete,
+    Complete { finish_time: Instant },
 }
 impl State {
     fn done(&self) -> bool {
         match self {
             State::Burning { .. } => false,
-            State::Complete => true,
+            State::Complete { .. } => true,
         }
     }
 }
