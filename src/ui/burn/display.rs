@@ -8,10 +8,7 @@ use tracing::{debug, trace};
 use tui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    symbols,
-    widgets::{
-        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table,
-    },
+    widgets::{Block, Borders, Cell, Row, Table},
     Terminal,
 };
 
@@ -60,6 +57,8 @@ where
         let mut events = EventStream::new();
 
         loop {
+            let sleep = tokio::time::sleep(time::Duration::from_millis(250));
+
             match &mut self.state {
                 State::Burning { handle } => select! {
                     _ = interval.tick() => {
@@ -84,11 +83,13 @@ where
                             let now = Instant::now();
                             self.history.finished_at(now);
                             self.state = State::Complete {
-                                finish_time: now
+                                finish_time: now,
+                                error: None
                             };
                         }
                     }
                 },
+                State::Verifying { handle } => todo!(),
                 State::Complete { .. } => select! {
                     _ = interval.tick() => {
                         trace!("Got interval tick");
@@ -138,14 +139,14 @@ where
 
     fn draw(&mut self) -> anyhow::Result<()> {
         let final_time = match self.state {
-            State::Burning { .. } => Instant::now(),
-            State::Complete { finish_time } => finish_time,
+            State::Complete { finish_time, .. } => finish_time,
+            _ => Instant::now(),
         };
 
         let progress = self
             .history
             .make_progress_bar(self.state.bar_text())
-            .gauge_style(Style::default().fg(self.state.bar_color()));
+            .gauge_style(self.state.bar_style());
 
         let chart = self.history.make_speed_chart(final_time);
 
@@ -187,21 +188,38 @@ where
 }
 
 enum State {
-    Burning { handle: Handle },
-    Complete { finish_time: Instant },
+    Burning {
+        handle: Handle,
+    },
+    Verifying {
+        handle: Handle,
+    },
+    Complete {
+        finish_time: Instant,
+        error: Option<String>,
+    },
 }
+
 impl State {
     fn bar_text(&self) -> &'static str {
         match self {
             State::Burning { .. } => "Burning...",
-            State::Complete { .. } => "Done!",
+            State::Verifying { .. } => "Verifying...",
+            State::Complete { error, .. } => match error {
+                Some(_) => "Error!",
+                None => "Complete!",
+            },
         }
     }
 
-    fn bar_color(&self) -> Color {
+    fn bar_style(&self) -> Style {
         match self {
-            State::Burning { .. } => Color::Yellow,
-            State::Complete { .. } => Color::Green,
+            State::Burning { .. } => Style::default().fg(Color::Yellow).bg(Color::Black),
+            State::Verifying { .. } => Style::default().fg(Color::Blue).bg(Color::Yellow),
+            State::Complete { error, .. } => match error {
+                Some(_) => Style::default().fg(Color::Red).bg(Color::Black),
+                None => Style::default().fg(Color::Green).bg(Color::Green),
+            },
         }
     }
 }
