@@ -116,7 +116,9 @@ async fn begin_writing(
     let mut tui = TUICapture::new()?;
 
     // create app and run it
-    ui::burn::show(handle, target, args, &mut tui.terminal).await?;
+    ui::burn::UI::new(handle, &mut tui.terminal, target, args)
+        .show()
+        .await?;
 
     debug!("Closing TUI");
 

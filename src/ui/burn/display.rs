@@ -14,66 +14,50 @@ use tui::{
 };
 
 use crate::{
-    burn::{self, ipc::StatusMessage},
+    burn::{self, ipc::StatusMessage, Handle},
     cli::Args,
     device::BurnTarget,
 };
 
 use super::history::History;
 
-pub async fn show<'a>(
-    handle: burn::Handle,
-    target: BurnTarget,
-    args: &'a Args,
-    terminal: &'a mut Terminal<impl tui::backend::Backend>,
-) -> anyhow::Result<()> {
-    let ui = UI::new(
-        ByteSize::b(handle.initial_info().input_file_bytes),
-        target,
-        args,
-    );
-    let ctx = Ctx {
-        handle,
-        terminal,
-        ui,
-        events: EventStream::new(),
-    };
-
-    ctx.run().await
-}
-
-struct Ctx<'a, B>
+pub struct UI<'a, B>
 where
     B: Backend,
 {
-    handle: burn::Handle,
     terminal: &'a mut Terminal<B>,
     events: EventStream,
-    ui: UI,
-}
-
-struct UI {
-    input_filename: String,
-    target_filename: String,
-    history: History,
     state: State,
 }
 
-impl<'a, B> Ctx<'a, B>
+impl<'a, B> UI<'a, B>
 where
     B: Backend,
 {
-    async fn run(mut self) -> anyhow::Result<()> {
+    pub fn new(
+        handle: burn::Handle,
+        terminal: &'a mut Terminal<B>,
+        target: BurnTarget,
+        args: &'a Args,
+    ) -> Self {
+        Self {
+            terminal,
+            events: EventStream::new(),
+            state: State {
+                input_filename: args.input.to_string_lossy().to_string(),
+                target_filename: target.devnode.to_string_lossy().to_string(),
+                history: History::new(
+                    Instant::now(),
+                    ByteSize::b(handle.initial_info().input_file_bytes),
+                ),
+                child: ChildState::Burning { handle },
+            },
+        }
+    }
+
+    pub async fn show(mut self) -> anyhow::Result<()> {
         loop {
-            let loop_result: anyhow::Result<()> = async {
-                if let State::Finished { .. } = self.ui.state {
-                    self.child_dead().await?;
-                } else {
-                    self.child_active().await?;
-                }
-                Ok(())
-            }
-            .await;
+            let loop_result: anyhow::Result<()> = self.get_and_handle_events().await;
 
             if let Err(e) = loop_result {
                 match e.downcast::<Quit>()? {
@@ -83,38 +67,74 @@ where
         }
     }
 
-    async fn child_active(&mut self) -> anyhow::Result<()> {
-        let sleep = tokio::time::sleep(time::Duration::from_millis(250));
-        select! {
-            _ = sleep => {}
-            msg = self.handle.next_message() => {
-                self.ui.on_message(msg?);
-            }
-            event = self.events.next() => {
-                self.ui.on_term_event(event.unwrap()?)?;
-            }
+    async fn get_and_handle_events(&mut self) -> anyhow::Result<()> {
+        let msg = {
+            let handle = self.state.child.child_process();
+            if let Some(handle) = handle {
+                child_active(&mut self.events, handle).await
+            } else {
+                child_dead(&mut self.events).await
+            }?
         };
-        self.ui.draw(self.terminal)?;
-        Ok(())
-    }
-
-    async fn child_dead(&mut self) -> anyhow::Result<()> {
-        let event = self.events.next().await;
-        self.ui.on_term_event(event.unwrap()?)?;
-        self.ui.draw(self.terminal)?;
+        self.state.on_message(msg)?;
+        self.state.draw(self.terminal)?;
         Ok(())
     }
 }
 
-impl UI {
-    fn new(max_bytes: ByteSize, target: BurnTarget, args: &Args) -> Self {
-        let history = History::new(Instant::now(), max_bytes);
-        Self {
-            target_filename: target.devnode.to_string_lossy().to_string(),
-            input_filename: args.input.to_string_lossy().to_string(),
-            history,
-            state: State::Burning,
+async fn child_dead(events: &mut EventStream) -> anyhow::Result<UIEvent> {
+    Ok(UIEvent::TermEvent(events.next().await.unwrap()?))
+}
+
+async fn child_active(events: &mut EventStream, handle: &mut Handle) -> anyhow::Result<UIEvent> {
+    let sleep = tokio::time::sleep(time::Duration::from_millis(250));
+    select! {
+        _ = sleep => {
+            return Ok(UIEvent::Sleep);
         }
+        msg = handle.next_message() => {
+            return Ok(UIEvent::Child(msg?));
+        }
+        event = events.next() => {
+            return Ok(UIEvent::TermEvent(event.unwrap()?));
+        }
+    }
+}
+
+enum UIEvent {
+    Sleep,
+    Child(Option<StatusMessage>),
+    TermEvent(Event),
+}
+
+struct State {
+    input_filename: String,
+    target_filename: String,
+    history: History,
+    child: ChildState,
+}
+
+enum ChildState {
+    Burning {
+        handle: Handle,
+    },
+    Verifying {
+        handle: Handle,
+    },
+    Finished {
+        finish_time: Instant,
+        error: Option<String>,
+    },
+}
+
+impl State {
+    fn on_message(&mut self, msg: UIEvent) -> anyhow::Result<()> {
+        match msg {
+            UIEvent::Sleep => {}
+            UIEvent::Child(m) => self.on_child_status(m),
+            UIEvent::TermEvent(e) => self.on_term_event(e)?,
+        };
+        Ok(())
     }
 
     fn on_term_event(&mut self, ev: Event) -> anyhow::Result<()> {
@@ -132,37 +152,32 @@ impl UI {
         }
     }
 
-    fn on_message(&mut self, msg: Option<StatusMessage>) {
+    fn on_child_status(&mut self, msg: Option<StatusMessage>) {
         let now = Instant::now();
-        let msg = match msg {
-            Some(m) => m,
+        match msg {
+            Some(StatusMessage::TotalBytes(b)) => {
+                self.history.push(now, b as u64);
+            }
             None => {
-                self.history.finished_at(now);
-                self.state = State::Finished {
+                self.child = ChildState::Finished {
                     finish_time: now,
                     error: None,
-                };
-                return;
-            }
-        };
-        match msg {
-            StatusMessage::TotalBytes(b) => {
-                self.history.push(now, b as u64);
+                }
             }
             _ => {}
         }
     }
 
     fn draw(&mut self, terminal: &mut Terminal<impl tui::backend::Backend>) -> anyhow::Result<()> {
-        let final_time = match self.state {
-            State::Finished { finish_time, .. } => finish_time,
+        let final_time = match self.child {
+            ChildState::Finished { finish_time, .. } => finish_time,
             _ => Instant::now(),
         };
 
         let progress = self
             .history
-            .make_progress_bar(self.state.bar_text())
-            .gauge_style(self.state.bar_style());
+            .make_progress_bar(self.child.bar_text())
+            .gauge_style(self.child.bar_style());
 
         let chart = self.history.make_speed_chart(final_time);
 
@@ -203,21 +218,12 @@ impl UI {
     }
 }
 
-enum State {
-    Burning,
-    Verifying,
-    Finished {
-        finish_time: Instant,
-        error: Option<String>,
-    },
-}
-
-impl State {
+impl ChildState {
     fn bar_text(&self) -> &'static str {
         match self {
-            State::Burning => "Burning...",
-            State::Verifying => "Verifying...",
-            State::Finished { error, .. } => match error {
+            Self::Burning { .. } => "Burning...",
+            Self::Verifying { .. } => "Verifying...",
+            Self::Finished { error, .. } => match error {
                 Some(_) => "Error!",
                 None => "Complete!",
             },
@@ -226,12 +232,20 @@ impl State {
 
     fn bar_style(&self) -> Style {
         match self {
-            State::Burning => Style::default().fg(Color::Yellow).bg(Color::Black),
-            State::Verifying => Style::default().fg(Color::Blue).bg(Color::Yellow),
-            State::Finished { error, .. } => match error {
+            Self::Burning { .. } => Style::default().fg(Color::Yellow).bg(Color::Black),
+            Self::Verifying { .. } => Style::default().fg(Color::Blue).bg(Color::Yellow),
+            Self::Finished { error, .. } => match error {
                 Some(_) => Style::default().fg(Color::Red).bg(Color::Black),
                 None => Style::default().fg(Color::Green).bg(Color::Green),
             },
+        }
+    }
+
+    fn child_process(&mut self) -> Option<&mut Handle> {
+        match self {
+            Self::Burning { handle, .. } => Some(handle),
+            Self::Verifying { handle, .. } => Some(handle),
+            Self::Finished { .. } => None,
         }
     }
 }
