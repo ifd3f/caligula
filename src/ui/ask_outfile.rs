@@ -1,7 +1,8 @@
-use std::fmt;
+use std::{fmt, fs::File};
 
+use bytesize::ByteSize;
 use inquire::{Confirm, InquireError, Select};
-use tracing::{debug, event, Level};
+use tracing::debug;
 
 use crate::{
     cli::Args,
@@ -48,7 +49,9 @@ pub fn confirm_write(args: &Args, device: &BurnTarget) -> Result<bool, InquireEr
         debug!("Skipping confirm because of --force");
         Ok(true)
     } else {
+        let input_size = ByteSize::b(File::open(&args.input)?.metadata()?.len());
         println!("Input: {}", args.input.to_string_lossy());
+        println!("  Size: {}", input_size);
         println!();
 
         println!("Output: {}", device.devnode.to_string_lossy());

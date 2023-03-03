@@ -6,6 +6,7 @@ use tokio::io::BufReader;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use tracing::debug;
+use tracing::trace;
 use uuid::Uuid;
 use valuable::Valuable;
 
@@ -15,6 +16,7 @@ use tokio::{
     process::{Child, Command},
 };
 
+use super::ipc::InitialInfo;
 use super::{
     ipc::{BurnConfig, StatusMessage, TerminateResult},
     BURN_ENV,
@@ -23,6 +25,7 @@ use super::{
 pub struct Handle {
     child: Child,
     socket: LocalSocketListener,
+    initial_info: InitialInfo,
     rx: Pin<Box<dyn AsyncBufRead>>,
     tx: Pin<Box<dyn AsyncWrite>>,
 }
@@ -45,9 +48,9 @@ impl Handle {
             socket_name = format!("{}", socket_name.to_string_lossy()),
             "Creating socket"
         );
-        let mut socket = LocalSocketListener::bind(socket_name.clone())?;
+        let socket = LocalSocketListener::bind(socket_name.clone())?;
 
-        let mut cmd = (if escalate {
+        let mut cmd = if escalate {
             let mut cmd = Command::new("sudo");
             cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
             cmd
@@ -55,7 +58,7 @@ impl Handle {
             let mut cmd = Command::new(&proc);
             cmd.env(BURN_ENV, "1");
             cmd
-        });
+        };
         cmd.arg(socket_name).arg(args).kill_on_drop(true);
 
         debug!(cmd = format!("{:?}", cmd), "Starting child process");
@@ -64,42 +67,38 @@ impl Handle {
         debug!("Waiting for pipe to be opened...");
         let stream: LocalSocketStream = socket.accept().await?;
         let (rx, tx) = stream.into_split();
+        let mut rx = Box::pin(BufReader::new(rx.compat()));
+        let mut tx = Box::pin(tx.compat_write());
 
-        let mut proc = Self {
-            child,
-            socket,
-            rx: Box::pin(BufReader::new(rx.compat())),
-            tx: Box::pin(tx.compat_write()),
-        };
-
-        debug!("Reading results from stdout");
-        let first_msg = proc.next_message().await?;
+        trace!("Reading results from child");
+        let first_msg = read_next_message(&mut rx).await?;
         debug!(
             first_msg = first_msg.as_value(),
-            "Read raw result from stdout"
+            "Read raw result from child"
         );
 
-        match first_msg {
-            Some(StatusMessage::FileOpenSuccess) => Ok(proc),
-            Some(StatusMessage::Terminate(t)) => Err(StartProcessError::Failed(Some(t)))?,
-            Some(other) => Err(StartProcessError::UnexpectedFirstStatus(other))?,
-            None => Err(StartProcessError::UnexpectedEOF)?,
-        }
+        let initial_info = match first_msg {
+            Some(StatusMessage::InitSuccess(i)) => Ok(i),
+            Some(StatusMessage::Terminate(t)) => Err(StartProcessError::Failed(Some(t))),
+            Some(other) => Err(StartProcessError::UnexpectedFirstStatus(other)),
+            None => Err(StartProcessError::UnexpectedEOF),
+        }?;
+
+        Ok(Self {
+            child,
+            socket,
+            initial_info,
+            rx,
+            tx,
+        })
     }
 
     pub async fn next_message(&mut self) -> anyhow::Result<Option<StatusMessage>> {
-        let mut line = String::new();
-        let count = self.rx.read_line(&mut line).await?;
-        if count == 0 {
-            return Ok(None);
-        }
+        read_next_message(&mut self.rx).await
+    }
 
-        debug!(line, "Got line");
-
-        let message = serde_json::from_str::<StatusMessage>(&line)?;
-        debug!(message = format!("{message:?}"), "Parsed message");
-
-        Ok(Some(message))
+    pub fn initial_info(&self) -> &InitialInfo {
+        &self.initial_info
     }
 }
 
@@ -111,4 +110,20 @@ pub enum StartProcessError {
     UnexpectedEOF,
     #[error("Explicit failure signaled: {0:?}")]
     Failed(Option<TerminateResult>),
+}
+
+async fn read_next_message(
+    mut rx: impl AsyncBufRead + Unpin,
+) -> anyhow::Result<Option<StatusMessage>> {
+    let mut line = String::new();
+    let count = rx.read_line(&mut line).await?;
+    if count == 0 {
+        return Ok(None);
+    }
+    trace!(line, "Got line from child process");
+
+    let message = serde_json::from_str::<StatusMessage>(&line)?;
+    trace!(message = format!("{message:?}"), "Parsed message");
+
+    Ok(Some(message))
 }

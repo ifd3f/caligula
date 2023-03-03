@@ -2,7 +2,8 @@ use std::{
     env,
     fs::{File, OpenOptions},
     io::{Read, Write},
-    time::Instant, path::PathBuf,
+    path::PathBuf,
+    time::Instant,
 };
 
 use bytesize::ByteSize;
@@ -35,7 +36,12 @@ fn run(mut pipe: impl Write, args: BurnConfig) -> Result<TerminateResult, Termin
     let mut src = File::open(&args.src)?;
     let mut dest = OpenOptions::new().write(true).open(&args.dest)?;
 
-    send_msg(&mut pipe, StatusMessage::FileOpenSuccess)?;
+    send_msg(
+        &mut pipe,
+        StatusMessage::InitSuccess(InitialInfo {
+            input_file_bytes: src.metadata()?.len(),
+        }),
+    )?;
 
     let block_size = ByteSize::kb(128).as_u64() as usize;
     let mut full_block = vec![0u8; block_size];
@@ -66,11 +72,14 @@ fn run(mut pipe: impl Write, args: BurnConfig) -> Result<TerminateResult, Termin
         }
 
         let duration = Instant::now().duration_since(start);
-        send_msg(&mut pipe, StatusMessage::BlockSizeSpeedInfo {
-            blocks_written: checkpoint_blocks,
-            block_size,
-            duration_millis: duration.as_millis() as u64,
-        })?;
+        send_msg(
+            &mut pipe,
+            StatusMessage::BlockSizeSpeedInfo {
+                blocks_written: checkpoint_blocks,
+                block_size,
+                duration_millis: duration.as_millis() as u64,
+            },
+        )?;
     }
 }
 

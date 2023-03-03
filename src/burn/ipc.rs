@@ -14,7 +14,7 @@ pub struct BurnConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub enum StatusMessage {
-    FileOpenSuccess,
+    InitSuccess(InitialInfo),
     TotalBytesWritten(usize),
     BlockSizeChanged(u64),
     BlockSizeSpeedInfo {
@@ -23,6 +23,11 @@ pub enum StatusMessage {
         duration_millis: u64,
     },
     Terminate(TerminateResult),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
+pub struct InitialInfo {
+    pub input_file_bytes: u64
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]

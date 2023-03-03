@@ -9,7 +9,8 @@ edition = "2021"
 anyhow = "1.0.69"
 bytesize = "1.2.0"
 clap = { version = "4.1.8", features = ["derive", "cargo"] }
-crossterm = "0.26.1"
+crossterm = { version = "0.26.1", features = ["event-stream"] }
+futures = "0.3.26"
 futures-io = "0.3.26"
 inquire = "0.5.3"
 interprocess = { version = "1.2.1", features = ["tokio", "tokio_support"] }
