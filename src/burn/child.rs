@@ -3,7 +3,6 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Seek, Write},
     path::PathBuf,
-    time::Instant,
 };
 
 use bytesize::ByteSize;

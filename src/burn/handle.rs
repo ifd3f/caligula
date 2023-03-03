@@ -1,13 +1,16 @@
 use interprocess::local_socket::tokio::LocalSocketListener;
 use interprocess::local_socket::tokio::LocalSocketStream;
-use std::{env, pin::Pin, process::Stdio};
+use rand::distributions::Alphanumeric;
+use rand::distributions::DistString;
+use std::fs::remove_file;
+use std::path::PathBuf;
+use std::{env, pin::Pin};
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use tracing::debug;
 use tracing::trace;
-use uuid::Uuid;
 use valuable::Valuable;
 
 use tokio::{
@@ -23,10 +26,11 @@ use super::{
 };
 
 pub struct Handle {
-    child: Child,
+    _child: Child,
+    _socket: ChildSocket,
     initial_info: InitialInfo,
     rx: Pin<Box<dyn AsyncBufRead>>,
-    tx: Pin<Box<dyn AsyncWrite>>,
+    _tx: Pin<Box<dyn AsyncWrite>>,
 }
 
 impl Handle {
@@ -42,12 +46,7 @@ impl Handle {
         let args = serde_json::to_string(args)?;
         debug!("Converted BurnConfig to JSON: {args}");
 
-        let socket_name = env::temp_dir().join(format!("caligula-{}.pipe", Uuid::new_v4()));
-        debug!(
-            socket_name = format!("{}", socket_name.to_string_lossy()),
-            "Creating socket"
-        );
-        let socket = LocalSocketListener::bind(socket_name.clone())?;
+        let mut socket = ChildSocket::new()?;
 
         let mut cmd = if escalate {
             let mut cmd = Command::new("sudo");
@@ -58,7 +57,7 @@ impl Handle {
             cmd.env(BURN_ENV, "1");
             cmd
         };
-        cmd.arg(args).arg(socket_name).kill_on_drop(true);
+        cmd.arg(args).arg(&socket.socket_name).kill_on_drop(true);
 
         debug!("Starting child process with command: {:?}", cmd.as_std());
         let child = cmd.spawn()?;
@@ -84,10 +83,11 @@ impl Handle {
         }?;
 
         Ok(Self {
-            child,
+            _child: child,
+            _socket: socket,
             initial_info,
             rx,
-            tx,
+            _tx: tx,
         })
     }
 
@@ -124,4 +124,39 @@ async fn read_next_message(
     trace!(message = format!("{message:?}"), "Parsed message");
 
     Ok(Some(message))
+}
+
+/// A managed named socket. It gets auto-deleted on drop.
+struct ChildSocket {
+    socket_name: PathBuf,
+    socket: LocalSocketListener,
+}
+
+impl ChildSocket {
+    fn new() -> anyhow::Result<Self> {
+        let socket_name: PathBuf = env::temp_dir().join(format!(
+            "caligula-{}.sock",
+            Alphanumeric.sample_string(&mut rand::thread_rng(), 32)
+        ));
+        debug!(
+            socket_name = format!("{}", socket_name.to_string_lossy()),
+            "Creating socket"
+        );
+        let socket = LocalSocketListener::bind(socket_name.clone())?;
+
+        Ok(Self {
+            socket,
+            socket_name,
+        })
+    }
+
+    async fn accept(&mut self) -> anyhow::Result<LocalSocketStream> {
+        Ok(self.socket.accept().await?)
+    }
+}
+
+impl Drop for ChildSocket {
+    fn drop(&mut self) {
+        remove_file(&self.socket_name).unwrap();
+    }
 }

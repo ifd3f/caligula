@@ -172,7 +172,7 @@ where
             ]),
         ])
         .style(Style::default())
-        .widths(&[Constraint::Length(16), Constraint::Min(20)])
+        .widths(&[Constraint::Length(16), Constraint::Percentage(100)])
         .block(Block::default().title("Stats").borders(Borders::ALL));
 
         self.terminal.draw(|f| {
@@ -210,7 +210,6 @@ struct ComputedLayout {
     progress: Rect,
     graph: Rect,
     args_display: Rect,
-    estimation: Rect,
 }
 
 impl From<Rect> for ComputedLayout {
@@ -226,16 +225,10 @@ impl From<Rect> for ComputedLayout {
 
         let info_pane = root[2];
 
-        let info_children = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-            .split(info_pane);
-
         Self {
             graph: root[1],
             progress: root[0],
-            args_display: info_children[0],
-            estimation: info_children[1],
+            args_display: info_pane,
         }
     }
 }
