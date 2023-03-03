@@ -62,8 +62,16 @@ where
         debug!(size, "Got input file size");
 
         self.burn(&mut src, size)?;
+        self.send_msg(StatusMessage::FinishedWriting {
+            verifying: self.args.verify,
+        })?;
+
+        if !self.args.verify {
+            return Ok(());
+        }
 
         src.seek(io::SeekFrom::Start(0))?;
+        self.verify(&mut src)?;
 
         Ok(())
     }
@@ -71,22 +79,32 @@ where
     fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), TerminateResult> {
         debug!("Running burn");
 
+        let mut dest = OpenOptions::new().write(true).open(&self.args.dest)?;
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }))?;
 
-        let mut dest = OpenOptions::new().write(true).open(&self.args.dest)?;
-        for_each_block(self, src, |block| {
+        for_each_block(self, src, |block, _| {
             let written = dest.write(block)?;
             if written != block.len() {
                 return Err(TerminateResult::EndOfOutput);
             }
             Ok(())
-        })?;
-
-        Ok(())
+        })
     }
 
     fn verify(&mut self, src: &mut File) -> Result<(), TerminateResult> {
-        Ok(())
+        debug!("Running verify");
+
+        let mut dest = File::open(&self.args.dest)?;
+        for_each_block(self, src, |block, dst| {
+            let read = dest.read(dst)?;
+            if read != block.len() {
+                return Err(TerminateResult::EndOfOutput);
+            }
+            if block != dst {
+                return Err(TerminateResult::VerificationFailed);
+            }
+            Ok(())
+        })
     }
 
     fn send_msg(&mut self, msg: StatusMessage) -> Result<(), serde_json::Error> {
@@ -101,10 +119,11 @@ where
 fn for_each_block(
     ctx: &mut Ctx<impl Write>,
     src: &mut File,
-    mut action: impl FnMut(&[u8]) -> Result<(), TerminateResult>,
+    mut action: impl FnMut(&[u8], &mut [u8]) -> Result<(), TerminateResult>,
 ) -> Result<(), TerminateResult> {
     let block_size = ByteSize::kb(128).as_u64() as usize;
     let mut full_block = vec![0u8; block_size];
+    let mut closure_block = vec![0u8; block_size]; // A block for the user to mutate
 
     let mut written_bytes: usize = 0;
 
@@ -117,7 +136,7 @@ fn for_each_block(
                 return Ok(());
             }
 
-            action(&full_block[..read_bytes])?;
+            action(&full_block[..read_bytes], &mut closure_block[..read_bytes])?;
             written_bytes += read_bytes;
         }
 

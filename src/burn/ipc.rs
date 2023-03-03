@@ -39,6 +39,7 @@ pub enum TerminateResult {
     Success,
     EndOfOutput,
     PermissionDenied,
+    VerificationFailed,
     ThreadAlreadyFinished,
     UnknownError(String),
 }
