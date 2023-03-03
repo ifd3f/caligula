@@ -1,7 +1,6 @@
 use std::io::Stdout;
 
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -17,7 +16,7 @@ impl TUICapture {
         // setup terminal
         enable_raw_mode()?;
         let mut stdout = std::io::stdout();
-        execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
+        execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
 
@@ -35,7 +34,6 @@ impl Drop for TUICapture {
         execute!(
             self.terminal.backend_mut(),
             LeaveAlternateScreen,
-            DisableMouseCapture
         ).unwrap();
         self.terminal.show_cursor().unwrap();
     }
