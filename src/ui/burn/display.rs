@@ -4,7 +4,7 @@ use bytesize::ByteSize;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
 use tokio::{select, time};
-use tracing::debug;
+use tracing::{debug, trace};
 use tui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
@@ -63,7 +63,7 @@ where
             match &mut self.state {
                 State::Burning { handle } => select! {
                     _ = interval.tick() => {
-                        debug!("Got interval tick");
+                        trace!("Got interval tick");
                     }
                     event = events.next() => {
                         debug!(event = format!("{event:?}"), "Got terminal event");
@@ -91,7 +91,7 @@ where
                 },
                 State::Complete { .. } => select! {
                     _ = interval.tick() => {
-                        debug!("Got interval tick");
+                        trace!("Got interval tick");
                     }
                     event = events.next() => {
                         debug!(event = format!("{event:?}"), "Got terminal event");

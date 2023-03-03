@@ -60,7 +60,7 @@ impl Handle {
         };
         cmd.arg(socket_name).arg(args).kill_on_drop(true);
 
-        debug!(cmd = format!("{:?}", cmd), "Starting child process");
+        debug!("Starting child process with command: {:?}", cmd.as_std());
         let child = cmd.spawn()?;
 
         debug!("Waiting for pipe to be opened...");
