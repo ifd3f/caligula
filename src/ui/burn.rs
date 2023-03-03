@@ -1,15 +1,17 @@
 use std::time::Instant;
 
 use bytesize::ByteSize;
-use crossterm::event::{Event, EventStream, KeyEvent, KeyModifiers, KeyEventKind, KeyEventState, KeyCode};
+use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
-use tokio::{select, signal, time};
+use tokio::{select, time};
 use tracing::debug;
 use tui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     symbols,
-    widgets::{Axis, BarChart, Block, Borders, Chart, Dataset, Gauge, GraphType},
+    widgets::{
+        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Paragraph, Row, Table,
+    },
     Terminal,
 };
 
@@ -23,9 +25,9 @@ pub struct BurningDisplay<'a, B>
 where
     B: tui::backend::Backend,
 {
-    args: &'a Args,
     terminal: &'a mut Terminal<B>,
-    target: BurnTarget,
+    input_filename: String,
+    target_filename: String,
     state: State,
     start: Instant,
     bytes_total: ByteSize,
@@ -45,8 +47,8 @@ where
         let bytes_total = ByteSize::b(handle.initial_info().input_file_bytes);
         Self {
             state: State::Burning { handle },
-            target,
-            args,
+            target_filename: target.devnode.to_string_lossy().to_string(),
+            input_filename: args.input.to_string_lossy().to_string(),
             terminal,
             start: Instant::now(),
             bytes_total,
@@ -152,39 +154,51 @@ where
             })
             .collect();
 
+        let progress = Gauge::default()
+            .label(format!("{} / {}", bytes_written, self.bytes_total))
+            .gauge_style(Style::default().fg(Color::Green))
+            .ratio((bytes_written.as_u64() as f64) / (self.bytes_total.as_u64() as f64));
+
+        let bytes_written_dataset = Dataset::default()
+            .name("Bytes written")
+            .graph_type(GraphType::Scatter)
+            .marker(symbols::Marker::Dot)
+            .style(Style::default().fg(Color::Yellow))
+            .graph_type(GraphType::Line)
+            .data(&history);
+
+        let chart = Chart::new(vec![bytes_written_dataset])
+            .block(Block::default().title("Speed").borders(Borders::ALL))
+            .x_axis(Axis::default().title("Time").bounds([
+                0.0,
+                history.iter().copied().map(|(x, _)| x).fold(5.0, f64::max),
+            ]))
+            .y_axis(
+                Axis::default()
+                    .title("Bytes written")
+                    .bounds([0.0, self.bytes_total.as_u64() as f64]),
+            );
+
+        let info_table = Table::new(vec![
+            Row::new([
+                Cell::from("Input"),
+                Cell::from(self.input_filename.as_str()),
+            ]),
+            Row::new([
+                Cell::from("Output"),
+                Cell::from(self.target_filename.as_str()),
+            ]),
+        ])
+        .style(Style::default())
+        .widths(&[Constraint::Length(7), Constraint::Min(10)])
+        .block(Block::default().title("Stats").borders(Borders::ALL));
+
         self.terminal.draw(|f| {
             let layout = ComputedLayout::from(f.size());
 
-            f.render_widget(
-                Gauge::default()
-                    .block(Block::default().title("Progress"))
-                    .label(format!("{} / {}", bytes_written, self.bytes_total))
-                    .gauge_style(Style::default().fg(Color::Green))
-                    .ratio((bytes_written.as_u64() as f64) / (self.bytes_total.as_u64() as f64)),
-                layout.progress,
-            );
-
-            let written_dataset = Dataset::default()
-                .name("Bytes written")
-                .graph_type(GraphType::Line)
-                .marker(symbols::Marker::Block)
-                .style(Style::default().fg(Color::Yellow))
-                .graph_type(GraphType::Line)
-                .data(&history);
-            f.render_widget(
-                Chart::new(vec![written_dataset])
-                    .block(Block::default().title("Speed").borders(Borders::ALL))
-                    .x_axis(Axis::default().title("Time").bounds([
-                        0.0,
-                        history.iter().copied().map(|(x, _)| x).fold(5.0, f64::max),
-                    ]))
-                    .y_axis(
-                        Axis::default()
-                            .title("Bytes written")
-                            .bounds([0.0, self.bytes_total.as_u64() as f64]),
-                    ),
-                layout.graph,
-            );
+            f.render_widget(progress, layout.progress);
+            f.render_widget(chart, layout.graph);
+            f.render_widget(info_table, layout.args_display);
         })?;
         Ok(())
     }
@@ -197,26 +211,34 @@ enum State {
 
 struct ComputedLayout {
     progress: Rect,
-    info: Rect,
     graph: Rect,
+    args_display: Rect,
+    estimation: Rect,
 }
 
 impl From<Rect> for ComputedLayout {
     fn from(value: Rect) -> Self {
-        let chunks = Layout::default()
+        let root = Layout::default()
             .direction(Direction::Vertical)
-            .margin(2)
             .constraints([
+                Constraint::Length(1),
                 Constraint::Min(10),
-                Constraint::Length(2),
-                Constraint::Length(5),
+                Constraint::Length(10),
             ])
             .split(value);
 
+        let info_pane = root[2];
+
+        let info_children = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+            .split(info_pane);
+
         Self {
-            graph: chunks[0],
-            progress: chunks[1],
-            info: chunks[2],
+            graph: root[1],
+            progress: root[0],
+            args_display: info_children[0],
+            estimation: info_children[1],
         }
     }
 }

@@ -68,7 +68,7 @@ impl Handle {
         let stream: LocalSocketStream = socket.accept().await?;
         let (rx, tx) = stream.into_split();
         let mut rx = Box::pin(BufReader::new(rx.compat()));
-        let mut tx = Box::pin(tx.compat_write());
+        let tx = Box::pin(tx.compat_write());
 
         trace!("Reading results from child");
         let first_msg = read_next_message(&mut rx).await?;
