@@ -1,11 +1,18 @@
-use std::{pin::Pin, process::Stdio};
+use interprocess::local_socket::tokio::LocalSocketListener;
+use interprocess::local_socket::tokio::LocalSocketStream;
+use std::{env, pin::Pin, process::Stdio};
+use tokio::io::AsyncBufReadExt;
+use tokio::io::BufReader;
+use tokio_util::compat::FuturesAsyncReadCompatExt;
+use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use tracing::debug;
+use uuid::Uuid;
 use valuable::Valuable;
 
 use tokio::{
     fs,
-    io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWrite, BufReader},
-    process::{Child, ChildStdin, ChildStdout, Command},
+    io::{AsyncBufRead, AsyncWrite},
+    process::{Child, Command},
 };
 
 use super::{
@@ -15,8 +22,9 @@ use super::{
 
 pub struct Handle {
     child: Child,
-    stdin: Pin<Box<dyn AsyncWrite>>,
-    stdout: Pin<Box<dyn AsyncBufRead>>,
+    socket: LocalSocketListener,
+    rx: Pin<Box<dyn AsyncBufRead>>,
+    tx: Pin<Box<dyn AsyncWrite>>,
 }
 
 impl Handle {
@@ -32,7 +40,14 @@ impl Handle {
         let args = serde_json::to_string(args)?;
         debug!("Converted BurnConfig to JSON: {args}");
 
-        let mut cmd = if escalate {
+        let socket_name = env::temp_dir().join(format!("caligula-{}.pipe", Uuid::new_v4()));
+        debug!(
+            socket_name = format!("{}", socket_name.to_string_lossy()),
+            "Creating socket"
+        );
+        let mut socket = LocalSocketListener::bind(socket_name.clone())?;
+
+        let mut cmd = (if escalate {
             let mut cmd = Command::new("sudo");
             cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
             cmd
@@ -40,25 +55,21 @@ impl Handle {
             let mut cmd = Command::new(&proc);
             cmd.env(BURN_ENV, "1");
             cmd
-        };
-
-        cmd.arg(args)
-            .kill_on_drop(true)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped());
-        // .stderr(Stdio::());
+        });
+        cmd.arg(socket_name).arg(args).kill_on_drop(true);
 
         debug!(cmd = format!("{:?}", cmd), "Starting child process");
-        let mut child = cmd.spawn()?;
+        let child = cmd.spawn()?;
 
-        debug!("Opening pipes");
-        let stdin = Box::pin(child.stdin.take().unwrap());
-        let stdout = Box::pin(BufReader::new(child.stdout.take().unwrap()));
+        debug!("Waiting for pipe to be opened...");
+        let stream: LocalSocketStream = socket.accept().await?;
+        let (rx, tx) = stream.into_split();
 
         let mut proc = Self {
             child,
-            stdin,
-            stdout,
+            socket,
+            rx: Box::pin(BufReader::new(rx.compat())),
+            tx: Box::pin(tx.compat_write()),
         };
 
         debug!("Reading results from stdout");
@@ -78,7 +89,7 @@ impl Handle {
 
     pub async fn next_message(&mut self) -> anyhow::Result<Option<StatusMessage>> {
         let mut line = String::new();
-        let count = self.stdout.read_line(&mut line).await?;
+        let count = self.rx.read_line(&mut line).await?;
         if count == 0 {
             return Ok(None);
         }

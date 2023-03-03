@@ -2,10 +2,11 @@ use std::{
     env,
     fs::{File, OpenOptions},
     io::{Read, Write},
-    time::Instant,
+    time::Instant, path::PathBuf,
 };
 
 use bytesize::ByteSize;
+use interprocess::local_socket::LocalSocketStream;
 use tracing::info;
 
 use super::{ipc::*, BURN_ENV};
@@ -18,21 +19,23 @@ pub fn is_in_burn_mode() -> bool {
 /// escalated permissions.
 pub fn main() {
     let cli_args: Vec<String> = env::args().collect();
-    let args = serde_json::from_str(&cli_args[1]).unwrap();
+    let args = serde_json::from_str(&cli_args[2]).unwrap();
 
-    let result = match run(args) {
+    let mut pipe = LocalSocketStream::connect(PathBuf::from(&cli_args[1])).unwrap();
+
+    let result = match run(&mut pipe, args) {
         Ok(r) => r,
         Err(r) => r,
     };
-    send_msg(StatusMessage::Terminate(result)).unwrap();
+    send_msg(&mut pipe, StatusMessage::Terminate(result)).unwrap();
 }
 
-fn run(args: BurnConfig) -> Result<TerminateResult, TerminateResult> {
+fn run(mut pipe: impl Write, args: BurnConfig) -> Result<TerminateResult, TerminateResult> {
     info!("Running child process");
     let mut src = File::open(&args.src)?;
     let mut dest = OpenOptions::new().write(true).open(&args.dest)?;
 
-    send_msg(StatusMessage::FileOpenSuccess)?;
+    send_msg(&mut pipe, StatusMessage::FileOpenSuccess)?;
 
     let block_size = ByteSize::kb(128).as_u64() as usize;
     let mut full_block = vec![0u8; block_size];
@@ -59,11 +62,11 @@ fn run(args: BurnConfig) -> Result<TerminateResult, TerminateResult> {
                 dest.flush()?;
             }
 
-            send_msg(StatusMessage::TotalBytesWritten(written_bytes))?;
+            send_msg(&mut pipe, StatusMessage::TotalBytesWritten(written_bytes))?;
         }
 
         let duration = Instant::now().duration_since(start);
-        send_msg(StatusMessage::BlockSizeSpeedInfo {
+        send_msg(&mut pipe, StatusMessage::BlockSizeSpeedInfo {
             blocks_written: checkpoint_blocks,
             block_size,
             duration_millis: duration.as_millis() as u64,
@@ -71,8 +74,8 @@ fn run(args: BurnConfig) -> Result<TerminateResult, TerminateResult> {
     }
 }
 
-fn send_msg(msg: StatusMessage) -> Result<(), serde_json::Error> {
-    serde_json::to_writer(std::io::stdout(), &msg)?;
-    println!();
+fn send_msg(mut pipe: impl Write, msg: StatusMessage) -> Result<(), serde_json::Error> {
+    serde_json::to_writer(&mut pipe, &msg)?;
+    pipe.write(b"\n").unwrap();
     Ok(())
 }
