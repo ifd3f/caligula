@@ -5,6 +5,7 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use tracing_unwrap::ResultExt;
 use tui::{backend::CrosstermBackend, Terminal};
 
 pub struct TUICapture {
@@ -31,9 +32,9 @@ impl TUICapture {
 impl Drop for TUICapture {
     fn drop(&mut self) {
         // restore terminal
-        disable_raw_mode().unwrap();
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen,).unwrap();
-        self.terminal.show_cursor().unwrap();
+        disable_raw_mode().unwrap_or_log();
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen,).unwrap_or_log();
+        self.terminal.show_cursor().unwrap_or_log();
     }
 }
 

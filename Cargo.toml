@@ -25,6 +25,7 @@ tokio-util = { version = "0.7.7", features = ["compat"] }
 toml = "0.7.2"
 tracing = { version = "0.1.37", features = ["valuable", "async-await", "log"] }
 tracing-subscriber = "0.3.16"
+tracing-unwrap = "0.10.0"
 tui = "0.19.0"
 udev = "0.7.0"
 valuable = { version = "0.1.0", features = ["derive"] }

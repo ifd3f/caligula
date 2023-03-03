@@ -8,6 +8,7 @@ use std::{
 use bytesize::ByteSize;
 use interprocess::local_socket::LocalSocketStream;
 use tracing::{debug, info};
+use tracing_unwrap::ResultExt;
 
 use super::{ipc::*, BURN_ENV};
 
@@ -19,7 +20,7 @@ pub fn is_in_burn_mode() -> bool {
 /// escalated permissions.
 pub fn main() {
     let cli_args: Vec<String> = env::args().collect();
-    let args = serde_json::from_str(&cli_args[1]).unwrap();
+    let args = serde_json::from_str(&cli_args[1]).unwrap_or_log();
 
     let pipe = cli_args[2].as_str();
     info!(pipe, "Got args {:#?}", args);
@@ -28,7 +29,7 @@ pub fn main() {
         "-" => run_with_pipe(args, std::io::stdout()),
         path => run_with_pipe(
             args,
-            LocalSocketStream::connect(PathBuf::from(path)).unwrap(),
+            LocalSocketStream::connect(PathBuf::from(path)).unwrap_or_log(),
         ),
     };
 
@@ -38,7 +39,7 @@ pub fn main() {
             Ok(_) => TerminateResult::Success,
             Err(r) => r,
         };
-        ctx.send_msg(StatusMessage::Terminate(result)).unwrap();
+        ctx.send_msg(StatusMessage::Terminate(result)).unwrap_or_log();
     }
 }
 
@@ -55,7 +56,7 @@ where
     P: Write,
 {
     fn run(&mut self) -> Result<(), TerminateResult> {
-        let mut src = File::open(&self.args.src).unwrap();
+        let mut src = File::open(&self.args.src).unwrap_or_log();
         let size = src.seek(io::SeekFrom::End(0))?;
         src.seek(io::SeekFrom::Start(0))?;
 
@@ -110,7 +111,7 @@ where
     fn send_msg(&mut self, msg: StatusMessage) -> Result<(), serde_json::Error> {
         debug!("Sending message {:?}", msg);
         serde_json::to_writer(&mut self.pipe, &msg)?;
-        self.pipe.write(b"\n").unwrap();
+        self.pipe.write(b"\n").unwrap_or_log();
         Ok(())
     }
 }

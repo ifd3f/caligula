@@ -11,6 +11,7 @@ use cli::Args;
 use device::BurnTarget;
 use inquire::Confirm;
 use tracing::{debug, Level};
+use tracing_unwrap::ResultExt;
 use ui::{burn::BurningDisplay, confirm_write, utils::TUICapture};
 
 pub mod burn;
@@ -26,14 +27,14 @@ fn main() {
         burn::child::main();
     } else {
         debug!("Starting primary process");
-        cli_main().unwrap();
+        cli_main().unwrap_or_log();
     }
 }
 
 fn init_tracing_subscriber() {
     let is_parent = !is_in_burn_mode();
 
-    let writer = File::create(if is_parent { "dev.log" } else { "child.log" }).unwrap();
+    let writer = File::create(if is_parent { "dev.log" } else { "child.log" }).unwrap_or_log();
 
     tracing_subscriber::fmt()
         .with_writer(Mutex::new(writer))

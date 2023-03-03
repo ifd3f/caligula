@@ -2,6 +2,7 @@ use interprocess::local_socket::tokio::LocalSocketListener;
 use interprocess::local_socket::tokio::LocalSocketStream;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
+use tracing_unwrap::ResultExt;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::{env, pin::Pin};
@@ -157,6 +158,6 @@ impl ChildSocket {
 
 impl Drop for ChildSocket {
     fn drop(&mut self) {
-        remove_file(&self.socket_name).unwrap();
+        remove_file(&self.socket_name).unwrap_or_log();
     }
 }
