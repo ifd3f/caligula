@@ -4,7 +4,7 @@ use bytesize::ByteSize;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
 use tokio::{select, time};
-use tracing::debug;
+use tracing::{debug, info, trace};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -19,7 +19,7 @@ use crate::{
     device::BurnTarget,
 };
 
-use super::history::History;
+use super::history::{ByteSeries, History};
 
 pub struct UI<'a, B>
 where
@@ -46,11 +46,13 @@ where
             state: State {
                 input_filename: args.input.to_string_lossy().to_string(),
                 target_filename: target.devnode.to_string_lossy().to_string(),
-                history: History::new(
-                    Instant::now(),
-                    ByteSize::b(handle.initial_info().input_file_bytes),
-                ),
-                child: ChildState::Burning { handle: handle },
+                child: ChildState::Burning {
+                    handle,
+                    write_hist: ByteSeries::new(
+                        Instant::now(),
+                        ByteSize::b(handle.initial_info().input_file_bytes),
+                    ),
+                },
             },
         }
     }
@@ -67,7 +69,7 @@ where
         Ok(())
     }
 
-    async fn get_and_handle_events(mut self) -> anyhow::Result<UI<'a , B>> {
+    async fn get_and_handle_events(mut self) -> anyhow::Result<UI<'a, B>> {
         let msg = {
             let handle = self.state.child.child_process();
             if let Some(handle) = handle {
@@ -76,7 +78,7 @@ where
                 child_dead(&mut self.events).await
             }?
         };
-        self.state = self.state.on_message(msg)?;
+        self.state = self.state.on_event(msg)?;
         self.state.draw(&mut self.terminal)?;
         Ok(self)
     }
@@ -93,7 +95,7 @@ async fn child_active(events: &mut EventStream, handle: &mut Handle) -> anyhow::
             return Ok(UIEvent::Sleep);
         }
         msg = handle.next_message() => {
-            return Ok(UIEvent::Child(msg?));
+            return Ok(UIEvent::Child(Instant::now(), msg?));
         }
         event = events.next() => {
             return Ok(UIEvent::TermEvent(event.unwrap()?));
@@ -101,37 +103,44 @@ async fn child_active(events: &mut EventStream, handle: &mut Handle) -> anyhow::
     }
 }
 
+#[derive(Debug, PartialEq, Clone)]
 enum UIEvent {
     Sleep,
-    Child(Option<StatusMessage>),
+    Child(Instant, Option<StatusMessage>),
     TermEvent(Event),
 }
 
 struct State {
     input_filename: String,
     target_filename: String,
-    history: History,
     child: ChildState,
 }
 
-enum ChildState {
+pub enum ChildState {
     Burning {
         handle: Handle,
+        write_hist: ByteSeries,
     },
     Verifying {
         handle: Handle,
+        write_hist: ByteSeries,
+        verify_hist: ByteSeries,
     },
     Finished {
         finish_time: Instant,
         error: Option<String>,
+        write_hist: ByteSeries,
+        verify_hist: Option<ByteSeries>,
     },
 }
 
 impl State {
-    fn on_message(self, msg: UIEvent) -> anyhow::Result<Self> {
-        Ok(match msg {
+    fn on_event(self, ev: UIEvent) -> anyhow::Result<Self> {
+        trace!("Handling {ev:?}");
+
+        Ok(match ev {
             UIEvent::Sleep => self,
-            UIEvent::Child(m) => self.on_child_status(m),
+            UIEvent::Child(t, m) => self.on_child_status(t, m),
             UIEvent::TermEvent(e) => self.on_term_event(e)?,
         })
     }
@@ -144,29 +153,49 @@ impl State {
                 kind: KeyEventKind::Press,
                 ..
             }) => {
-                debug!("Got CTRL-C, quitting");
+                info!("Got CTRL-C, quitting");
                 Err(Quit)?
             }
             _ => Ok(self),
         }
     }
 
-    fn on_child_status(mut self, msg: Option<StatusMessage>) -> Self {
-        let now = Instant::now();
+    fn on_child_status(mut self, now: Instant, msg: Option<StatusMessage>) -> Self {
         match msg {
             Some(StatusMessage::TotalBytes(b)) => {
-                self.history.push_writing(now, b as u64);
+                match &self.child {
+                    ChildState::Burning { .. } => {
+                        self.history.push_writing(now, b as u64);
+                    }
+                    ChildState::Verifying { .. } => {
+                        self.history.push_verifying(now, b as u64);
+                    }
+                    _ => {}
+                }
                 self
             }
             Some(StatusMessage::FinishedWriting { verifying }) => {
+                debug!(verifying, "Got FinishedWriting");
                 let child = match self.child {
-                    ChildState::Burning { handle } => {
+                    ChildState::Burning { handle, write_hist } => {
+                        write_hist.finished_verifying_at(now);
                         if verifying {
-                            ChildState::Verifying { handle }
+                            info!(verifying, "Transition to verifying");
+                            ChildState::Verifying {
+                                handle,
+                                write_hist,
+                                verify_hist: ByteSeries::new(
+                                    now,
+                                    ByteSize::b(handle.initial_info().input_file_bytes),
+                                ),
+                            }
                         } else {
+                            info!(verifying, "Transition to finished");
                             ChildState::Finished {
                                 finish_time: now,
                                 error: None,
+                                write_hist,
+                                verify_hist: None,
                             }
                         }
                     }
@@ -175,10 +204,7 @@ impl State {
                 Self { child, ..self }
             }
             None => Self {
-                child: ChildState::Finished {
-                    finish_time: now,
-                    error: None,
-                },
+                child: self.child.into_finished(now, None),
                 ..self
             },
             _ => self,
@@ -186,21 +212,23 @@ impl State {
     }
 
     fn draw(&self, terminal: &mut Terminal<impl tui::backend::Backend>) -> anyhow::Result<()> {
+        let history = self.child.history();
+
         let final_time = match self.child {
             ChildState::Finished { finish_time, .. } => finish_time,
             _ => Instant::now(),
         };
 
         let progress = {
-            let bw = self.history.bytes_written();
-            let max = self.history.max_bytes();
+            let bw = history.bytes_written();
+            let max = history.max_bytes();
             Gauge::default()
                 .label(format!("{} {} / {}", self.child.bar_text(), bw, max))
                 .ratio((bw.0 as f64) / (max.0 as f64))
                 .gauge_style(self.child.bar_style())
         };
 
-        let chart = self.history.make_speed_chart(final_time);
+        let chart = history.make_speed_chart(final_time);
 
         let info_table = Table::new(vec![
             Row::new([
@@ -213,15 +241,21 @@ impl State {
             ]),
             Row::new([
                 Cell::from("Total Speed"),
-                Cell::from(format!("{}", self.history.total_avg_speed(final_time))),
+                Cell::from(format!(
+                    "{}",
+                    self.child.history().write.total_avg_speed(final_time)
+                )),
             ]),
             Row::new([
                 Cell::from("Current Speed"),
-                Cell::from(format!("{}", self.history.last_speed())),
+                Cell::from(format!("{}", self.child.history().write.last_speed())),
             ]),
             Row::new([
                 Cell::from("ETA"),
-                Cell::from(format!("{}", self.history.estimated_time_left(final_time))),
+                Cell::from(format!(
+                    "{}",
+                    self.child.history().write.estimated_time_left(final_time)
+                )),
             ]),
         ])
         .style(Style::default())
@@ -240,33 +274,33 @@ impl State {
 }
 
 impl ChildState {
-    fn bar_text(&self) -> &'static str {
-        match self {
-            Self::Burning { .. } => "Burning...",
-            Self::Verifying { .. } => "Verifying...",
-            Self::Finished { error, .. } => match error {
-                Some(_) => "Error!",
-                None => "Complete!",
-            },
-        }
-    }
-
-    fn bar_style(&self) -> Style {
-        match self {
-            Self::Burning { .. } => Style::default().fg(Color::Yellow).bg(Color::Black),
-            Self::Verifying { .. } => Style::default().fg(Color::Blue).bg(Color::Yellow),
-            Self::Finished { error, .. } => match error {
-                Some(_) => Style::default().fg(Color::Red).bg(Color::Black),
-                None => Style::default().fg(Color::Green).bg(Color::Green),
-            },
-        }
-    }
-
     fn child_process(&mut self) -> Option<&mut Handle> {
         match self {
             Self::Burning { handle, .. } => Some(handle),
             Self::Verifying { handle, .. } => Some(handle),
             Self::Finished { .. } => None,
+        }
+    }
+
+    fn into_finished(self, now: Instant, error: Option<String>) -> ChildState {
+        match self {
+            ChildState::Burning { handle, write_hist } => ChildState::Finished {
+                finish_time: now,
+                error,
+                write_hist,
+                verify_hist: None,
+            },
+            ChildState::Verifying {
+                handle,
+                write_hist,
+                verify_hist,
+            } => ChildState::Finished {
+                finish_time: now,
+                error,
+                write_hist,
+                verify_hist: Some(verify_hist),
+            },
+            fin => fin,
         }
     }
 }

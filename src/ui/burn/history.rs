@@ -6,107 +6,96 @@ use tui::{
     style::{Color, Style},
     symbols,
     text::Span,
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType},
+    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
 };
 
 use crate::ui::utils::ByteSpeed;
 
-pub struct History {
-    max_bytes: ByteSize,
-    raw_write: Vec<(f64, ByteSize)>,
-    raw_verify: Vec<(f64, ByteSize)>,
-    write_speed_data: Vec<(f64, f64)>,
-    verify_speed_data: Vec<(f64, f64)>,
-    start: Instant,
+use super::display::ChildState;
+
+pub enum History<'a> {
+    Burning {
+        write: &'a ByteSeries,
+    },
+    Verifying {
+        write: &'a ByteSeries,
+        verify: &'a ByteSeries,
+    },
+    Finished {
+        write: &'a ByteSeries,
+        verify: Option<&'a ByteSeries>,
+        when: Instant,
+        error: bool,
+    },
 }
 
-impl History {
-    pub fn new(start: Instant, max_bytes: ByteSize) -> Self {
-        Self {
-            max_bytes,
-            raw_write: Vec::new(),
-            raw_verify: Vec::new(),
-            write_speed_data: vec![(0.0, 0.0)],
-            verify_speed_data: vec![(0.0, 0.0)],
-            start,
+impl<'a> From<&'a ChildState> for History<'a> {
+    fn from(value: &'a ChildState) -> Self {
+        match value {
+            ChildState::Burning { write_hist, .. } => Self::Burning { write: write_hist },
+            ChildState::Verifying {
+                write_hist,
+                verify_hist,
+                ..
+            } => Self::Verifying {
+                write: write_hist,
+                verify: verify_hist,
+            },
+            ChildState::Finished {
+                finish_time,
+                error,
+                write_hist,
+                verify_hist,
+            } => Self::Finished {
+                write: write_hist,
+                verify: verify_hist.as_ref(),
+                when: finish_time.clone(),
+                error: error.is_some(),
+            },
         }
     }
+}
 
-    pub fn push_writing(&mut self, time: Instant, bytes: u64) {
-        let secs = time.duration_since(self.start).as_secs_f64();
-        let (last_time, last_bw) = self.last_datapoint();
-        let dt = secs - last_time;
-        let diff = bytes - last_bw.0;
-        let speed = diff as f64 / dt;
+impl<'a> History<'a> {
+    pub fn make_progress(&self) -> Gauge {
+        let (bw, max, label, style) = match self {
+            History::Burning { write } => (
+                write.bytes_written(),
+                write.max_bytes(),
+                "Burning...",
+                Style::default().fg(Color::Yellow).bg(Color::Black),
+            ),
+            History::Verifying { write, verify } => (
+                verify.bytes_written(),
+                verify.max_bytes(),
+                "Verifying...",
+                Style::default().fg(Color::Blue).bg(Color::Yellow),
+            ),
+            History::Finished {
+                write,
+                verify,
+                error,
+                ..
+            } => (
+                write.bytes_written(),
+                write.max_bytes(),
+                if *error { "Error!" } else { "Done!" },
+                Style::default().fg(Color::Green).bg(Color::Black),
+            ),
+        };
 
-        self.raw_write.push((secs, ByteSize::b(bytes)));
-        self.write_speed_data.push((secs, speed));
+        Gauge::default()
+            .label(format!("{} {} / {}", label, bw, max))
+            .ratio((bw.0 as f64) / (max.0 as f64))
+            .gauge_style(style)
     }
 
-    pub fn push_verifying(&mut self, time: Instant, bytes: u64) {
-        let secs = time.duration_since(self.start).as_secs_f64();
-        let (last_time, last_bw) = self.last_datapoint();
-        let dt = secs - last_time;
-        let diff = bytes - last_bw.0;
-        let speed = diff as f64 / dt;
-
-        self.raw_write.push((secs, ByteSize::b(bytes)));
-        self.write_speed_data.push((secs, speed));
-    }
-
-    pub fn finished_at(&mut self, time: Instant) {
-        self.push_writing(time, self.max_bytes.0);
-    }
-
-    pub fn last_datapoint(&self) -> (f64, ByteSize) {
-        self.raw_write
-            .last()
-            .map(|x| x.clone())
-            .unwrap_or((0.0, ByteSize::b(0)))
-    }
-
-    pub fn bytes_written(&self) -> ByteSize {
-        self.last_datapoint().1
-    }
-
-    pub fn total_avg_speed(&self, final_time: Instant) -> ByteSpeed {
-        let s = self.bytes_written();
-        let dt = final_time.duration_since(self.start).as_secs_f64();
-        let speed = s.0 as f64 / dt;
-        ByteSpeed(if speed.is_nan() { 0.0 } else { speed })
-    }
-
-    pub fn estimated_time_left(&self, final_time: Instant) -> EstimatedTime {
-        let speed = self.total_avg_speed(final_time).0;
-        let bytes_left = self.max_bytes().0 - self.bytes_written().0;
-        let secs_left = bytes_left as f64 / speed;
-        EstimatedTime::from(secs_left)
-    }
-
-    pub fn last_speed_data(&self) -> (f64, f64) {
-        self.write_speed_data
-            .last()
-            .map(|x| x.clone())
-            .unwrap_or((0.0, 0.0))
-    }
-
-    pub fn last_speed(&self) -> ByteSpeed {
-        let (_, s) = self.last_speed_data();
-        ByteSpeed(s)
-    }
-
-    pub fn max_speed(&self) -> ByteSpeed {
-        ByteSpeed(
-            self.write_speed_data
-                .iter()
-                .map(|x| x.1)
-                .fold(0.0, f64::max),
-        )
-    }
-
-    pub fn make_speed_chart(&self, final_time: Instant) -> Chart {
-        let max_speed = self.max_speed();
-        let max_time = f64::max(final_time.duration_since(self.start).as_secs_f64(), 3.0);
+    pub fn make_speed_chart(&self, final_time: Instant) -> Chart<'_> {
+        let max_speed = self.write.max_speed();
+        let max_time = f64::max(
+            final_time.duration_since(self.write.start).as_secs_f64(),
+            3.0,
+        );
 
         let n_x_ticks = 5;
         let n_y_ticks = 4;
@@ -132,7 +121,7 @@ impl History {
             .marker(symbols::Marker::Braille)
             .style(Style::default().fg(Color::Green).bg(Color::Green))
             .graph_type(GraphType::Line)
-            .data(&self.write_speed_data);
+            .data(&self.write.speed_data);
 
         let chart = Chart::new(vec![bytes_written_dataset])
             .block(Block::default().title("Speed").borders(Borders::ALL))
@@ -150,10 +139,6 @@ impl History {
             );
 
         chart
-    }
-
-    pub fn max_bytes(&self) -> ByteSize {
-        self.max_bytes
     }
 }
 
@@ -178,5 +163,83 @@ impl Display for EstimatedTime {
             EstimatedTime::Known(x) => write!(f, "{x:.1}s"),
             EstimatedTime::Unknown => write!(f, "[unknown]"),
         }
+    }
+}
+
+pub struct ByteSeries {
+    max_bytes: ByteSize,
+    raw: Vec<(f64, ByteSize)>,
+    speed_data: Vec<(f64, f64)>,
+    start: Instant,
+}
+
+impl ByteSeries {
+    pub fn new(start: Instant, max_bytes: ByteSize) -> Self {
+        Self {
+            start,
+            max_bytes,
+            raw: vec![],
+            speed_data: vec![],
+        }
+    }
+
+    pub fn push(&mut self, time: Instant, bytes: u64) {
+        let secs = time.duration_since(self.start).as_secs_f64();
+        let (last_time, last_bw) = self.last_datapoint();
+        let dt = secs - last_time;
+        let diff = bytes - last_bw.0;
+        let speed = diff as f64 / dt;
+
+        self.raw.push((secs, ByteSize::b(bytes)));
+        self.speed_data.push((secs, speed));
+    }
+
+    pub fn finished_verifying_at(&mut self, time: Instant) {
+        self.push(time, self.max_bytes.0);
+    }
+
+    pub fn last_datapoint(&self) -> (f64, ByteSize) {
+        self.raw
+            .last()
+            .map(|x| x.clone())
+            .unwrap_or((0.0, ByteSize::b(0)))
+    }
+
+    pub fn bytes_written(&self) -> ByteSize {
+        self.last_datapoint().1
+    }
+
+    pub fn total_avg_speed(&self, final_time: Instant) -> ByteSpeed {
+        let s = self.bytes_written();
+        let dt = final_time.duration_since(self.start).as_secs_f64();
+        let speed = s.0 as f64 / dt;
+        ByteSpeed(if speed.is_nan() { 0.0 } else { speed })
+    }
+
+    pub fn estimated_time_left(&self, final_time: Instant) -> EstimatedTime {
+        let speed = self.total_avg_speed(final_time).0;
+        let bytes_left = self.max_bytes().0 - self.bytes_written().0;
+        let secs_left = bytes_left as f64 / speed;
+        EstimatedTime::from(secs_left)
+    }
+
+    pub fn last_speed_data(&self) -> (f64, f64) {
+        self.speed_data
+            .last()
+            .map(|x| x.clone())
+            .unwrap_or((0.0, 0.0))
+    }
+
+    pub fn last_speed(&self) -> ByteSpeed {
+        let (_, s) = self.last_speed_data();
+        ByteSpeed(s)
+    }
+
+    pub fn max_speed(&self) -> ByteSpeed {
+        ByteSpeed(self.speed_data.iter().map(|x| x.1).fold(0.0, f64::max))
+    }
+
+    pub fn max_bytes(&self) -> ByteSize {
+        self.max_bytes
     }
 }

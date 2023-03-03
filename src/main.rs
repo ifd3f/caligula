@@ -39,7 +39,7 @@ fn init_tracing_subscriber() {
     tracing_subscriber::fmt()
         .with_writer(Mutex::new(writer))
         .with_max_level(if is_parent {
-            Level::DEBUG
+            Level::TRACE
         } else {
             Level::TRACE
         })
