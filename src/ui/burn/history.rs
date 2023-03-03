@@ -2,16 +2,16 @@ use std::time::Instant;
 
 use bytesize::ByteSize;
 use tui::{
+    layout::Alignment,
     style::{Color, Style},
     symbols,
     text::Span,
-    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
+    widgets::{Axis, BarChart, Block, Borders, Chart, Dataset, Gauge, GraphType, Widget},
 };
 
 pub struct History {
     max_bytes: ByteSize,
     raw: Vec<(f64, ByteSize)>,
-    cum_data: Vec<(f64, f64)>,
     speed_data: Vec<(f64, f64)>,
     start: Instant,
 }
@@ -21,7 +21,6 @@ impl History {
         Self {
             max_bytes,
             raw: Vec::new(),
-            cum_data: Vec::new(),
             speed_data: vec![(0.0, 0.0)],
             start,
         }
@@ -35,7 +34,6 @@ impl History {
         let speed = diff as f64 / dt;
 
         self.raw.push((secs, ByteSize::b(bytes)));
-        self.cum_data.push((secs, bytes as f64));
         self.speed_data.push((secs, speed));
     }
 
@@ -58,22 +56,43 @@ impl History {
         self.speed_data.iter().map(|x| x.1).fold(0.0, f64::max)
     }
 
-    pub fn make_progress_bar(&self) -> Gauge {
+    pub fn make_progress_bar(&self, done: bool) -> impl Widget {
         let bw = self.bytes_written();
         let max = self.max_bytes();
 
         Gauge::default()
             .label(format!("{} / {}", bw, max))
-            .gauge_style(Style::default().fg(Color::Green))
+            .gauge_style(Style::default().fg(if done { Color::Green } else { Color::Yellow }))
             .ratio((bw.0 as f64) / (max.0 as f64))
     }
 
     pub fn make_speed_chart(&self) -> Chart {
+        let max_speed = self.max_speed();
+        let max_time = f64::max(self.latest_time_secs(), 3.0);
+
+        let n_x_ticks = 5;
+        let n_y_ticks = 4;
+
+        let x_ticks: Vec<_> = (0..=n_x_ticks)
+            .map(|i| {
+                let x = i as f64 * max_time / n_x_ticks as f64;
+                Span::from(format!("{x:.1}s"))
+            })
+            .collect();
+
+        let y_ticks: Vec<_> = (0..=n_y_ticks)
+            .map(|i| {
+                let y = i as f64 * max_speed / n_y_ticks as f64;
+                let bytes = ByteSize::b(y as u64);
+                Span::from(format!("{bytes}/s"))
+            })
+            .collect();
+
         let bytes_written_dataset = Dataset::default()
             .name("Bytes written")
             .graph_type(GraphType::Scatter)
-            .marker(symbols::Marker::Dot)
-            .style(Style::default().fg(Color::Yellow))
+            .marker(symbols::Marker::Braille)
+            .style(Style::default().fg(Color::Green))
             .graph_type(GraphType::Line)
             .data(&self.speed_data);
 
@@ -82,12 +101,15 @@ impl History {
             .x_axis(
                 Axis::default()
                     .title("Time")
-                    .bounds([0.0, f64::max(self.latest_time_secs(), 3.0)]),
+                    .bounds([0.0, max_time])
+                    .labels(x_ticks)
+                    .labels_alignment(Alignment::Right),
             )
             .y_axis(
                 Axis::default()
-                    .title("Bytes written")
-                    .bounds([0.0, self.max_speed()]),
+                    .bounds([0.0, max_speed])
+                    .labels(y_ticks)
+                    .labels_alignment(Alignment::Right),
             );
 
         chart

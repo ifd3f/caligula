@@ -137,7 +137,7 @@ where
     }
 
     fn draw(&mut self) -> anyhow::Result<()> {
-        let progress = self.history.make_progress_bar();
+        let progress = self.history.make_progress_bar(self.state.done());
         let chart = self.history.make_speed_chart();
 
         let info_table = Table::new(vec![
@@ -168,6 +168,14 @@ where
 enum State {
     Burning { handle: Handle },
     Complete,
+}
+impl State {
+    fn done(&self) -> bool {
+        match self {
+            State::Burning { .. } => false,
+            State::Complete => true,
+        }
+    }
 }
 
 struct ComputedLayout {
