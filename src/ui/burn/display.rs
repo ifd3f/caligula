@@ -4,8 +4,9 @@ use bytesize::ByteSize;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use futures::StreamExt;
 use tokio::{select, time};
-use tracing::{debug, trace};
+use tracing::debug;
 use tui::{
+    backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
     widgets::{Block, Borders, Cell, Row, Table},
@@ -13,105 +14,110 @@ use tui::{
 };
 
 use crate::{
-    burn::{self, ipc::StatusMessage, Handle},
+    burn::{self, ipc::StatusMessage},
     cli::Args,
     device::BurnTarget,
 };
 
 use super::history::History;
 
-pub struct BurningDisplay<'a, B>
-where
-    B: tui::backend::Backend,
-{
-    terminal: &'a mut Terminal<B>,
-    input_filename: String,
-    target_filename: String,
-    state: State,
-    history: History,
+pub async fn show<'a>(
+    handle: burn::Handle,
+    target: BurnTarget,
+    args: &'a Args,
+    terminal: &'a mut Terminal<impl tui::backend::Backend>,
+) -> anyhow::Result<()> {
+    let ui = UI::new(
+        ByteSize::b(handle.initial_info().input_file_bytes),
+        target,
+        args,
+    );
+    let ctx = Ctx {
+        handle,
+        terminal,
+        ui,
+        events: EventStream::new(),
+    };
+
+    ctx.run().await
 }
 
-impl<'a, B> BurningDisplay<'a, B>
+struct Ctx<'a, B>
 where
-    B: tui::backend::Backend,
+    B: Backend,
 {
-    pub fn new(
-        handle: burn::Handle,
-        target: BurnTarget,
-        args: &'a Args,
-        terminal: &'a mut Terminal<B>,
-    ) -> Self {
-        let max_bytes = ByteSize::b(handle.initial_info().input_file_bytes);
+    handle: burn::Handle,
+    terminal: &'a mut Terminal<B>,
+    events: EventStream,
+    ui: UI,
+}
+
+struct UI {
+    input_filename: String,
+    target_filename: String,
+    history: History,
+    state: State,
+}
+
+impl<'a, B> Ctx<'a, B>
+where
+    B: Backend,
+{
+    async fn run(mut self) -> anyhow::Result<()> {
+        loop {
+            let loop_result: anyhow::Result<()> = async {
+                if let State::Finished { .. } = self.ui.state {
+                    self.child_dead().await?;
+                } else {
+                    self.child_active().await?;
+                }
+                Ok(())
+            }
+            .await;
+
+            if let Err(e) = loop_result {
+                match e.downcast::<Quit>()? {
+                    Quit => return Ok(()),
+                }
+            }
+        }
+    }
+
+    async fn child_active(&mut self) -> anyhow::Result<()> {
+        let sleep = tokio::time::sleep(time::Duration::from_millis(250));
+        select! {
+            _ = sleep => {}
+            msg = self.handle.next_message() => {
+                self.ui.on_message(msg?);
+            }
+            event = self.events.next() => {
+                self.ui.on_term_event(event.unwrap()?)?;
+            }
+        };
+        self.ui.draw(self.terminal)?;
+        Ok(())
+    }
+
+    async fn child_dead(&mut self) -> anyhow::Result<()> {
+        let event = self.events.next().await;
+        self.ui.on_term_event(event.unwrap()?)?;
+        self.ui.draw(self.terminal)?;
+        Ok(())
+    }
+}
+
+impl UI {
+    fn new(max_bytes: ByteSize, target: BurnTarget, args: &Args) -> Self {
         let history = History::new(Instant::now(), max_bytes);
         Self {
-            state: State::Burning { handle },
             target_filename: target.devnode.to_string_lossy().to_string(),
             input_filename: args.input.to_string_lossy().to_string(),
-            terminal,
             history,
+            state: State::Burning,
         }
     }
 
-    pub async fn show(&mut self) -> anyhow::Result<()> {
-        let mut interval = time::interval(time::Duration::from_millis(250));
-        let mut events = EventStream::new();
-
-        loop {
-            let sleep = tokio::time::sleep(time::Duration::from_millis(250));
-
-            match &mut self.state {
-                State::Burning { handle } => select! {
-                    _ = interval.tick() => {
-                        trace!("Got interval tick");
-                    }
-                    event = events.next() => {
-                        debug!(event = format!("{event:?}"), "Got terminal event");
-                        if let Some(ev) = event {
-                            if self.handle_event(ev?) {
-                                return Ok(());
-                            }
-                        } else {
-                            return Ok(());
-                        }
-                    }
-                    msg = handle.next_message() => {
-                        debug!(msg = format!("{msg:?}"), "Got child process message");
-
-                        if let Some(m) = msg? {
-                            self.on_message(m)
-                        } else {
-                            let now = Instant::now();
-                            self.history.finished_at(now);
-                            self.state = State::Complete {
-                                finish_time: now,
-                                error: None
-                            };
-                        }
-                    }
-                },
-                State::Verifying { handle } => todo!(),
-                State::Complete { .. } => select! {
-                    _ = interval.tick() => {
-                        trace!("Got interval tick");
-                    }
-                    event = events.next() => {
-                        debug!(event = format!("{event:?}"), "Got terminal event");
-                        if let Some(ev) = event {
-                            if self.handle_event(ev?) {
-                                return Ok(());
-                            }
-                        } else {
-                            return Ok(());
-                        }
-                    }
-                },
-            }
-
-            self.draw()?;
-        }
-    }
-
-    fn handle_event(&mut self, ev: Event) -> bool {
+    fn on_term_event(&mut self, ev: Event) -> anyhow::Result<()> {
         match ev {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('c'),
@@ -120,15 +126,25 @@ where
                 ..
             }) => {
                 debug!("Got CTRL-C, quitting");
-                return true;
+                Err(Quit)?
             }
-            _ => {}
+            _ => Ok(()),
         }
-        return false;
     }
 
-    fn on_message(&mut self, msg: StatusMessage) {
+    fn on_message(&mut self, msg: Option<StatusMessage>) {
         let now = Instant::now();
+        let msg = match msg {
+            Some(m) => m,
+            None => {
+                self.history.finished_at(now);
+                self.state = State::Finished {
+                    finish_time: now,
+                    error: None,
+                };
+                return;
+            }
+        };
         match msg {
             StatusMessage::TotalBytes(b) => {
                 self.history.push(now, b as u64);
@@ -137,9 +153,9 @@ where
         }
     }
 
-    fn draw(&mut self) -> anyhow::Result<()> {
+    fn draw(&mut self, terminal: &mut Terminal<impl tui::backend::Backend>) -> anyhow::Result<()> {
         let final_time = match self.state {
-            State::Complete { finish_time, .. } => finish_time,
+            State::Finished { finish_time, .. } => finish_time,
             _ => Instant::now(),
         };
 
@@ -176,7 +192,7 @@ where
         .widths(&[Constraint::Length(16), Constraint::Percentage(100)])
         .block(Block::default().title("Stats").borders(Borders::ALL));
 
-        self.terminal.draw(|f| {
+        terminal.draw(|f| {
             let layout = ComputedLayout::from(f.size());
 
             f.render_widget(progress, layout.progress);
@@ -188,13 +204,9 @@ where
 }
 
 enum State {
-    Burning {
-        handle: Handle,
-    },
-    Verifying {
-        handle: Handle,
-    },
-    Complete {
+    Burning,
+    Verifying,
+    Finished {
         finish_time: Instant,
         error: Option<String>,
     },
@@ -203,9 +215,9 @@ enum State {
 impl State {
     fn bar_text(&self) -> &'static str {
         match self {
-            State::Burning { .. } => "Burning...",
-            State::Verifying { .. } => "Verifying...",
-            State::Complete { error, .. } => match error {
+            State::Burning => "Burning...",
+            State::Verifying => "Verifying...",
+            State::Finished { error, .. } => match error {
                 Some(_) => "Error!",
                 None => "Complete!",
             },
@@ -214,9 +226,9 @@ impl State {
 
     fn bar_style(&self) -> Style {
         match self {
-            State::Burning { .. } => Style::default().fg(Color::Yellow).bg(Color::Black),
-            State::Verifying { .. } => Style::default().fg(Color::Blue).bg(Color::Yellow),
-            State::Complete { error, .. } => match error {
+            State::Burning => Style::default().fg(Color::Yellow).bg(Color::Black),
+            State::Verifying => Style::default().fg(Color::Blue).bg(Color::Yellow),
+            State::Finished { error, .. } => match error {
                 Some(_) => Style::default().fg(Color::Red).bg(Color::Black),
                 None => Style::default().fg(Color::Green).bg(Color::Green),
             },
@@ -250,3 +262,7 @@ impl From<Rect> for ComputedLayout {
         }
     }
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("User sent quit signal")]
+struct Quit;

@@ -12,7 +12,7 @@ use device::BurnTarget;
 use inquire::Confirm;
 use tracing::{debug, Level};
 use tracing_unwrap::ResultExt;
-use ui::{burn::BurningDisplay, confirm_write, utils::TUICapture};
+use ui::{confirm_write, utils::TUICapture};
 
 pub mod burn;
 pub mod cli;
@@ -116,9 +116,7 @@ async fn begin_writing(
     let mut tui = TUICapture::new()?;
 
     // create app and run it
-    BurningDisplay::new(handle, target, args, &mut tui.terminal)
-        .show()
-        .await?;
+    ui::burn::show(handle, target, args, &mut tui.terminal).await?;
 
     debug!("Closing TUI");
 

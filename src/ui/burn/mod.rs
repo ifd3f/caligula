@@ -1,4 +1,4 @@
 mod display;
 mod history;
 
-pub use display::BurningDisplay;
+pub use display::show;

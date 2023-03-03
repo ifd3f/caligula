@@ -6,7 +6,7 @@ use tui::{
     style::{Color, Style},
     symbols,
     text::Span,
-    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType, Widget},
+    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
 };
 
 use crate::ui::utils::ByteSpeed;

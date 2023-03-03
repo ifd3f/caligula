@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.69"
+async-stream = "0.3.4"
 bytesize = "1.2.0"
 clap = { version = "4.1.8", features = ["derive", "cargo"] }
 crossterm = { version = "0.26.1", features = ["event-stream"] }
