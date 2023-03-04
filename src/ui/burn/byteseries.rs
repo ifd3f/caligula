@@ -1,4 +1,4 @@
-use std::{fmt::Display, time::Instant};
+use std::{fmt::Display, ops::Index, time::Instant};
 
 use bytesize::ByteSize;
 
@@ -40,8 +40,8 @@ impl ByteSeries {
         Self {
             start,
             max_bytes,
-            raw: vec![],
-            speed_data: vec![],
+            raw: vec![(0.0, ByteSize::b(0))],
+            speed_data: vec![(0.0, 0.0)],
         }
     }
 
@@ -111,5 +111,93 @@ impl ByteSeries {
 
     pub fn speed_data(&self) -> &[(f64, f64)] {
         self.speed_data.as_ref()
+    }
+
+    /// Returns the index of the sample right before the requested time.
+    fn find_idx_below(&self, t: f64) -> usize {
+        let mut min = 0;
+        if t <= self.raw[min].0 {
+            return min;
+        }
+
+        let mut max = self.raw.len() - 1;
+        if self.raw[max].0 <= t {
+            return max;
+        }
+
+        loop {
+            if min >= max - 1 {
+                return min;
+            }
+            let mid = (min + max) / 2;
+            let mid_val = self.raw[mid].0;
+            if t < mid_val {
+                max = mid;
+            } else {
+                min = mid;
+            }
+        }
+    }
+
+    /// Returns the interpolated number of bytes written at the given time.
+    pub fn interp_bytes(&self, t: f64) -> f64 {
+        if t < 0.0 {
+            return self.raw[0].1.as_u64() as f64;
+        }
+        let (last, last_val) = self.last_datapoint();
+        if t >= last {
+            return last_val.as_u64() as f64;
+        }
+
+        let i0 = self.find_idx_below(t);
+        let i1 = i0 + 1;
+        let (x0, y0) = self.raw[i0];
+        let (x1, y1) = self.raw[i1];
+
+        (y1.as_u64() - y0.as_u64()) as f64 * (t - x0) / (x1 - x0) + y0.as_u64() as f64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{Duration, Instant};
+
+    use approx::assert_relative_eq;
+    use bytesize::ByteSize;
+
+    use super::ByteSeries;
+    use test_case::test_case;
+
+    fn example_2s() -> ByteSeries {
+        let now = Instant::now();
+        let mut s = ByteSeries::new(now, ByteSize::b(100));
+        s.push(now.checked_add(Duration::from_secs_f64(0.1)).unwrap(), 10);
+        s.push(now.checked_add(Duration::from_secs_f64(0.2)).unwrap(), 20);
+        s.push(now.checked_add(Duration::from_secs_f64(0.5)).unwrap(), 30);
+        s.push(now.checked_add(Duration::from_secs_f64(1.0)).unwrap(), 40);
+        s.push(now.checked_add(Duration::from_secs_f64(1.5)).unwrap(), 80);
+        s.push(now.checked_add(Duration::from_secs_f64(2.0)).unwrap(), 100);
+        s
+    }
+
+    #[test_case(0.0 => is eq 0; "zero")]
+    #[test_case(-10.0 => is eq 0; "negative")]
+    #[test_case(0.4 => is eq 2; "between")]
+    #[test_case(0.5 => is eq 3; "exact")]
+    #[test_case(2.0 => is eq 6; "exactly last")]
+    #[test_case(3.0 => is eq 6; "over")]
+    fn find_idx_below(t: f64) -> usize {
+        example_2s().find_idx_below(t)
+    }
+
+    #[test_case(0.0, 0.0; "zero")]
+    #[test_case(-10.0, 0.0; "negative")]
+    #[test_case(0.75, 35.0; "between")]
+    #[test_case(0.5, 30.0; "exact")]
+    #[test_case(2.0, 100.0; "exactly last")]
+    #[test_case(3.0, 100.0; "over")]
+    fn interp_bytes(t: f64, expected: f64) {
+        let actual = example_2s().interp_bytes(t);
+        assert_relative_eq!(actual, expected);
     }
 }

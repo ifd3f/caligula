@@ -30,3 +30,7 @@ tracing-unwrap = "0.10.0"
 tui = "0.19.0"
 udev = "0.7.0"
 valuable = { version = "0.1.0", features = ["derive"] }
+
+[dev-dependencies]
+approx = "0.5.1"
+test-case = "3.0.0"

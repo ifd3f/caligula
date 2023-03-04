@@ -128,7 +128,7 @@ fn for_each_block(
 
     let mut written_bytes: usize = 0;
 
-    let checkpoint_blocks: usize = 128;
+    let checkpoint_blocks: usize = 32;
 
     loop {
         for _ in 0..checkpoint_blocks {

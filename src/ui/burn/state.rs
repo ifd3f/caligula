@@ -3,7 +3,6 @@ use std::time::Instant;
 use bytesize::ByteSize;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::{debug, info, trace};
-use tui::widgets::{Gauge, Table};
 
 use crate::{
     burn::{ipc::StatusMessage, Handle},
