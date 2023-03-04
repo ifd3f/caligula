@@ -144,7 +144,7 @@ pub fn draw(
         _ => Instant::now(),
     };
 
-    let info_table = Table::new(vec![
+    let rows = vec![
         Row::new([
             Cell::from("Input"),
             Cell::from(state.input_filename.as_str()),
@@ -154,21 +154,19 @@ pub fn draw(
             Cell::from(state.target_filename.as_str()),
         ]),
         Row::new([
-            Cell::from("Total Speed"),
-            Cell::from(format!("{}", wdata.total_avg_speed(final_time))),
+            Cell::from("Avg. Write"),
+            Cell::from(format!("{}", wdata.total_avg_speed())),
         ]),
         Row::new([
-            Cell::from("Current Speed"),
-            Cell::from(format!("{}", wdata.last_speed())),
+            Cell::from("ETA Write"),
+            Cell::from(format!("{}", wdata.estimated_time_left())),
         ]),
-        Row::new([
-            Cell::from("ETA"),
-            Cell::from(format!("{}", wdata.estimated_time_left(final_time))),
-        ]),
-    ])
-    .style(Style::default())
-    .widths(&[Constraint::Length(16), Constraint::Percentage(100)])
-    .block(Block::default().title("Stats").borders(Borders::ALL));
+    ];
+
+    let info_table = Table::new(rows)
+        .style(Style::default())
+        .widths(&[Constraint::Length(16), Constraint::Percentage(100)])
+        .block(Block::default().title("Stats").borders(Borders::ALL));
 
     terminal.draw(|f| {
         let layout = ComputedLayout::from(f.size());

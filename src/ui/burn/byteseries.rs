@@ -12,7 +12,6 @@ pub enum EstimatedTime {
 pub struct ByteSeries {
     max_bytes: ByteSize,
     raw: Vec<(f64, u64)>,
-    speed_data: Vec<(f64, f64)>,
     start: Instant,
 }
 
@@ -41,19 +40,12 @@ impl ByteSeries {
             start,
             max_bytes,
             raw: vec![(0.0, 0)],
-            speed_data: vec![(0.0, 0.0)],
         }
     }
 
     pub fn push(&mut self, time: Instant, bytes: u64) {
         let secs = time.duration_since(self.start).as_secs_f64();
-        let (last_time, last_bw) = self.last_datapoint();
-        let dt = secs - last_time;
-        let diff = bytes - last_bw.0;
-        let speed = diff as f64 / dt;
-
         self.raw.push((secs, bytes));
-        self.speed_data.push((secs, speed));
     }
 
     pub fn finished_verifying_at(&mut self, time: Instant) {
@@ -71,34 +63,17 @@ impl ByteSeries {
         self.last_datapoint().1
     }
 
-    pub fn total_avg_speed(&self, final_time: Instant) -> ByteSpeed {
+    pub fn total_avg_speed(&self) -> ByteSpeed {
         let s = self.bytes_written();
-        let dt = final_time.duration_since(self.start).as_secs_f64();
-        let speed = s.0 as f64 / dt;
+        let speed = s.0 as f64 / self.last_datapoint().0;
         ByteSpeed(if speed.is_nan() { 0.0 } else { speed })
     }
 
-    pub fn estimated_time_left(&self, final_time: Instant) -> EstimatedTime {
-        let speed = self.total_avg_speed(final_time).0;
+    pub fn estimated_time_left(&self) -> EstimatedTime {
+        let speed = self.total_avg_speed().0;
         let bytes_left = self.max_bytes().0 - self.bytes_written().0;
         let secs_left = bytes_left as f64 / speed;
         EstimatedTime::from(secs_left)
-    }
-
-    pub fn last_speed_data(&self) -> (f64, f64) {
-        self.speed_data
-            .last()
-            .map(|x| x.clone())
-            .unwrap_or((0.0, 0.0))
-    }
-
-    pub fn last_speed(&self) -> ByteSpeed {
-        let (_, s) = self.last_speed_data();
-        ByteSpeed(s)
-    }
-
-    pub fn max_speed(&self) -> ByteSpeed {
-        ByteSpeed(self.speed_data.iter().map(|x| x.1).fold(0.0, f64::max))
     }
 
     pub fn max_bytes(&self) -> ByteSize {
@@ -109,8 +84,19 @@ impl ByteSeries {
         self.start
     }
 
-    pub fn speed_data(&self) -> &[(f64, f64)] {
-        self.speed_data.as_ref()
+    pub fn speed(&self, t: f64, window: f64) -> f64 {
+        let b0 = self.interp_bytes(t - window);
+        let b1 = self.interp_bytes(t);
+
+        (b1 - b0) / window
+    }
+
+    pub fn speeds(&self, window: f64) -> impl Iterator<Item = (f64, f64)> + '_ {
+        let bins = (self.last_datapoint().0 / window).ceil() as usize;
+        (0..bins).map(move |i| {
+            let t = i as f64 * window;
+            (t, self.speed(t, window))
+        })
     }
 
     /// Returns the index of the sample right before the requested time.

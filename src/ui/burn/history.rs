@@ -8,7 +8,7 @@ use tui::{
     symbols,
     text::Span,
     widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
-    Frame
+    Frame,
 };
 
 use super::{byteseries::ByteSeries, state::ChildState};
@@ -110,9 +110,27 @@ impl<'a> History<'a> {
         final_time: Instant,
     ) {
         let wdata = self.write_data();
-
-        let max_speed = wdata.max_speed();
         let max_time = f64::max(final_time.duration_since(wdata.start()).as_secs_f64(), 3.0);
+        let window = max_time / frame.size().width as f64;
+
+        let wspeeds: Vec<(f64, f64)> = wdata.speeds(window).collect();
+        let vspeeds: Option<Vec<(f64, f64)>> = self.verify_data().map(|vdata| {
+            vdata
+                .speeds(window)
+                .into_iter()
+                .map(|(x, y)| (x + wdata.last_datapoint().0, y))
+                .collect()
+        });
+
+        let max_speed = if let Some(vs) = &vspeeds {
+            wspeeds
+                .iter()
+                .chain(vs.iter())
+                .map(|x| x.1)
+                .fold(0.0, f64::max)
+        } else {
+            wspeeds.iter().map(|x| x.1).fold(0.0, f64::max)
+        };
 
         let n_x_ticks = 5;
         let n_y_ticks = 4;
@@ -126,7 +144,7 @@ impl<'a> History<'a> {
 
         let y_ticks: Vec<_> = (0..=n_y_ticks)
             .map(|i| {
-                let y = i as f64 * max_speed.0 / n_y_ticks as f64;
+                let y = i as f64 * max_speed / n_y_ticks as f64;
                 let bytes = ByteSize::b(y as u64);
                 Span::from(format!("{bytes}/s"))
             })
@@ -138,17 +156,9 @@ impl<'a> History<'a> {
             .marker(symbols::Marker::Braille)
             .style(Style::default().fg(Color::Green))
             .graph_type(GraphType::Line)
-            .data(&wdata.speed_data())];
+            .data(&wspeeds)];
 
-        let offset_verify_data: Option<Vec<(f64, f64)>> = self.verify_data().map(|vdata| {
-            vdata
-                .speed_data()
-                .into_iter()
-                .map(|(x, y)| (*x + wdata.last_datapoint().0, *y))
-                .collect()
-        });
-
-        if let Some(vdata) = &offset_verify_data {
+        if let Some(vdata) = &vspeeds {
             datasets.push(
                 Dataset::default()
                     .name("Verify")
@@ -170,7 +180,7 @@ impl<'a> History<'a> {
             )
             .y_axis(
                 Axis::default()
-                    .bounds([0.0, max_speed.0])
+                    .bounds([0.0, max_speed])
                     .labels(y_ticks)
                     .labels_alignment(Alignment::Right),
             );
