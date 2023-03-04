@@ -1,4 +1,4 @@
-use std::{fs::File, sync::Mutex, process::exit};
+use std::{fs::File, sync::Mutex};
 
 use crate::ui::ask_outfile;
 use burn::{

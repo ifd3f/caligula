@@ -5,7 +5,7 @@ use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
 
 use crate::{
-    cli::{Args, BurnArgs},
+    cli::BurnArgs,
     device::{BurnTarget, Removable},
 };
 

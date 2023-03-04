@@ -73,7 +73,7 @@ impl<'a> History<'a> {
         }
     }
 
-    pub fn draw_progress(&self, frame: &mut Frame<impl Backend>, area: Rect, final_time: Instant) {
+    pub fn draw_progress(&self, frame: &mut Frame<impl Backend>, area: Rect) {
         let (bw, max, label, style) = match self {
             History::Burning { write } => (
                 write.bytes_written(),

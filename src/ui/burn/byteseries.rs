@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::Index, time::Instant};
+use std::{fmt::Display, time::Instant};
 
 use bytesize::ByteSize;
 

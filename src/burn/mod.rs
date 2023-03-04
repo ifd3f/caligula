@@ -1,7 +1,6 @@
 ///! This module has logic for the child process.
 ///! IT IS NOT TO BE USED DIRECTLY BY THE USER!
 ///! ITS UI IS COMPLETELY UNSTABLE!
-
 pub mod child;
 pub mod handle;
 pub mod ipc;

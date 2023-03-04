@@ -39,7 +39,8 @@ pub fn main() {
             Ok(_) => TerminateResult::Success,
             Err(r) => r,
         };
-        ctx.send_msg(StatusMessage::Terminate(result)).unwrap_or_log();
+        ctx.send_msg(StatusMessage::Terminate(result))
+            .unwrap_or_log();
     }
 }
 

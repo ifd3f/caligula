@@ -1,7 +1,7 @@
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use bytesize::ByteSize;
-use crossterm::event::{Event, EventStream, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::EventStream;
 use futures::StreamExt;
 use tokio::{select, time};
 use tui::{
@@ -13,8 +13,8 @@ use tui::{
 };
 
 use crate::{
-    burn::{self, ipc::StatusMessage, Handle},
-    cli::{Args, BurnArgs},
+    burn::{self, Handle},
+    cli::BurnArgs,
     device::BurnTarget,
     ui::burn::state::UIEvent,
 };
@@ -198,7 +198,7 @@ pub fn draw(
     terminal.draw(|f| {
         let layout = ComputedLayout::from(f.size());
 
-        history.draw_progress(f, layout.progress, final_time);
+        history.draw_progress(f, layout.progress);
         history.draw_speed_chart(f, layout.graph, final_time);
         f.render_widget(info_table, layout.args_display);
     })?;

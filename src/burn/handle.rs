@@ -2,7 +2,6 @@ use interprocess::local_socket::tokio::LocalSocketListener;
 use interprocess::local_socket::tokio::LocalSocketStream;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
-use tracing_unwrap::ResultExt;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::{env, pin::Pin};
@@ -12,6 +11,7 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use tracing::debug;
 use tracing::trace;
+use tracing_unwrap::ResultExt;
 use valuable::Valuable;
 
 use tokio::{
