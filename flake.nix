@@ -20,11 +20,14 @@
           extensions = [ "rust-src" "rust-analyzer" ];
         };
       in {
-        packages.default = naersk-lib.buildPackage ./.;
+        packages.default = with pkgs;
+          naersk-lib.buildPackage {
+            src = ./.;
+            doCheck = true;
+            buildInputs = [ pkg-config udev ];
+          };
 
         devShell = with pkgs;
-          mkShell {
-            buildInputs = [ openssl pkg-config rust-toolchain-dev udev ];
-          };
+          mkShell { buildInputs = [ pkg-config rust-toolchain-dev udev ]; };
       });
 }
