@@ -1,5 +1,3 @@
-use std::{fs::File, sync::Mutex};
-
 use crate::ui::ask_outfile;
 use burn::{
     child::is_in_burn_mode,
@@ -10,7 +8,7 @@ use clap::Parser;
 use cli::{Args, BurnArgs, Command};
 use device::BurnTarget;
 use inquire::Confirm;
-use tracing::{debug, Level};
+use tracing::debug;
 use tracing_unwrap::ResultExt;
 use ui::{confirm_write, utils::TUICapture};
 
@@ -31,7 +29,14 @@ fn main() {
     }
 }
 
+#[cfg(not(debug_assertions))]
+fn init_tracing_subscriber() {}
+
+#[cfg(debug_assertions)]
 fn init_tracing_subscriber() {
+    use std::{fs::File, sync::Mutex};
+    use tracing::Level;
+
     let is_parent = !is_in_burn_mode();
 
     let writer = File::create(if is_parent { "dev.log" } else { "child.log" }).unwrap_or_log();

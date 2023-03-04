@@ -7,7 +7,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.69"
-async-stream = "0.3.4"
 bytesize = "1.2.0"
 clap = { version = "4.1.8", features = ["derive", "cargo"] }
 crossterm = { version = "0.26.1", features = ["event-stream"] }
@@ -19,12 +18,10 @@ is-terminal = "0.4.4"
 rand = "0.8.5"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
-tee_readwrite = "0.1.0"
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["compat"] }
-toml = "0.7.2"
-tracing = { version = "0.1.37", features = ["valuable", "async-await", "log"] }
+tracing = { version = "0.1.37", features = ["async-await", "log", "release_max_level_off", "valuable"] }
 tracing-subscriber = "0.3.16"
 tracing-unwrap = "0.10.0"
 tui = "0.19.0"
