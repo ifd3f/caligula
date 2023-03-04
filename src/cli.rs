@@ -21,12 +21,12 @@ pub enum Command {
 #[command(author, version, about, long_about = None)]
 pub struct BurnArgs {
     /// Input file to burn.
-    #[arg()]
+    #[arg(value_parser = parse_path_exists)]
     pub input: PathBuf,
 
     /// Where to write the output. If not supplied, we will search for possible
     /// disks and ask you for where you want to burn.
-    #[arg(short)]
+    #[arg(short, value_parser = parse_path_exists)]
     pub out: Option<PathBuf>,
 
     /// If supplied, we will not ask for confirmation before destroying your disk.
@@ -39,27 +39,10 @@ pub struct BurnArgs {
     pub show_all_disks: bool,
 }
 
-/*
-#[derive(
-    Debug,
-    Default,
-    Copy,
-    Clone,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    ValueEnum,
-    Deserialize,
-    Serialize,
-    Valuable,
-)]
-pub enum BurnMode {
-    /// Normal mode.
-    #[default]
-    Normal,
-
-    /// Treat the input as a Windows ISO.
-    Win,
+fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(p);
+    if !path.exists() {
+        return Err(format!("path does not exist"));
+    }
+    Ok(path)
 }
-*/
