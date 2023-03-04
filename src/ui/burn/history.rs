@@ -79,7 +79,7 @@ impl<'a> History<'a> {
                 write.bytes_written(),
                 write.max_bytes(),
                 "Burning...",
-                Style::default().fg(Color::Yellow).bg(Color::Black),
+                Style::default().fg(Color::Yellow),
             ),
             History::Verifying { verify, .. } => (
                 verify.bytes_written(),
@@ -132,8 +132,8 @@ impl<'a> History<'a> {
             wspeeds.iter().map(|x| x.1).fold(0.0, f64::max)
         };
 
-        let n_x_ticks = 5;
-        let n_y_ticks = 4;
+        let n_x_ticks = (frame.size().width / 16).min(9);
+        let n_y_ticks = (frame.size().height / 4).min(5);
 
         let x_ticks: Vec<_> = (0..=n_x_ticks)
             .map(|i| {
@@ -154,7 +154,7 @@ impl<'a> History<'a> {
             .name("Write")
             .graph_type(GraphType::Scatter)
             .marker(symbols::Marker::Braille)
-            .style(Style::default().fg(Color::Green))
+            .style(Style::default().fg(Color::Yellow))
             .graph_type(GraphType::Line)
             .data(&wspeeds)];
 

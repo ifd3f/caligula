@@ -144,7 +144,7 @@ pub fn draw(
         _ => Instant::now(),
     };
 
-    let rows = vec![
+    let mut rows = vec![
         Row::new([
             Cell::from("Input"),
             Cell::from(state.input_filename.as_str()),
@@ -157,11 +157,38 @@ pub fn draw(
             Cell::from("Avg. Write"),
             Cell::from(format!("{}", wdata.total_avg_speed())),
         ]),
-        Row::new([
-            Cell::from("ETA Write"),
-            Cell::from(format!("{}", wdata.estimated_time_left())),
-        ]),
     ];
+
+    match &state.child {
+        ChildState::Burning { .. } => {
+            rows.push(Row::new([
+                Cell::from("ETA Write"),
+                Cell::from(format!("{}", wdata.estimated_time_left())),
+            ]));
+        }
+        ChildState::Verifying {
+            verify_hist: vdata, ..
+        } => {
+            rows.push(Row::new([
+                Cell::from("Avg. Verify"),
+                Cell::from(format!("{}", vdata.total_avg_speed())),
+            ]));
+            rows.push(Row::new([
+                Cell::from("ETA verify"),
+                Cell::from(format!("{}", vdata.estimated_time_left())),
+            ]));
+        }
+        ChildState::Finished {
+            verify_hist: vdata, ..
+        } => {
+            if let Some(vdata) = vdata {
+                rows.push(Row::new([
+                    Cell::from("Avg. Verify"),
+                    Cell::from(format!("{}", vdata.total_avg_speed())),
+                ]));
+            }
+        }
+    }
 
     let info_table = Table::new(rows)
         .style(Style::default())
