@@ -1,4 +1,4 @@
-use std::{fs::File, sync::Mutex};
+use std::{fs::File, sync::Mutex, process::exit};
 
 use crate::ui::ask_outfile;
 use burn::{
@@ -7,7 +7,7 @@ use burn::{
     ipc::{BurnConfig, TerminateResult},
 };
 use clap::Parser;
-use cli::Args;
+use cli::{Args, BurnArgs, Command};
 use device::BurnTarget;
 use inquire::Confirm;
 use tracing::{debug, Level};
@@ -49,6 +49,9 @@ fn init_tracing_subscriber() {
 #[tokio::main]
 async fn cli_main() -> anyhow::Result<()> {
     let args = Args::parse();
+    let args = match args.command {
+        Command::Burn(a) => a,
+    };
 
     let target = match &args.out {
         Some(f) => {
@@ -65,7 +68,6 @@ async fn cli_main() -> anyhow::Result<()> {
     let burn_args = BurnConfig {
         dest: target.devnode.clone(),
         src: args.input.to_owned(),
-        mode: cli::BurnMode::Normal,
         verify: true,
     };
 
@@ -110,7 +112,7 @@ async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
 async fn begin_writing(
     target: BurnTarget,
     handle: burn::Handle,
-    args: &Args,
+    args: &BurnArgs,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
     let mut tui = TUICapture::new()?;

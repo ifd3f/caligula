@@ -14,7 +14,7 @@ use tui::{
 
 use crate::{
     burn::{self, ipc::StatusMessage, Handle},
-    cli::Args,
+    cli::{Args, BurnArgs},
     device::BurnTarget,
     ui::burn::state::UIEvent,
 };
@@ -42,7 +42,7 @@ where
         handle: burn::Handle,
         terminal: &'a mut Terminal<B>,
         target: BurnTarget,
-        args: &'a Args,
+        args: &'a BurnArgs,
     ) -> Self {
         let max_bytes = ByteSize::b(handle.initial_info().input_file_bytes);
         Self {

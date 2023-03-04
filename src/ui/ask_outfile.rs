@@ -5,11 +5,11 @@ use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
 
 use crate::{
-    cli::Args,
+    cli::{Args, BurnArgs},
     device::{BurnTarget, Removable},
 };
 
-pub fn ask_outfile(args: &Args) -> anyhow::Result<BurnTarget> {
+pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
     let mut show_all_disks = args.show_all_disks;
 
     loop {
@@ -44,7 +44,7 @@ pub fn ask_outfile(args: &Args) -> anyhow::Result<BurnTarget> {
     }
 }
 
-pub fn confirm_write(args: &Args, device: &BurnTarget) -> Result<bool, InquireError> {
+pub fn confirm_write(args: &BurnArgs, device: &BurnTarget) -> Result<bool, InquireError> {
     if args.force {
         debug!("Skipping confirm because of --force");
         Ok(true)

@@ -2,14 +2,12 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::cli::BurnMode;
 use valuable::Valuable;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub struct BurnConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
-    pub mode: BurnMode,
     pub verify: bool,
 }
 
