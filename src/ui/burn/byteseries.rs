@@ -11,7 +11,7 @@ pub enum EstimatedTime {
 
 pub struct ByteSeries {
     max_bytes: ByteSize,
-    raw: Vec<(f64, ByteSize)>,
+    raw: Vec<(f64, u64)>,
     speed_data: Vec<(f64, f64)>,
     start: Instant,
 }
@@ -40,7 +40,7 @@ impl ByteSeries {
         Self {
             start,
             max_bytes,
-            raw: vec![(0.0, ByteSize::b(0))],
+            raw: vec![(0.0, 0)],
             speed_data: vec![(0.0, 0.0)],
         }
     }
@@ -52,7 +52,7 @@ impl ByteSeries {
         let diff = bytes - last_bw.0;
         let speed = diff as f64 / dt;
 
-        self.raw.push((secs, ByteSize::b(bytes)));
+        self.raw.push((secs, bytes));
         self.speed_data.push((secs, speed));
     }
 
@@ -63,7 +63,7 @@ impl ByteSeries {
     pub fn last_datapoint(&self) -> (f64, ByteSize) {
         self.raw
             .last()
-            .map(|x| x.clone())
+            .map(|(x, y)| (*x, ByteSize::b(*y)))
             .unwrap_or((0.0, ByteSize::b(0)))
     }
 
@@ -142,7 +142,7 @@ impl ByteSeries {
     /// Returns the interpolated number of bytes written at the given time.
     pub fn interp_bytes(&self, t: f64) -> f64 {
         if t < 0.0 {
-            return self.raw[0].1.as_u64() as f64;
+            return self.raw[0].1 as f64;
         }
         let (last, last_val) = self.last_datapoint();
         if t >= last {
@@ -154,7 +154,7 @@ impl ByteSeries {
         let (x0, y0) = self.raw[i0];
         let (x1, y1) = self.raw[i1];
 
-        (y1.as_u64() - y0.as_u64()) as f64 * (t - x0) / (x1 - x0) + y0.as_u64() as f64
+        (y1 as f64 - y0 as f64) * (t - x0) / (x1 - x0) + y0 as f64
     }
 }
 
