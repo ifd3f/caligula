@@ -14,8 +14,10 @@
           overlays = [ rust-overlay.overlays.default ];
         };
         naersk-lib = pkgs.callPackage naersk { };
-        rust-toolchain =
-          pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default);
+        rust-toolchain = (pkgs.rust-bin.selectLatestNightlyWith
+          (toolchain: toolchain.default)).override {
+            targets = [ "x86_64-unknown-linux-musl" ];
+          };
         rust-toolchain-dev = rust-toolchain.override {
           extensions = [ "rust-src" "rust-analyzer" ];
         };
@@ -24,10 +26,10 @@
           naersk-lib.buildPackage {
             src = ./.;
             doCheck = true;
-            buildInputs = [ pkg-config udev ];
+            buildInputs = [ ];
           };
 
         devShell = with pkgs;
-          mkShell { buildInputs = [ pkg-config rust-toolchain-dev udev ]; };
+          mkShell { buildInputs = [ rust-toolchain-dev ]; };
       });
 }

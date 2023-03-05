@@ -1,4 +1,7 @@
-use std::{fmt, fs::File};
+use std::{
+    fmt,
+    fs::{read_dir, File},
+};
 
 use bytesize::ByteSize;
 use inquire::{Confirm, InquireError, Select};
@@ -101,11 +104,11 @@ impl fmt::Display for ListOption {
 }
 
 fn enumerate_options(show_all_disks: bool) -> anyhow::Result<Vec<ListOption>> {
-    let mut enumerator = udev::Enumerator::new()?;
-    let devices = enumerator.scan_devices()?;
+    let paths = read_dir("/sys/class/block").unwrap();
 
-    let burn_targets = devices
-        .filter_map(|d| BurnTarget::try_from(d).ok())
+    let burn_targets = paths
+        .filter_map(|r| r.ok())
+        .filter_map(|d| BurnTarget::try_from(d.path().as_ref()).ok())
         .filter(|d| show_all_disks || d.removable == Removable::Yes)
         .map(ListOption::Device);
 

@@ -1,13 +1,12 @@
 use std::{
     ffi::OsStr,
     fmt::Display,
+    fs::read_to_string,
     io,
-    num::ParseIntError,
     path::{Path, PathBuf},
 };
 
 use bytesize::ByteSize;
-use udev::Device;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BurnTarget {
@@ -16,6 +15,52 @@ pub struct BurnTarget {
     pub model: Model,
     pub removable: Removable,
     pub target_type: Type,
+}
+
+impl BurnTarget {
+    fn from_dev_name(name: &OsStr) -> Result<Self, DeviceParseError> {
+        let devnode = PathBuf::from("/dev").join(name);
+        if !devnode.exists() {
+            return Err(DeviceParseError::NotFound);
+        }
+
+        let sysnode = PathBuf::from("/sys/class/block").join(name);
+
+        let removable = match read_sys_file(sysnode.join("removable"))?
+            .as_ref()
+            .map(String::as_ref)
+        {
+            Some("0") => Removable::No,
+            Some("1") => Removable::Yes,
+            _ => Removable::Unknown,
+        };
+
+        let size = TargetSize(
+            read_sys_file(sysnode.join("size"))?
+                .and_then(|s| s.parse::<u64>().ok().map(|n| ByteSize::b(n * 512))),
+        );
+
+        let model =
+            Model(read_sys_file(sysnode.join("device/model"))?.map(|m| m.trim().to_owned()));
+
+        Ok(Self {
+            devnode,
+            size,
+            removable,
+            model,
+            target_type: Type::Block,
+        })
+    }
+
+    fn from_normal_file(path: PathBuf) -> Result<Self, DeviceParseError> {
+        Ok(BurnTarget {
+            devnode: path,
+            size: TargetSize(None),
+            model: Model(None),
+            removable: Removable::Unknown,
+            target_type: Type::File,
+        })
+    }
 }
 
 impl PartialOrd for BurnTarget {
@@ -28,77 +73,22 @@ impl TryFrom<&Path> for BurnTarget {
     type Error = DeviceParseError;
 
     fn try_from(value: &Path) -> Result<Self, Self::Error> {
-        let mut enumerator = udev::Enumerator::new()?;
-        let devices = enumerator.scan_devices()?;
-
-        let udev = devices.filter(|d| d.devnode() == Some(value)).next();
-        if let Some(udev) = udev {
-            return BurnTarget::try_from(udev);
+        if value.starts_with("/sys/class/block") || value.starts_with("/dev") {
+            if let Some(n) = value.file_name() {
+                return Ok(Self::from_dev_name(n)?);
+            }
         }
-
-        Ok(BurnTarget {
-            devnode: value.to_owned(),
-            size: TargetSize(None),
-            model: Model(None),
-            removable: Removable::Unknown,
-            target_type: Type::File,
-        })
-    }
-}
-
-impl TryFrom<Device> for BurnTarget {
-    type Error = DeviceParseError;
-
-    fn try_from(value: Device) -> Result<Self, Self::Error> {
-        if value.subsystem() != Some(OsStr::new("block")) {
-            return Err(DeviceParseError::NotABlockDevice);
-        }
-
-        let size = TargetSize(if let Some(size) = value.attribute_value("size") {
-            let chunks = size.to_string_lossy().parse::<u64>()?;
-            Some(ByteSize::b(chunks * 512))
-        } else {
-            None
-        });
-
-        let removable = Removable::from(
-            value
-                .attribute_value("removable")
-                .map(|b| b != OsStr::new("0")),
-        );
-
-        let devnode = value
-            .devnode()
-            .ok_or(DeviceParseError::NoDevNode)?
-            .to_owned();
-
-        let model = Model(
-            value
-                .attribute_value("device/model")
-                .map(|v| v.to_string_lossy().trim().to_owned()),
-        );
-
-        Ok(Self {
-            model,
-            removable,
-            devnode,
-            size,
-            target_type: Type::Block,
-        })
+        Ok(Self::from_normal_file(value.to_owned())?)
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum DeviceParseError {
-    #[error("Not a block device")]
-    NotABlockDevice,
-    #[error("Could not find path node")]
-    NoDevNode,
-    #[error("Could not parse size")]
-    UnknownSize(#[from] ParseIntError),
-    #[error("Udev error:")]
-    Udev(#[from] io::Error),
+    #[error("Could not find file")]
+    NotFound,
+    #[error("IO error:")]
+    IO(#[from] io::Error),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -172,5 +162,19 @@ impl Display for Type {
                 Type::Block => "block",
             }
         )
+    }
+}
+
+fn read_sys_file(p: impl AsRef<Path>) -> Result<Option<String>, std::io::Error> {
+    into_none_if_not_exists(read_to_string(p).map(|s| s.trim().to_owned()))
+}
+
+fn into_none_if_not_exists<T>(r: Result<T, std::io::Error>) -> Result<Option<T>, std::io::Error> {
+    match r {
+        Ok(x) => Ok(Some(x)),
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::NotFound => Ok(None),
+            _ => Err(e),
+        },
     }
 }
