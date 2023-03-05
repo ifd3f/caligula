@@ -1,5 +1,6 @@
 use interprocess::local_socket::tokio::LocalSocketListener;
 use interprocess::local_socket::tokio::LocalSocketStream;
+use process_path::get_executable_path;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
 use std::fs::remove_file;
@@ -15,7 +16,6 @@ use tracing_unwrap::ResultExt;
 use valuable::Valuable;
 
 use tokio::{
-    fs,
     io::{AsyncBufRead, AsyncWrite},
     process::{Child, Command},
 };
@@ -37,7 +37,7 @@ pub struct Handle {
 impl Handle {
     pub async fn start(args: &BurnConfig, escalate: bool) -> anyhow::Result<Self> {
         // Get path to this process
-        let proc = fs::read_link("/proc/self/exe").await?;
+        let proc = get_executable_path().unwrap();
 
         debug!(
             proc = proc.to_string_lossy().to_string(),
