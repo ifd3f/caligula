@@ -23,22 +23,52 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
     use std::{ffi::CStr, os::unix::prelude::OsStrExt};
 
-    use libc::{free, c_void, strlen};
+    use libc::{c_void, free};
 
     use crate::native::enumerate_disks;
 
+    let mut out = Vec::new();
+
     unsafe {
-        let mut list = enumerate_disks();
+        let list = enumerate_disks();
 
         for i in 0..list.n {
             let d = *list.disks.offset(i as isize);
             let devnode: PathBuf = OsStr::from_bytes(CStr::from_ptr(d.devnode).to_bytes()).into();
             free(d.devnode as *mut c_void);
+
+            let model = Model(if d.model.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(d.model).to_string_lossy().to_string())
+            });
+            free(d.model as *mut c_void);
+
+            let size = TargetSize(if d.size_is_known != 0 {
+                Some(ByteSize::b(d.size))
+            } else {
+                None
+            });
+
+            let removable = match d.is_removable {
+                0 => Removable::No,
+                1 => Removable::Yes,
+                _ => Removable::Unknown,
+            };
+
+            out.push(BurnTarget {
+                devnode,
+                size,
+                model,
+                removable,
+                target_type: Type::Block,
+            })
         }
 
         free(list.disks as *mut c_void);
     }
-    vec![].into_iter()
+
+    out.into_iter()
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

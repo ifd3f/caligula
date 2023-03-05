@@ -7,4 +7,5 @@
 *.xz
 *.gz
 *.o
+*.a
 result

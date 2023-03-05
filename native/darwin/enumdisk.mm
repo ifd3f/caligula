@@ -1,5 +1,5 @@
 extern "C" {
-#import "../enumdisk.h"
+#import "enumdisk.h"
 }
 
 #import <Cocoa/Cocoa.h>

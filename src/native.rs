@@ -2,4 +2,5 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
+#[cfg(target_os = "macos")]
+include!(concat!(env!("OUT_DIR"), "/darwin_bindings.rs"));

@@ -1,7 +1,4 @@
-use std::{
-    fmt,
-    fs::{read_dir, File},
-};
+use std::{fmt, fs::File};
 
 use bytesize::ByteSize;
 use inquire::{Confirm, InquireError, Select};
