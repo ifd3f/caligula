@@ -3,6 +3,7 @@ use interprocess::local_socket::tokio::LocalSocketStream;
 use process_path::get_executable_path;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
+use std::ffi::OsString;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::{env, pin::Pin};
@@ -50,15 +51,30 @@ impl Handle {
         let mut socket = ChildSocket::new()?;
 
         let mut cmd = if escalate {
-            let mut cmd = Command::new("sudo");
-            cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
-            cmd
+            if cfg!(target_os = "linux") {
+                let mut cmd = Command::new("sudo");
+                cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
+                cmd
+            } else if cfg!(target_os = "macos") {
+                // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
+                let raw_cmd = format!("BURN_ENV=1 {}", proc.to_string_lossy());
+                let mut cmd = Command::new("osascript");
+                cmd.arg("-e").arg(format!(
+                    "do shell script \"{raw_cmd}\" with administrator privileges"
+                ));
+                cmd
+            } else {
+                panic!("This code is impossible!")
+            }
         } else {
             let mut cmd = Command::new(&proc);
             cmd.env(BURN_ENV, "1");
             cmd
         };
-        cmd.arg(args).arg(&socket.socket_name).kill_on_drop(true);
+        cmd.arg(args)
+            .arg(&socket.socket_name)
+            .env("RUST_BACKTRACE", "full")
+            .kill_on_drop(true);
 
         debug!("Starting child process with command: {:?}", cmd.as_std());
         let child = cmd.spawn()?;

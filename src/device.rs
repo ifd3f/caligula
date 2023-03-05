@@ -25,7 +25,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 
     use libc::{c_void, free};
 
-    use crate::native::{enumerate_disks, self};
+    use crate::native::{self, enumerate_disks};
 
     let mut out = Vec::new();
 
@@ -65,7 +65,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
             let target_type = match d.dev_type {
                 native::DEV_TYPE_DISK => Type::Block,
                 native::DEV_TYPE_PARTITION => Type::Partition,
-                _ => Type::File
+                _ => Type::File,
             };
 
             out.push(BurnTarget {
