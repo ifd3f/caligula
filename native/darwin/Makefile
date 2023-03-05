@@ -1,12 +1,14 @@
 CC=clang
-CFLAGS+=-O0 -g
-CXXFLAGS+=-O0 -g
+CFLAGS+=-Wall -O0 -g
 
-libcaliguladarwin.a: enumdisk.o
+libcaliguladarwin.a: enumdisk.mm.o REDiskList.m.o
 	ar r $@ $^
 
-enumdisk.o: enumdisk.mm enumdisk.h
-	$(CC) -c $< $(LDFLAGS) -F/Library/Frameworks -o $@
+%.m.o: %.m enumdisk.h REDiskList.h
+	$(CC) -c $< $(CFLAGS) -F/Library/Frameworks -o $@
+
+%.mm.o: %.mm enumdisk.h REDiskList.h
+	$(CC) -c $< $(CFLAGS) -F/Library/Frameworks -o $@
 
 clean:
 	rm -f *.o *.a
