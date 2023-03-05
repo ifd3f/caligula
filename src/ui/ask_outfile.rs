@@ -9,7 +9,7 @@ use tracing::debug;
 
 use crate::{
     cli::BurnArgs,
-    device::{BurnTarget, Removable},
+    device::{enumerate_devices, BurnTarget, Removable},
 };
 
 pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
@@ -104,11 +104,7 @@ impl fmt::Display for ListOption {
 }
 
 fn enumerate_options(show_all_disks: bool) -> anyhow::Result<Vec<ListOption>> {
-    let paths = read_dir("/sys/class/block").unwrap();
-
-    let burn_targets = paths
-        .filter_map(|r| r.ok())
-        .filter_map(|d| BurnTarget::try_from(d.path().as_ref()).ok())
+    let burn_targets = enumerate_devices()
         .filter(|d| show_all_disks || d.removable == Removable::Yes)
         .map(ListOption::Device);
 

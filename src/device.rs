@@ -8,6 +8,17 @@ use std::{
 
 use bytesize::ByteSize;
 
+#[cfg(target_os = "linux")]
+pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
+    use std::fs::read_dir;
+
+    let paths = read_dir("/sys/class/block").unwrap();
+
+    paths
+        .filter_map(|r| r.ok())
+        .filter_map(|d| BurnTarget::try_from(d.path().as_ref()).ok())
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BurnTarget {
     pub devnode: PathBuf,
