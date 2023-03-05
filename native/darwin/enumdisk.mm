@@ -1,3 +1,5 @@
+// A lot of it was borrowed from: https://github.com/balena-io-modules/drivelist/blob/master/src/darwin/list.mm
+
 extern "C" {
 #import "enumdisk.h"
 }
@@ -5,6 +7,16 @@ extern "C" {
 #import <Cocoa/Cocoa.h>
 #import <Foundation/Foundation.h>
 #import <DiskArbitration/DiskArbitration.h>
+
+NSNumber *DictionaryGetNumber(CFDictionaryRef dict, const void *key) {
+  return (NSNumber*)CFDictionaryGetValue(dict, key);
+}
+
+char *MakeOwnedCStr(const char *s) {
+  char* out = (char*)malloc(strlen(s) + 1);
+  strcpy(out, s);
+  return out;
+}
 
 extern DiskList enumerate_disks() {
   DASessionRef session = DASessionCreate(kCFAllocatorDefault);
@@ -33,6 +45,12 @@ extern DiskList enumerate_disks() {
       continue;
     }
 
+    CFDictionaryRef diskinfo = DADiskCopyDescription(disk);
+    if (diskinfo == nil) {
+      CFRelease(disk);
+      continue;
+    }
+
     NSString *volumeName;
     [path getResourceValue:&volumeName forKey:NSURLVolumeLocalizedNameKey error:nil];
 
@@ -40,13 +58,28 @@ extern DiskList enumerate_disks() {
     list.n++;
     Disk* d = &list.disks[list.n - 1];
 
-    d->devnode = (char*)malloc(strlen(bsdnameChar) + 1);
-    strcpy(d->devnode, bsdnameChar);
+    d->bsdname = MakeOwnedCStr(bsdnameChar);
 
-    // TODO
-    d->model = 0;
-    d->size_is_known = 0;
-    d->is_removable = 0;
+    // For keys, see: https://developer.apple.com/documentation/diskarbitration/diskarbitration_constants
+
+    NSString *description = (NSString*)CFDictionaryGetValue(diskinfo, kDADiskDescriptionMediaNameKey);
+    if (description != nil) {
+      const char* description_bytes = [description UTF8String];
+      d->model = MakeOwnedCStr(description_bytes);
+    } else {
+      d->model = 0;
+    }
+
+    bool removable = [DictionaryGetNumber(diskinfo, kDADiskDescriptionMediaRemovableKey) boolValue];
+    bool ejectable = [DictionaryGetNumber(diskinfo, kDADiskDescriptionMediaEjectableKey) boolValue];
+    d->is_removable = removable || ejectable;
+
+    d->size_is_known = 1;
+    d->size = [DictionaryGetNumber(diskinfo, kDADiskDescriptionMediaSizeKey) unsignedLongValue];
+
+    NSNumber *blockSize = DictionaryGetNumber(diskinfo, kDADiskDescriptionMediaBlockSizeKey);
+    d->block_size_is_known = 1;
+    d->block_size = [blockSize unsignedLongValue];
 
     CFRelease(disk);
   }

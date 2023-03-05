@@ -34,13 +34,19 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 
         for i in 0..list.n {
             let d = *list.disks.offset(i as isize);
-            let devnode: PathBuf = OsStr::from_bytes(CStr::from_ptr(d.devnode).to_bytes()).to_owned().into();
-            free(d.devnode as *mut c_void);
+            let devnode: PathBuf =
+                PathBuf::from("/dev").join(OsStr::from_bytes(CStr::from_ptr(d.bsdname).to_bytes()));
+            free(d.bsdname as *mut c_void);
 
             let model = Model(if d.model.is_null() {
                 None
             } else {
-                Some(CStr::from_ptr(d.model).to_string_lossy().into_owned().to_string())
+                Some(
+                    CStr::from_ptr(d.model)
+                        .to_string_lossy()
+                        .into_owned()
+                        .to_string(),
+                )
             });
             free(d.model as *mut c_void);
 
