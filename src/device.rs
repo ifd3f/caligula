@@ -21,7 +21,10 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 
 #[cfg(target_os = "macos")]
 pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
-    use std::{ffi::CStr, os::unix::prelude::OsStrExt};
+    use std::{
+        ffi::{CStr, OsString},
+        os::unix::prelude::OsStrExt,
+    };
 
     use libc::{c_void, free};
 
@@ -34,8 +37,11 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 
         for i in 0..list.n {
             let d = *list.disks.offset(i as isize);
-            let devnode: PathBuf =
-                PathBuf::from("/dev").join(OsStr::from_bytes(CStr::from_ptr(d.bsdname).to_bytes()));
+            let bsdname = OsStr::from_bytes(CStr::from_ptr(d.bsdname).to_bytes());
+            let mut rawdevname = OsString::from("r");
+            rawdevname.push(bsdname);
+            let devnode: PathBuf = PathBuf::from("/dev").join(rawdevname);
+            let bsdname = bsdname.to_string_lossy().into();
             free(d.bsdname as *mut c_void);
 
             let model = Model(if d.model.is_null() {
@@ -69,6 +75,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
             };
 
             out.push(BurnTarget {
+                name: bsdname,
                 devnode,
                 size,
                 model,
@@ -87,6 +94,8 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BurnTarget {
+    /// A user-friendly name for the disk (i.e. sda, nvme0n1, disk1s4)
+    pub name: String,
     pub devnode: PathBuf,
     pub size: TargetSize,
     pub model: Model,
@@ -121,6 +130,7 @@ impl BurnTarget {
             Model(read_sys_file(sysnode.join("device/model"))?.map(|m| m.trim().to_owned()));
 
         Ok(Self {
+            name: name.to_string_lossy().into(),
             devnode,
             size,
             removable,
@@ -131,6 +141,7 @@ impl BurnTarget {
 
     fn from_normal_file(path: PathBuf) -> Result<Self, DeviceParseError> {
         Ok(BurnTarget {
+            name: path.to_string_lossy().into(),
             devnode: path,
             size: TargetSize(None),
             model: Model(None),

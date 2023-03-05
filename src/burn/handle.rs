@@ -57,7 +57,7 @@ impl Handle {
                 cmd
             } else if cfg!(target_os = "macos") {
                 // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
-                let raw_cmd = format!("BURN_ENV=1 {}", proc.to_string_lossy());
+                let raw_cmd = format!("sudo BURN_ENV=1 {}", proc.to_string_lossy());
                 let mut cmd = Command::new("osascript");
                 cmd.arg("-e").arg(format!(
                     "do shell script \"{raw_cmd}\" with administrator privileges"

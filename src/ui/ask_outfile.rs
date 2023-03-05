@@ -54,10 +54,11 @@ pub fn confirm_write(args: &BurnArgs, device: &BurnTarget) -> Result<bool, Inqui
         println!("  Size: {}", input_size);
         println!();
 
-        println!("Output: {}", device.devnode.to_string_lossy());
+        println!("Output: {}", device.name);
         println!("  Model: {}", device.model);
         println!("  Size: {}", device.size);
         println!("  Type: {}", device.target_type);
+        println!("  Path: {}", device.devnode.to_string_lossy());
         println!("  Removable: {}", device.removable);
         println!();
 
@@ -78,12 +79,10 @@ impl fmt::Display for ListOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ListOption::Device(dev) => {
-                let devnode = dev.devnode.to_string_lossy();
-
                 write!(
                     f,
-                    "{devnode} | {} - {} ({}, removable: {})",
-                    dev.model, dev.size, dev.target_type, dev.removable
+                    "{} | {} - {} ({}, removable: {})",
+                    dev.name, dev.model, dev.size, dev.target_type, dev.removable
                 )?;
             }
             ListOption::RetryWithShowAll(true) => {
