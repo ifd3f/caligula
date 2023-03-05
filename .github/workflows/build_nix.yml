@@ -1,4 +1,4 @@
-name: "Build Nix package"
+name: "Build and verify"
 
 on:
   push:
@@ -9,5 +9,26 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: cachix/install-nix-action@v19
+
       - name: Build package
-        run: nix build
+        run: nix build .
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: caligula-bin
+          path: result/bin/caligula
+
+  smoke-test:
+    name: Smoke test on Ubuntu
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+    - uses: actions/download-artifact@v3
+      with:
+        name: caligula-bin
+        
+    - name: Set permissions on artifact
+      run: chmod +x caligula
+      
+    - name: Ensure the command runs
+      run: ./caligula --help
