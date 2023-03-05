@@ -51,21 +51,9 @@ impl Handle {
         let mut socket = ChildSocket::new()?;
 
         let mut cmd = if escalate {
-            if cfg!(target_os = "linux") {
-                let mut cmd = Command::new("sudo");
-                cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
-                cmd
-            } else if cfg!(target_os = "macos") {
-                // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
-                let raw_cmd = format!("sudo BURN_ENV=1 {}", proc.to_string_lossy());
-                let mut cmd = Command::new("osascript");
-                cmd.arg("-e").arg(format!(
-                    "do shell script \"{raw_cmd}\" with administrator privileges"
-                ));
-                cmd
-            } else {
-                panic!("This code is impossible!")
-            }
+            let mut cmd = Command::new("sudo");
+            cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
+            cmd
         } else {
             let mut cmd = Command::new(&proc);
             cmd.env(BURN_ENV, "1");
