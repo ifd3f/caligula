@@ -34,13 +34,13 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 
         for i in 0..list.n {
             let d = *list.disks.offset(i as isize);
-            let devnode: PathBuf = OsStr::from_bytes(CStr::from_ptr(d.devnode).to_bytes()).into();
+            let devnode: PathBuf = OsStr::from_bytes(CStr::from_ptr(d.devnode).to_bytes()).to_owned().into();
             free(d.devnode as *mut c_void);
 
             let model = Model(if d.model.is_null() {
                 None
             } else {
-                Some(CStr::from_ptr(d.model).to_string_lossy().to_string())
+                Some(CStr::from_ptr(d.model).to_string_lossy().into_owned().to_string())
             });
             free(d.model as *mut c_void);
 
@@ -67,6 +67,8 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 
         free(list.disks as *mut c_void);
     }
+
+    out.sort();
 
     out.into_iter()
 }
@@ -129,6 +131,12 @@ impl BurnTarget {
 impl PartialOrd for BurnTarget {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.devnode.partial_cmp(&other.devnode)
+    }
+}
+
+impl Ord for BurnTarget {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.devnode.cmp(&other.devnode)
     }
 }
 

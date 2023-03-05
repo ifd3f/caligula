@@ -36,16 +36,17 @@ extern DiskList enumerate_disks() {
     NSString *volumeName;
     [path getResourceValue:&volumeName forKey:NSURLVolumeLocalizedNameKey error:nil];
 
-    list.disks = (Disk*)realloc(list.disks, list.n + 1);
-    Disk* d = &list.disks[list.n];
+    list.disks = (Disk*)realloc(list.disks, (list.n + 1) * sizeof(Disk));
     list.n++;
+    Disk* d = &list.disks[list.n - 1];
 
     d->devnode = (char*)malloc(strlen(bsdnameChar) + 1);
     strcpy(d->devnode, bsdnameChar);
 
     // TODO
-    d->model = NULL;
+    d->model = 0;
     d->size_is_known = 0;
+    d->is_removable = 0;
 
     CFRelease(disk);
   }

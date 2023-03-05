@@ -1,3 +1,5 @@
+#include <inttypes.h>
+
 /** A single disk. */
 typedef struct Disk {
     /**
@@ -16,26 +18,26 @@ typedef struct Disk {
         A boolean value representing whether or not we know how big the disk is.
         If this value is 0, we don't know what size it is. Otherwise, we do.
     */
-    int size_is_known;
+    int32_t size_is_known;
 
     /**
         A boolean value representing whether or not this disk is removable.
         If this value is 0, it is not removable. If it is 1, then it is removable.
         Any other value means that we don't know if it's removable or not.
     */
-    int is_removable;
+    int32_t is_removable;
 
     /**
         The size of the disk in bytes, if known.
     */
-    unsigned long size;
+    uint64_t size;
 } Disk;
 
 /** A list of disks. */
 typedef struct DiskList {
-    unsigned long n;
+    uint64_t n;
     /** This value is malloced and the user should free it. */
     Disk *disks;
 } DiskList;
 
-DiskList enumerate_disks();
+extern DiskList enumerate_disks();
