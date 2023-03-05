@@ -13,23 +13,27 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
-        naersk-lib = pkgs.callPackage naersk { };
-        rust-toolchain = (pkgs.rust-bin.selectLatestNightlyWith
-          (toolchain: toolchain.default)).override {
+
+        rust-toolchain = (pkgs.rust-bin.selectLatestNightlyWith (toolchain:
+          toolchain.default.override {
             targets = [ "x86_64-unknown-linux-musl" ];
-          };
+          }));
         rust-toolchain-dev = rust-toolchain.override {
           extensions = [ "rust-src" "rust-analyzer" ];
         };
+        naersk' = pkgs.callPackage naersk {
+          cargo = rust-toolchain;
+          rustc = rust-toolchain;
+        };
+
       in {
         packages.default = with pkgs;
-          naersk-lib.buildPackage {
-            src = ./.;
+          naersk'.buildPackage {
+            src = "${self}";
             doCheck = true;
             buildInputs = [ ];
           };
 
-        devShell = with pkgs;
-          mkShell { buildInputs = [ rust-toolchain-dev ]; };
+        devShell = with pkgs; mkShell { buildInputs = [ rust-toolchain-dev ]; };
       });
 }
