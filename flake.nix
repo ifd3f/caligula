@@ -13,9 +13,19 @@
           inherit system;
           overlays = [ rust-overlay.overlays.default ];
         };
+        lib = pkgs.lib;
+
+        # On Linux, we want to only support one target.
+        sysinfo = lib.systems.parse.mkSystemFromString system;
+        rustTarget = if sysinfo.kernel.name == "linux" then
+          "${sysinfo.cpu.name}-unknown-linux-musl"
+        else if sysinfo.kernel.name == "darwin" then
+          "${sysinfo.cpu.name}-apple-darwin"
+        else
+          throw "unknown system ${system}";
 
         rust-toolchain = (pkgs.rust-bin.stable.latest.default.override {
-          targets = [ "x86_64-unknown-linux-musl" ];
+          targets = [ rustTarget ];
         });
         rust-toolchain-dev = rust-toolchain.override {
           extensions = [ "rust-src" "rust-analyzer" ];
@@ -30,9 +40,13 @@
           naersk'.buildPackage {
             src = "${self}";
             doCheck = true;
-            buildInputs = [ ];
+            CARGO_BUILD_TARGET = rustTarget;
           };
 
-        devShell = with pkgs; mkShell { buildInputs = [ rust-toolchain-dev ]; };
+        devShell = with pkgs;
+          mkShell {
+            buildInputs = [ rust-toolchain-dev ];
+            CARGO_BUILD_TARGET = rustTarget;
+          };
       });
 }
