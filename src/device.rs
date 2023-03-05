@@ -19,6 +19,28 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
         .filter_map(|d| BurnTarget::try_from(d.path().as_ref()).ok())
 }
 
+#[cfg(target_os = "macos")]
+pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
+    use std::{ffi::CStr, os::unix::prelude::OsStrExt};
+
+    use libc::{free, c_void, strlen};
+
+    use crate::native::enumerate_disks;
+
+    unsafe {
+        let mut list = enumerate_disks();
+
+        for i in 0..list.n {
+            let d = *list.disks.offset(i as isize);
+            let devnode: PathBuf = OsStr::from_bytes(CStr::from_ptr(d.devnode).to_bytes()).into();
+            free(d.devnode as *mut c_void);
+        }
+
+        free(list.disks as *mut c_void);
+    }
+    vec![].into_iter()
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct BurnTarget {
     pub devnode: PathBuf,

@@ -6,4 +6,5 @@
 *.iso
 *.xz
 *.gz
+*.o
 result

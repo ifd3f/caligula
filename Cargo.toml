@@ -36,3 +36,9 @@ opt-level = 2
 lto = true
 codegen-units = 1
 strip = true
+
+[target.aarch64-apple-darwin.dependencies]
+libc = "0.2.139"
+
+[build-dependencies]
+bindgen = "0.64.0"

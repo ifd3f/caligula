@@ -16,6 +16,7 @@ pub mod burn;
 pub mod cli;
 mod device;
 mod ui;
+pub mod native;
 
 fn main() {
     init_tracing_subscriber();

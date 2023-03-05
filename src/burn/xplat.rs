@@ -9,7 +9,7 @@ pub fn open_blockdev(path: impl AsRef<Path>) -> std::io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
 
     #[cfg(target_os = "macos")]
-    let oflags = OFlag::O_SYNC;
+    let oflag = OFlag::O_SYNC;
 
     #[cfg(target_os = "linux")]
     let oflag = OFlag::O_DIRECT | OFlag::O_SYNC;
