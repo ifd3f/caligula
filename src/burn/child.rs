@@ -1,3 +1,4 @@
+use std::os::unix::fs::OpenOptionsExt;
 use std::{
     env,
     fs::{File, OpenOptions},
@@ -7,6 +8,7 @@ use std::{
 
 use bytesize::ByteSize;
 use interprocess::local_socket::LocalSocketStream;
+use nix::fcntl::OFlag;
 use tracing::{debug, info};
 use tracing_unwrap::ResultExt;
 
@@ -81,7 +83,10 @@ where
     fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), TerminateResult> {
         debug!("Running burn");
 
-        let mut dest = OpenOptions::new().write(true).open(&self.args.dest)?;
+        let mut dest = OpenOptions::new()
+            .write(true)
+            .custom_flags((OFlag::O_DIRECT | OFlag::O_SYNC).bits())
+            .open(&self.args.dest)?;
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }))?;
 
         for_each_block(self, src, |block, _| {
