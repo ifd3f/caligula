@@ -3,7 +3,6 @@ use interprocess::local_socket::tokio::LocalSocketStream;
 use process_path::get_executable_path;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
-use std::ffi::OsString;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::{env, pin::Pin};
@@ -51,6 +50,18 @@ impl Handle {
         let mut socket = ChildSocket::new()?;
 
         let mut cmd = if escalate {
+            #[cfg(target_os = "macos")]
+            {
+                // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
+                // User-friendly thing that lets you use touch ID if you wanted.
+                Command::new("osascript")
+                    .arg("-e")
+                    .arg("do shell script \"mkdir -p /var/db/sudo/$USER; touch /var/db/sudo/$USER\" with administrator privileges")
+                    .spawn()?
+                    .wait()
+                    .await?;
+            }
+
             let mut cmd = Command::new("sudo");
             cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
             cmd
