@@ -82,8 +82,8 @@ impl fmt::Display for ListOption {
 
                 write!(
                     f,
-                    "{devnode} | {} - {} (removable: {})",
-                    dev.model, dev.size, dev.removable
+                    "{devnode} | {} - {} ({}, removable: {})",
+                    dev.model, dev.size, dev.target_type, dev.removable
                 )?;
             }
             ListOption::RetryWithShowAll(true) => {

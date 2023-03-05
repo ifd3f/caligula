@@ -25,7 +25,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 
     use libc::{c_void, free};
 
-    use crate::native::enumerate_disks;
+    use crate::native::{enumerate_disks, self};
 
     let mut out = Vec::new();
 
@@ -62,12 +62,18 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
                 _ => Removable::Unknown,
             };
 
+            let target_type = match d.dev_type {
+                native::DEV_TYPE_DISK => Type::Block,
+                native::DEV_TYPE_PARTITION => Type::Partition,
+                _ => Type::File
+            };
+
             out.push(BurnTarget {
                 devnode,
                 size,
                 model,
                 removable,
-                target_type: Type::Block,
+                target_type,
             })
         }
 
@@ -227,6 +233,7 @@ impl Display for Removable {
 pub enum Type {
     File,
     Block,
+    Partition,
 }
 
 impl Display for Type {
@@ -237,6 +244,7 @@ impl Display for Type {
             match self {
                 Type::File => "file",
                 Type::Block => "block",
+                Type::Partition => "partition",
             }
         )
     }

@@ -1,8 +1,8 @@
 #include <inttypes.h>
 
-const int DEV_TYPE_FILE = 0;
-const int DEV_TYPE_DISK = 1;
-const int DEV_TYPE_PARTITION = 2;
+const uint8_t DEV_TYPE_FILE = 0;
+const uint8_t DEV_TYPE_DISK = 1;
+const uint8_t DEV_TYPE_PARTITION = 2;
 
 /** A single disk. */
 typedef struct Disk {
