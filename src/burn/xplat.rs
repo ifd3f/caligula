@@ -7,11 +7,11 @@ use std::{
 pub fn open_blockdev(path: impl AsRef<Path>) -> std::io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
 
-    use libc::{O_SYNC, O_DIRECT};
+    use libc::O_SYNC;
 
     OpenOptions::new()
         .write(true)
-        .custom_flags(O_DIRECT | O_SYNC)
+        .custom_flags(O_SYNC)
         .open(path)
 }
 
