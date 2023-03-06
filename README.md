@@ -25,16 +25,18 @@ Options:
   -V, --version         Print version
 ```
 
+## Supported platforms
+
+Currently, we officially support Linux and MacOS. However, Windows and FreeBSD support are planned.
+
+ARM and x86 architectures are also officially supported.
+
 ## Features
 
 - Listing attached disks, and telling you their size and hardware model information
 - Confirmation dialogs so you don't `dd` your filesystem
 - Running sudo for you if you don't have permissions on a disk
 - Cool graphs
-
-## Supported platforms
-
-Currently, we only support Linux. However, MacOS, Windows, and BSD support are planned.
 
 ## Planned features
 
