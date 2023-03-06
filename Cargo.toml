@@ -1,6 +1,6 @@
 [package]
 name = "caligula"
-version = "0.2.0-dev"
+version = "0.2.0-pre1"
 edition = "2021"
 license = "GPL-3.0"
 
