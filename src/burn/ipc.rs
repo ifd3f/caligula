@@ -8,6 +8,7 @@ use valuable::Valuable;
 pub struct BurnConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
+    pub logfile: PathBuf,
     pub verify: bool,
 }
 

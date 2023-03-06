@@ -18,10 +18,11 @@ nix = { version = "0.26.2", default-features = false, features = ["fs"] }
 rand = "0.8.5"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
+static_cell = "1.0.0"
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["compat"] }
-tracing = { version = "0.1.37", features = ["async-await", "log", "release_max_level_off", "valuable"] }
+tracing = { version = "0.1.37", features = ["async-await", "log", "release_max_level_debug", "valuable"] }
 tracing-subscriber = "0.3.16"
 tracing-unwrap = "0.10.0"
 tui = "0.19.0"

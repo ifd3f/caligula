@@ -12,6 +12,8 @@ use nix::fcntl::OFlag;
 use tracing::{debug, info};
 use tracing_unwrap::ResultExt;
 
+use crate::logging::init_logging_child;
+
 use super::{ipc::*, BURN_ENV};
 
 pub fn is_in_burn_mode() -> bool {
@@ -22,7 +24,10 @@ pub fn is_in_burn_mode() -> bool {
 /// escalated permissions.
 pub fn main() {
     let cli_args: Vec<String> = env::args().collect();
-    let args = serde_json::from_str(&cli_args[1]).unwrap_or_log();
+    let args = serde_json::from_str::<BurnConfig>(&cli_args[1]).unwrap_or_log();
+    init_logging_child(&args.logfile);
+
+    debug!("We are in child process mode");
 
     let pipe = cli_args[2].as_str();
     info!(pipe, "Got args {:#?}", args);

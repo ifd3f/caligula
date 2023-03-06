@@ -1,4 +1,4 @@
-use crate::ui::ask_outfile;
+use crate::{ui::ask_outfile, logging::{get_log_paths, init_logging_parent}};
 use burn::{
     child::is_in_burn_mode,
     handle::StartProcessError,
@@ -16,39 +16,17 @@ pub mod burn;
 pub mod cli;
 mod device;
 mod ui;
+pub mod logging;
 
 fn main() {
-    init_tracing_subscriber();
-
     if is_in_burn_mode() {
-        debug!("We are in child process mode");
         burn::child::main();
     } else {
+        init_logging_parent();
+
         debug!("Starting primary process");
         cli_main().unwrap_or_log();
     }
-}
-
-#[cfg(not(debug_assertions))]
-fn init_tracing_subscriber() {}
-
-#[cfg(debug_assertions)]
-fn init_tracing_subscriber() {
-    use std::{fs::File, sync::Mutex};
-    use tracing::Level;
-
-    let is_parent = !is_in_burn_mode();
-
-    let writer = File::create(if is_parent { "dev.log" } else { "child.log" }).unwrap_or_log();
-
-    tracing_subscriber::fmt()
-        .with_writer(Mutex::new(writer))
-        .with_max_level(if is_parent {
-            Level::TRACE
-        } else {
-            Level::TRACE
-        })
-        .init();
 }
 
 #[tokio::main]
@@ -73,6 +51,7 @@ async fn cli_main() -> anyhow::Result<()> {
     let burn_args = BurnConfig {
         dest: target.devnode.clone(),
         src: args.input.to_owned(),
+        logfile: get_log_paths().child.clone(),
         verify: true,
     };
 
