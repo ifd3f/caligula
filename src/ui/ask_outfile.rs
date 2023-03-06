@@ -1,7 +1,4 @@
-use std::{
-    fmt,
-    fs::{read_dir, File},
-};
+use std::{fmt, fs::File};
 
 use bytesize::ByteSize;
 use inquire::{Confirm, InquireError, Select};
@@ -9,7 +6,7 @@ use tracing::debug;
 
 use crate::{
     cli::BurnArgs,
-    device::{BurnTarget, Removable},
+    device::{enumerate_devices, BurnTarget, Removable},
 };
 
 pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
@@ -57,10 +54,11 @@ pub fn confirm_write(args: &BurnArgs, device: &BurnTarget) -> Result<bool, Inqui
         println!("  Size: {}", input_size);
         println!();
 
-        println!("Output: {}", device.devnode.to_string_lossy());
+        println!("Output: {}", device.name);
         println!("  Model: {}", device.model);
         println!("  Size: {}", device.size);
         println!("  Type: {}", device.target_type);
+        println!("  Path: {}", device.devnode.to_string_lossy());
         println!("  Removable: {}", device.removable);
         println!();
 
@@ -81,12 +79,10 @@ impl fmt::Display for ListOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ListOption::Device(dev) => {
-                let devnode = dev.devnode.to_string_lossy();
-
                 write!(
                     f,
-                    "{devnode} | {} - {} (removable: {})",
-                    dev.model, dev.size, dev.removable
+                    "{} | {} - {} ({}, removable: {})",
+                    dev.name, dev.model, dev.size, dev.target_type, dev.removable
                 )?;
             }
             ListOption::RetryWithShowAll(true) => {
@@ -104,15 +100,13 @@ impl fmt::Display for ListOption {
 }
 
 fn enumerate_options(show_all_disks: bool) -> anyhow::Result<Vec<ListOption>> {
-    let paths = read_dir("/sys/class/block").unwrap();
-
-    let burn_targets = paths
-        .filter_map(|r| r.ok())
-        .filter_map(|d| BurnTarget::try_from(d.path().as_ref()).ok())
+    let mut burn_targets: Vec<BurnTarget> = enumerate_devices()
         .filter(|d| show_all_disks || d.removable == Removable::Yes)
-        .map(ListOption::Device);
+        .collect();
 
-    let options = burn_targets.chain([
+    burn_targets.sort();
+
+    let options = burn_targets.into_iter().map(ListOption::Device).chain([
         ListOption::Refresh,
         ListOption::RetryWithShowAll(!show_all_disks),
     ]);

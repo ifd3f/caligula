@@ -15,6 +15,7 @@ use ui::{confirm_write, utils::TUICapture};
 pub mod burn;
 pub mod cli;
 mod device;
+pub mod native;
 mod ui;
 
 fn main() {

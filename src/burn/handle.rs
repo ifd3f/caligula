@@ -1,5 +1,6 @@
 use interprocess::local_socket::tokio::LocalSocketListener;
 use interprocess::local_socket::tokio::LocalSocketStream;
+use process_path::get_executable_path;
 use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
 use std::fs::remove_file;
@@ -15,7 +16,6 @@ use tracing_unwrap::ResultExt;
 use valuable::Valuable;
 
 use tokio::{
-    fs,
     io::{AsyncBufRead, AsyncWrite},
     process::{Child, Command},
 };
@@ -37,7 +37,7 @@ pub struct Handle {
 impl Handle {
     pub async fn start(args: &BurnConfig, escalate: bool) -> anyhow::Result<Self> {
         // Get path to this process
-        let proc = fs::read_link("/proc/self/exe").await?;
+        let proc = get_executable_path().unwrap();
 
         debug!(
             proc = proc.to_string_lossy().to_string(),
@@ -50,6 +50,24 @@ impl Handle {
         let mut socket = ChildSocket::new()?;
 
         let mut cmd = if escalate {
+            #[cfg(target_os = "macos")]
+            loop {
+                // User-friendly thing that lets you use touch ID if you wanted.
+                // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
+                // We loop because your finger might not be recognized sometimes.
+
+                let result = Command::new("osascript")
+                    .arg("-e")
+                    .arg("do shell script \"mkdir -p /var/db/sudo/$USER; touch /var/db/sudo/$USER\" with administrator privileges")
+                    .spawn()?
+                    .wait()
+                    .await?;
+
+                if result.success() {
+                    break;
+                }
+            }
+
             let mut cmd = Command::new("sudo");
             cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
             cmd
@@ -58,7 +76,10 @@ impl Handle {
             cmd.env(BURN_ENV, "1");
             cmd
         };
-        cmd.arg(args).arg(&socket.socket_name).kill_on_drop(true);
+        cmd.arg(args)
+            .arg(&socket.socket_name)
+            .env("RUST_BACKTRACE", "full")
+            .kill_on_drop(true);
 
         debug!("Starting child process with command: {:?}", cmd.as_std());
         let child = cmd.spawn()?;

@@ -1,6 +1,6 @@
 [package]
 name = "caligula"
-version = "0.1.1"
+version = "0.2.0-dev"
 edition = "2021"
 license = "GPL-3.0"
 
@@ -9,12 +9,14 @@ anyhow = "1.0.69"
 bytesize = "1.2.0"
 clap = { version = "4.1.8", features = ["derive", "cargo"] }
 crossterm = { version = "0.26.1", features = ["event-stream"] }
+format-bytes = "0.3.0"
 futures = "0.3.26"
 futures-io = "0.3.26"
 inquire = "0.5.3"
 interprocess = { version = "1.2.1", features = ["tokio", "tokio_support"] }
 is-terminal = "0.4.4"
 nix = { version = "0.26.2", default-features = false, features = ["fs"] }
+process_path = "0.1.4"
 rand = "0.8.5"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
@@ -35,3 +37,9 @@ test-case = "3.0.0"
 opt-level = 2
 lto = true
 codegen-units = 1
+
+[target.aarch64-apple-darwin.dependencies]
+libc = "0.2.139"
+
+[build-dependencies]
+bindgen = "0.64.0"
