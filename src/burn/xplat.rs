@@ -10,7 +10,7 @@ pub fn open_blockdev(path: impl AsRef<Path>) -> std::io::Result<File> {
 
     OpenOptions::new()
         .write(true)
-        .custom_flags(OFlag::O_DIRECT | OFlag::O_SYNC)
+        .custom_flags((OFlag::O_DIRECT | OFlag::O_SYNC).bits())
         .open(path)
 }
 
@@ -19,8 +19,8 @@ pub fn open_blockdev(path: impl AsRef<Path>) -> std::io::Result<File> {
     // For more info, see:
     // https://stackoverflow.com/questions/2299402/how-does-one-do-raw-io-on-mac-os-x-ie-equivalent-to-linuxs-o-direct-flag
 
-    use libc::{O_SYNC, F_NOCACHE, fcntl};
-    use std::os::{unix::fs::OpenOptionsExt, fd::AsRawFd};
+    use libc::{fcntl, F_NOCACHE, O_SYNC};
+    use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
 
     let file = OpenOptions::new()
         .write(true)

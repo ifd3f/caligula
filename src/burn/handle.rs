@@ -51,15 +51,21 @@ impl Handle {
 
         let mut cmd = if escalate {
             #[cfg(target_os = "macos")]
-            {
-                // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
+            loop {
                 // User-friendly thing that lets you use touch ID if you wanted.
-                Command::new("osascript")
+                // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
+                // We loop because your finger might not be recognized sometimes.
+
+                let result = Command::new("osascript")
                     .arg("-e")
                     .arg("do shell script \"mkdir -p /var/db/sudo/$USER; touch /var/db/sudo/$USER\" with administrator privileges")
                     .spawn()?
                     .wait()
                     .await?;
+
+                if result.success() {
+                    break;
+                }
             }
 
             let mut cmd = Command::new("sudo");
