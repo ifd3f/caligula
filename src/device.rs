@@ -1,7 +1,6 @@
 use std::{
     ffi::OsStr,
     fmt::Display,
-    fs::read_to_string,
     io,
     path::{Path, PathBuf},
 };
@@ -106,11 +105,45 @@ pub struct BurnTarget {
 impl BurnTarget {
     #[cfg(target_os = "macos")]
     fn from_dev_name(name: &OsStr) -> Result<Self, DeviceParseError> {
-        todo!()
+        use std::os::unix::prelude::OsStrExt;
+
+        use format_bytes::format_bytes;
+
+        // I don't want to write more Objective C. Oh god. Please no.
+        let devices: Vec<BurnTarget> = enumerate_devices().collect();
+        let expected_if_direct_node = format_bytes!(b"/dev/{}", name.as_bytes());
+        let expected_if_raw_node = format_bytes!(b"/dev/r{}", name.as_bytes());
+
+        if let Some(found) = devices.into_iter().find(|t| {
+            let bytes = t.devnode.as_os_str().as_bytes();
+            bytes == &expected_if_direct_node || bytes == &expected_if_raw_node
+        }) {
+            Ok(found)
+        } else {
+            Err(DeviceParseError::NotFound)
+        }
     }
 
     #[cfg(target_os = "linux")]
     fn from_dev_name(name: &OsStr) -> Result<Self, DeviceParseError> {
+        use std::fs::read_to_string;
+
+        fn read_sys_file(p: impl AsRef<Path>) -> Result<Option<String>, std::io::Error> {
+            into_none_if_not_exists(read_to_string(p).map(|s| s.trim().to_owned()))
+        }
+
+        fn into_none_if_not_exists<T>(
+            r: Result<T, std::io::Error>,
+        ) -> Result<Option<T>, std::io::Error> {
+            match r {
+                Ok(x) => Ok(Some(x)),
+                Err(e) => match e.kind() {
+                    std::io::ErrorKind::NotFound => Ok(None),
+                    _ => Err(e),
+                },
+            }
+        }
+
         let devnode = PathBuf::from("/dev").join(name);
         if !devnode.exists() {
             return Err(DeviceParseError::NotFound);
@@ -134,7 +167,7 @@ impl BurnTarget {
 
         let model =
             Model(read_sys_file(sysnode.join("device/model"))?.map(|m| m.trim().to_owned()));
-        
+
         let target_type = match sysnode.join("partition").exists() {
             true => Type::Partition,
             false => Type::Disk,
@@ -278,19 +311,5 @@ impl Display for Type {
                 Type::Partition => "partition",
             }
         )
-    }
-}
-
-fn read_sys_file(p: impl AsRef<Path>) -> Result<Option<String>, std::io::Error> {
-    into_none_if_not_exists(read_to_string(p).map(|s| s.trim().to_owned()))
-}
-
-fn into_none_if_not_exists<T>(r: Result<T, std::io::Error>) -> Result<Option<T>, std::io::Error> {
-    match r {
-        Ok(x) => Ok(Some(x)),
-        Err(e) => match e.kind() {
-            std::io::ErrorKind::NotFound => Ok(None),
-            _ => Err(e),
-        },
     }
 }
