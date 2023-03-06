@@ -29,40 +29,24 @@ pub fn main() {
 
     debug!("We are in child process mode");
 
-    let pipe = cli_args[2].as_str();
-    info!(pipe, "Got args {:#?}", args);
+    let sock = cli_args[2].as_str();
+    info!("Opening socket {sock}");
+    let reporter = StatusReporter::open(sock);
 
-    match pipe {
-        "-" => run_with_pipe(args, std::io::stdout()),
-        path => run_with_pipe(
-            args,
-            LocalSocketStream::connect(PathBuf::from(path)).unwrap_or_log(),
-        ),
+    let mut ctx = Ctx { args, reporter };
+    let result = match ctx.run() {
+        Ok(_) => TerminateResult::Success,
+        Err(r) => r,
     };
-
-    fn run_with_pipe(args: BurnConfig, pipe: impl Write) {
-        let mut ctx = Ctx { args, pipe };
-        let result = match ctx.run() {
-            Ok(_) => TerminateResult::Success,
-            Err(r) => r,
-        };
-        ctx.send_msg(StatusMessage::Terminate(result))
-            .unwrap_or_log();
-    }
+    ctx.send_msg(StatusMessage::Terminate(result));
 }
 
-struct Ctx<P>
-where
-    P: Write,
-{
-    pipe: P,
+struct Ctx {
+    reporter: StatusReporter,
     args: BurnConfig,
 }
 
-impl<P> Ctx<P>
-where
-    P: Write,
-{
+impl Ctx {
     fn run(&mut self) -> Result<(), TerminateResult> {
         let mut src = File::open(&self.args.src).unwrap_or_log();
         let size = src.seek(io::SeekFrom::End(0))?;
@@ -73,7 +57,7 @@ where
         self.burn(&mut src, size)?;
         self.send_msg(StatusMessage::FinishedWriting {
             verifying: self.args.verify,
-        })?;
+        });
 
         if !self.args.verify {
             return Ok(());
@@ -92,10 +76,10 @@ where
             .write(true)
             .custom_flags((OFlag::O_DIRECT | OFlag::O_SYNC).bits())
             .open(&self.args.dest)?;
-        self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }))?;
+        self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
 
         for_each_block(self, src, |block, _| {
-            let written = dest.write(block)?;
+            let written = dest.write(block).expect("Failed to write block to disk");
             if written != block.len() {
                 return Err(TerminateResult::EndOfOutput);
             }
@@ -108,7 +92,7 @@ where
 
         let mut dest = File::open(&self.args.dest)?;
         for_each_block(self, src, |block, dst| {
-            let read = dest.read(dst)?;
+            let read = dest.read(dst).expect("Failed to read block from disk");
             if read != block.len() {
                 return Err(TerminateResult::EndOfOutput);
             }
@@ -119,17 +103,14 @@ where
         })
     }
 
-    fn send_msg(&mut self, msg: StatusMessage) -> Result<(), serde_json::Error> {
-        debug!("Sending message {:?}", msg);
-        serde_json::to_writer(&mut self.pipe, &msg)?;
-        self.pipe.write(b"\n").unwrap_or_log();
-        Ok(())
+    pub fn send_msg(&mut self, result: StatusMessage) {
+        self.reporter.send_msg(result);
     }
 }
 
 #[inline]
 fn for_each_block(
-    ctx: &mut Ctx<impl Write>,
+    ctx: &mut Ctx,
     src: &mut File,
     mut action: impl FnMut(&[u8], &mut [u8]) -> Result<(), TerminateResult>,
 ) -> Result<(), TerminateResult> {
@@ -152,6 +133,20 @@ fn for_each_block(
             written_bytes += read_bytes;
         }
 
-        ctx.send_msg(StatusMessage::TotalBytes(written_bytes))?;
+        ctx.send_msg(StatusMessage::TotalBytes(written_bytes));
+    }
+}
+
+struct StatusReporter(LocalSocketStream);
+
+impl StatusReporter {
+    fn open(path: &str) -> Self {
+        Self(LocalSocketStream::connect(PathBuf::from(path)).unwrap_or_log())
+    }
+
+    fn send_msg(&mut self, msg: StatusMessage) {
+        debug!("Sending message {:?}", msg);
+        serde_json::to_writer(&mut self.0, &msg).expect("Failed to convert message to JSON");
+        self.0.write(b"\n").expect("Failed to write to socket");
     }
 }
