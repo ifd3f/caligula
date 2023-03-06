@@ -22,7 +22,7 @@ use tokio::{
 
 use super::ipc::InitialInfo;
 use super::{
-    ipc::{BurnConfig, StatusMessage, ErrorType},
+    ipc::{BurnConfig, ErrorType, StatusMessage},
     BURN_ENV,
 };
 

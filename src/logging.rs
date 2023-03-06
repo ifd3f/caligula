@@ -6,7 +6,7 @@ use std::{path::PathBuf, sync::Mutex};
 
 use crossterm::terminal::disable_raw_mode;
 use static_cell::StaticCell;
-use tracing::{Level, error};
+use tracing::{error, Level};
 
 #[derive(Debug, Clone)]
 pub struct LogPaths {
@@ -30,15 +30,11 @@ pub fn init_logging_parent() {
 
     set_hook(Box::new(|p| {
         disable_raw_mode().ok();
-
         error!("{p}");
 
-        let paths = get_log_paths();
-        eprintln!("An unexpected error occurred! Please report bugs to https://github.com/ifd3f/caligula/issues and attach the following files, if they exist:");
-        eprintln!(" - {}", paths.main.to_string_lossy());
-        eprintln!(" - {}", paths.child.to_string_lossy());
-        eprintln!("");
-        eprintln!("{}", p);
+        eprintln!("An unexpected error occurred: {p}");
+        eprintln!();
+        eprintln!("{}", get_bug_report_msg());
     }));
 
     let write_path = get_log_paths().main.clone();
@@ -89,4 +85,16 @@ fn init_log_paths() {
         // should be writing before anyone else reads it
         LOG_PATHS_REF = Some(pref);
     }
+}
+
+pub fn get_bug_report_msg() -> String {
+    let paths = get_log_paths();
+
+    format!(
+        "Please report bugs to https://github.com/ifd3f/caligula/issues and attach the following log files, if they exist:\n\
+          - {}\n\
+          - {}",
+        paths.main.to_string_lossy(),
+        paths.child.to_string_lossy()
+    )
 }
