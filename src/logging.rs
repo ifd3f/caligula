@@ -4,6 +4,7 @@ use std::path::Path;
 use std::{env, fs::create_dir_all, time::SystemTime};
 use std::{path::PathBuf, sync::Mutex};
 
+use crossterm::terminal::disable_raw_mode;
 use static_cell::StaticCell;
 use tracing::{Level, error};
 
@@ -28,6 +29,8 @@ pub fn init_logging_parent() {
     init_log_paths();
 
     set_hook(Box::new(|p| {
+        disable_raw_mode().ok();
+
         error!("{p}");
 
         let paths = get_log_paths();
@@ -62,13 +65,17 @@ pub fn get_log_paths() -> &'static LogPaths {
 }
 
 fn init_log_paths() {
-    let log_prefix = env::temp_dir().join(format!(
-        "caligula/log/{}",
-        SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-    ));
+    let log_prefix = if cfg!(debug_assertions) {
+        PathBuf::from("dev")
+    } else {
+        env::temp_dir().join(format!(
+            "caligula/log/{}",
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_millis()
+        ))
+    };
 
     create_dir_all(log_prefix.parent().unwrap()).unwrap();
 

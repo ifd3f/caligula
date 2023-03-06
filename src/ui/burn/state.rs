@@ -5,15 +5,18 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::{debug, info, trace};
 
 use crate::{
-    burn::{ipc::StatusMessage, Handle},
+    burn::{
+        ipc::{ErrorType, StatusMessage},
+        Handle,
+    },
     ui::burn::byteseries::ByteSeries,
 };
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum UIEvent {
-    Sleep,
-    Child(Instant, Option<StatusMessage>),
-    TermEvent(Event),
+    SleepTimeout,
+    RecvChildStatus(Instant, Option<StatusMessage>),
+    RecvTermEvent(Event),
 }
 
 #[derive(Debug)]
@@ -36,7 +39,7 @@ pub enum ChildState {
     },
     Finished {
         finish_time: Instant,
-        error: Option<String>,
+        error: Option<ErrorType>,
         write_hist: ByteSeries,
         verify_hist: Option<ByteSeries>,
     },
@@ -47,9 +50,9 @@ impl State {
         trace!("Handling {ev:?}");
 
         Ok(match ev {
-            UIEvent::Sleep => self,
-            UIEvent::Child(t, m) => self.on_child_status(t, m),
-            UIEvent::TermEvent(e) => self.on_term_event(e)?,
+            UIEvent::SleepTimeout => self,
+            UIEvent::RecvChildStatus(t, m) => self.on_child_status(t, m),
+            UIEvent::RecvTermEvent(e) => self.on_term_event(e)?,
         })
     }
 
@@ -105,19 +108,24 @@ impl State {
                 };
                 Self { child, ..self }
             }
-            Some(StatusMessage::Terminate(reason)) => {
-                match &self.child {
-                    ChildState::Finished { .. } => self,
-                    _ => {
-                        panic!("Got invalid Terminate message!\nTerminate reason: {:?}\nCurrent state: {:#?}", reason, &self);
-                    }
-                }
-            }
-            None => Self {
+            Some(StatusMessage::Error(reason)) => Self {
+                child: self.child.into_finished(now, Some(reason)),
+                ..self
+            },
+            Some(StatusMessage::Success) => Self {
                 child: self.child.into_finished(now, None),
                 ..self
             },
-            _ => self,
+            None => Self {
+                child: self
+                    .child
+                    .into_finished(now, Some(ErrorType::UnexpectedTermination)),
+                ..self
+            },
+            other => panic!(
+                "Recieved nexpected child status {:#?}\nCurrent state: {:#?}",
+                other, self
+            ),
         }
     }
 }
@@ -139,7 +147,7 @@ impl ChildState {
         }
     }
 
-    fn into_finished(self, now: Instant, error: Option<String>) -> ChildState {
+    fn into_finished(self, now: Instant, error: Option<ErrorType>) -> ChildState {
         match self {
             ChildState::Burning { write_hist, .. } => ChildState::Finished {
                 finish_time: now,

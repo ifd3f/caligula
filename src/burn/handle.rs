@@ -22,7 +22,7 @@ use tokio::{
 
 use super::ipc::InitialInfo;
 use super::{
-    ipc::{BurnConfig, StatusMessage, TerminateResult},
+    ipc::{BurnConfig, StatusMessage, ErrorType},
     BURN_ENV,
 };
 
@@ -78,7 +78,7 @@ impl Handle {
 
         let initial_info = match first_msg {
             Some(StatusMessage::InitSuccess(i)) => Ok(i),
-            Some(StatusMessage::Terminate(t)) => Err(StartProcessError::Failed(Some(t))),
+            Some(StatusMessage::Error(t)) => Err(StartProcessError::Failed(Some(t))),
             Some(other) => Err(StartProcessError::UnexpectedFirstStatus(other)),
             None => Err(StartProcessError::UnexpectedEOF),
         }?;
@@ -108,7 +108,7 @@ pub enum StartProcessError {
     #[error("Unexpected end of stdout")]
     UnexpectedEOF,
     #[error("Explicit failure signaled: {0:?}")]
-    Failed(Option<TerminateResult>),
+    Failed(Option<ErrorType>),
 }
 
 async fn read_next_message(

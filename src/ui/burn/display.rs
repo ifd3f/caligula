@@ -87,20 +87,20 @@ where
 }
 
 async fn child_dead(events: &mut EventStream) -> anyhow::Result<UIEvent> {
-    Ok(UIEvent::TermEvent(events.next().await.unwrap()?))
+    Ok(UIEvent::RecvTermEvent(events.next().await.unwrap()?))
 }
 
 async fn child_active(events: &mut EventStream, handle: &mut Handle) -> anyhow::Result<UIEvent> {
     let sleep = tokio::time::sleep(time::Duration::from_millis(250));
     select! {
         _ = sleep => {
-            return Ok(UIEvent::Sleep);
+            return Ok(UIEvent::SleepTimeout);
         }
         msg = handle.next_message() => {
-            return Ok(UIEvent::Child(Instant::now(), msg?));
+            return Ok(UIEvent::RecvChildStatus(Instant::now(), msg?));
         }
         event = events.next() => {
-            return Ok(UIEvent::TermEvent(event.unwrap()?));
+            return Ok(UIEvent::RecvTermEvent(event.unwrap()?));
         }
     }
 }

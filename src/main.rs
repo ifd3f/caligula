@@ -5,7 +5,7 @@ use crate::{
 use burn::{
     child::is_in_burn_mode,
     handle::StartProcessError,
-    ipc::{BurnConfig, TerminateResult},
+    ipc::{BurnConfig, ErrorType},
 };
 use clap::Parser;
 use cli::{Args, BurnArgs, Command};
@@ -87,7 +87,7 @@ async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
         Err(e) => {
             if let Some(dc) = e.downcast_ref::<StartProcessError>() {
                 match dc {
-                    StartProcessError::Failed(Some(TerminateResult::PermissionDenied)) => {
+                    StartProcessError::Failed(Some(ErrorType::PermissionDenied)) => {
                         debug!("Failure due to insufficient perms, asking user to escalate");
 
                         let response = Confirm::new(&format!(

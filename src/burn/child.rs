@@ -39,11 +39,11 @@ pub fn main() {
     let reporter = StatusReporter::open(sock);
 
     let mut ctx = Ctx { args, reporter };
-    let result = match ctx.run() {
-        Ok(_) => TerminateResult::Success,
-        Err(r) => r,
+    let final_msg = match ctx.run() {
+        Ok(_) => StatusMessage::Success,
+        Err(e) => StatusMessage::Error(e),
     };
-    ctx.send_msg(StatusMessage::Terminate(result));
+    ctx.send_msg(final_msg);
 }
 
 struct Ctx {
@@ -52,7 +52,7 @@ struct Ctx {
 }
 
 impl Ctx {
-    fn run(&mut self) -> Result<(), TerminateResult> {
+    fn run(&mut self) -> Result<(), ErrorType> {
         debug!("Opening file {}", self.args.src.to_string_lossy());
         let mut src = File::open(&self.args.src).unwrap_or_log();
         let size = src.seek(io::SeekFrom::End(0))?;
@@ -75,7 +75,7 @@ impl Ctx {
         Ok(())
     }
 
-    fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), TerminateResult> {
+    fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
         debug!("Opening {} for writing", self.args.dest.to_string_lossy());
 
         let mut dest = OpenOptions::new()
@@ -89,13 +89,13 @@ impl Ctx {
 
             let written = dest.write(block).expect("Failed to write block to disk");
             if written != block.len() {
-                return Err(TerminateResult::EndOfOutput);
+                return Err(ErrorType::EndOfOutput);
             }
             Ok(())
         })
     }
 
-    fn verify(&mut self, src: &mut File) -> Result<(), TerminateResult> {
+    fn verify(&mut self, src: &mut File) -> Result<(), ErrorType> {
         debug!(
             "Opening {} for verification",
             self.args.dest.to_string_lossy()
@@ -107,10 +107,10 @@ impl Ctx {
 
             let read = dest.read(dst).expect("Failed to read block from disk");
             if read != block.len() {
-                return Err(TerminateResult::EndOfOutput);
+                return Err(ErrorType::EndOfOutput);
             }
             if block != dst {
-                return Err(TerminateResult::VerificationFailed);
+                return Err(ErrorType::VerificationFailed);
             }
             Ok(())
         })
@@ -125,8 +125,8 @@ impl Ctx {
 fn for_each_block(
     ctx: &mut Ctx,
     src: &mut File,
-    mut action: impl FnMut(usize, &[u8], &mut [u8]) -> Result<(), TerminateResult>,
-) -> Result<(), TerminateResult> {
+    mut action: impl FnMut(usize, &[u8], &mut [u8]) -> Result<(), ErrorType>,
+) -> Result<(), ErrorType> {
     let block_size = ByteSize::kb(128).as_u64() as usize;
     let mut full_block = vec![0u8; block_size];
     let mut closure_block = vec![0u8; block_size]; // A block for the user to mutate
