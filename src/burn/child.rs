@@ -1,4 +1,5 @@
 use std::os::unix::fs::OpenOptionsExt;
+use std::panic::set_hook;
 use std::{
     env,
     fs::{File, OpenOptions},
@@ -9,7 +10,7 @@ use std::{
 use bytesize::ByteSize;
 use interprocess::local_socket::LocalSocketStream;
 use nix::fcntl::OFlag;
-use tracing::{debug, info};
+use tracing::{debug, error, info, trace};
 use tracing_unwrap::ResultExt;
 
 use crate::logging::init_logging_child;
@@ -26,6 +27,10 @@ pub fn main() {
     let cli_args: Vec<String> = env::args().collect();
     let args = serde_json::from_str::<BurnConfig>(&cli_args[1]).unwrap_or_log();
     init_logging_child(&args.logfile);
+
+    set_hook(Box::new(|p| {
+        error!("{p}");
+    }));
 
     debug!("We are in child process mode");
 
@@ -48,6 +53,7 @@ struct Ctx {
 
 impl Ctx {
     fn run(&mut self) -> Result<(), TerminateResult> {
+        debug!("Opening file {}", self.args.src.to_string_lossy());
         let mut src = File::open(&self.args.src).unwrap_or_log();
         let size = src.seek(io::SeekFrom::End(0))?;
         src.seek(io::SeekFrom::Start(0))?;
@@ -70,7 +76,7 @@ impl Ctx {
     }
 
     fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), TerminateResult> {
-        debug!("Running burn");
+        debug!("Opening {} for writing", self.args.dest.to_string_lossy());
 
         let mut dest = OpenOptions::new()
             .write(true)
@@ -78,7 +84,9 @@ impl Ctx {
             .open(&self.args.dest)?;
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
 
-        for_each_block(self, src, |block, _| {
+        for_each_block(self, src, |offset, block, _| {
+            trace!(offset, block_len = block.len(), "Writing block");
+
             let written = dest.write(block).expect("Failed to write block to disk");
             if written != block.len() {
                 return Err(TerminateResult::EndOfOutput);
@@ -88,10 +96,15 @@ impl Ctx {
     }
 
     fn verify(&mut self, src: &mut File) -> Result<(), TerminateResult> {
-        debug!("Running verify");
+        debug!(
+            "Opening {} for verification",
+            self.args.dest.to_string_lossy()
+        );
 
         let mut dest = File::open(&self.args.dest)?;
-        for_each_block(self, src, |block, dst| {
+        for_each_block(self, src, |offset, block, dst| {
+            trace!(offset, block_len = block.len(), "Verifying block");
+
             let read = dest.read(dst).expect("Failed to read block from disk");
             if read != block.len() {
                 return Err(TerminateResult::EndOfOutput);
@@ -112,13 +125,13 @@ impl Ctx {
 fn for_each_block(
     ctx: &mut Ctx,
     src: &mut File,
-    mut action: impl FnMut(&[u8], &mut [u8]) -> Result<(), TerminateResult>,
+    mut action: impl FnMut(usize, &[u8], &mut [u8]) -> Result<(), TerminateResult>,
 ) -> Result<(), TerminateResult> {
     let block_size = ByteSize::kb(128).as_u64() as usize;
     let mut full_block = vec![0u8; block_size];
     let mut closure_block = vec![0u8; block_size]; // A block for the user to mutate
 
-    let mut written_bytes: usize = 0;
+    let mut offset: usize = 0;
 
     let checkpoint_blocks: usize = 32;
 
@@ -129,11 +142,16 @@ fn for_each_block(
                 return Ok(());
             }
 
-            action(&full_block[..read_bytes], &mut closure_block[..read_bytes])?;
-            written_bytes += read_bytes;
+            action(
+                offset,
+                &full_block[..read_bytes],
+                &mut closure_block[..read_bytes],
+            )?;
+
+            offset += read_bytes;
         }
 
-        ctx.send_msg(StatusMessage::TotalBytes(written_bytes));
+        ctx.send_msg(StatusMessage::TotalBytes(offset));
     }
 }
 
@@ -145,7 +163,7 @@ impl StatusReporter {
     }
 
     fn send_msg(&mut self, msg: StatusMessage) {
-        debug!("Sending message {:?}", msg);
+        trace!("Sending message {:?}", msg);
         serde_json::to_writer(&mut self.0, &msg).expect("Failed to convert message to JSON");
         self.0.write(b"\n").expect("Failed to write to socket");
     }
