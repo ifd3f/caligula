@@ -1,4 +1,7 @@
-use crate::{ui::ask_outfile, logging::{get_log_paths, init_logging_parent}};
+use crate::{
+    logging::{get_log_paths, init_logging_parent},
+    ui::ask_outfile,
+};
 use burn::{
     child::is_in_burn_mode,
     handle::StartProcessError,
@@ -7,16 +10,15 @@ use burn::{
 use clap::Parser;
 use cli::{Args, BurnArgs, Command};
 use device::BurnTarget;
-use inquire::Confirm;
+use inquire::{Confirm, InquireError};
 use tracing::debug;
-use tracing_unwrap::ResultExt;
 use ui::{confirm_write, utils::TUICapture};
 
 pub mod burn;
 pub mod cli;
 mod device;
-mod ui;
 pub mod logging;
+mod ui;
 
 fn main() {
     if is_in_burn_mode() {
@@ -25,12 +27,28 @@ fn main() {
         init_logging_parent();
 
         debug!("Starting primary process");
-        cli_main().unwrap_or_log();
+        match inner_main() {
+            Ok(_) => (),
+            Err(e) => handle_toplevel_error(e),
+        }
+    }
+}
+
+fn handle_toplevel_error(err: anyhow::Error) {
+    if let Some(e) = err.downcast_ref::<InquireError>() {
+        match e {
+            InquireError::OperationCanceled
+            | InquireError::OperationInterrupted
+            | InquireError::NotTTY => eprintln!("{e}"),
+            _ => panic!("{err}"),
+        }
+    } else {
+        panic!("{err}");
     }
 }
 
 #[tokio::main]
-async fn cli_main() -> anyhow::Result<()> {
+async fn inner_main() -> anyhow::Result<()> {
     let args = Args::parse();
     let args = match args.command {
         Command::Burn(a) => a,
