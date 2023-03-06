@@ -128,6 +128,7 @@ async fn read_next_message(
 }
 
 /// A managed named socket. It gets auto-deleted on drop.
+#[derive(Debug)]
 struct ChildSocket {
     socket_name: PathBuf,
     socket: LocalSocketListener,
@@ -159,5 +160,15 @@ impl ChildSocket {
 impl Drop for ChildSocket {
     fn drop(&mut self) {
         remove_file(&self.socket_name).unwrap_or_log();
+    }
+}
+
+impl core::fmt::Debug for Handle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Handle")
+            .field("_child", &self._child)
+            .field("_socket", &self._socket)
+            .field("initial_info", &self.initial_info)
+            .finish()
     }
 }

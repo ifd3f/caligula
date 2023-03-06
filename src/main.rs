@@ -117,10 +117,11 @@ async fn begin_writing(
     args: &BurnArgs,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
-    let mut tui = TUICapture::new()?;
+    let tui = TUICapture::new()?;
+    let terminal = tui.terminal();
 
     // create app and run it
-    ui::burn::UI::new(handle, &mut tui.terminal, target, args)
+    ui::burn::UI::new(handle, terminal, target, args)
         .show()
         .await?;
 

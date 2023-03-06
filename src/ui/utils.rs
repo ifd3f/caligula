@@ -1,16 +1,24 @@
-use std::{fmt::Display, io::Stdout};
+use std::{
+    fmt::Display,
+    io::Stdout,
+    panic::{set_hook, take_hook, PanicInfo},
+    sync::Arc,
+};
 
 use bytesize::ByteSize;
 use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use tokio::sync::Mutex;
 use tracing_unwrap::ResultExt;
 use tui::{backend::CrosstermBackend, Terminal};
 
+type PanicHook = Box<dyn Fn(&PanicInfo<'_>) + 'static + Sync + Send>;
+
 pub struct TUICapture {
-    pub terminal: Terminal<CrosstermBackend<Stdout>>,
-    _private: (),
+    terminal: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>>,
+    prev_hook: Arc<PanicHook>,
 }
 
 impl TUICapture {
@@ -20,21 +28,41 @@ impl TUICapture {
         let mut stdout = std::io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
-        let terminal = Terminal::new(backend)?;
+        let terminal = Arc::new(Mutex::new(Terminal::new(backend)?));
+
+        let prev_hook = Arc::new(take_hook());
+
+        set_hook({
+            let terminal = terminal.clone();
+            let prev_hook = prev_hook.clone();
+            Box::new(move |p| {
+                {
+                    let mut lock = terminal.blocking_lock();
+                    restore(&mut lock);
+                }
+                (prev_hook)(p)
+            })
+        });
 
         Ok(Self {
             terminal,
-            _private: (),
+            prev_hook,
         })
+    }
+
+    pub fn terminal(&self) -> Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>> {
+        self.terminal.clone()
     }
 }
 
 impl Drop for TUICapture {
     fn drop(&mut self) {
-        // restore terminal
-        disable_raw_mode().unwrap_or_log();
-        execute!(self.terminal.backend_mut(), LeaveAlternateScreen,).unwrap_or_log();
-        self.terminal.show_cursor().unwrap_or_log();
+        {
+            let mut lock = self.terminal.blocking_lock();
+            restore(&mut lock);
+        }
+        let hook = self.prev_hook.clone();
+        set_hook(Box::new(move |p| hook(p)));
     }
 }
 
@@ -46,4 +74,11 @@ impl Display for ByteSpeed {
         let bytes = ByteSize::b(self.0 as u64);
         write!(f, "{bytes}/s")
     }
+}
+
+fn restore(terminal: &mut Terminal<CrosstermBackend<Stdout>>) {
+    // restore terminal
+    disable_raw_mode().unwrap_or_log();
+    execute!(terminal.backend_mut(), LeaveAlternateScreen,).unwrap_or_log();
+    terminal.show_cursor().unwrap_or_log();
 }

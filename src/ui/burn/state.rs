@@ -16,12 +16,14 @@ pub enum UIEvent {
     TermEvent(Event),
 }
 
+#[derive(Debug)]
 pub struct State {
     pub input_filename: String,
     pub target_filename: String,
     pub child: ChildState,
 }
 
+#[derive(Debug)]
 pub enum ChildState {
     Burning {
         handle: Handle,
@@ -102,6 +104,14 @@ impl State {
                     c => c,
                 };
                 Self { child, ..self }
+            }
+            Some(StatusMessage::Terminate(reason)) => {
+                match &self.child {
+                    ChildState::Finished { .. } => self,
+                    _ => {
+                        panic!("Got invalid Terminate message!\nTerminate reason: {:?}\nCurrent state: {:#?}", reason, &self);
+                    }
+                }
             }
             None => Self {
                 child: self.child.into_finished(now, None),
