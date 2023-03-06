@@ -1,6 +1,6 @@
 # Caligula Burning Tool
 
-[![CI](https://github.com/ifd3f/caligula/actions/workflows/build_nix.yml/badge.svg?branch=main)](https://github.com/ifd3f/caligula/actions/workflows/build_nix.yml)
+[![CI](https://github.com/ifd3f/caligula/actions/workflows/ci.yml/badge.svg)](https://github.com/ifd3f/caligula/actions/workflows/ci.yml)
 
 ![Screenshot of the Caligula TUI verifying a disk.](./images/verifying.png)
 
