@@ -100,11 +100,13 @@ impl fmt::Display for ListOption {
 }
 
 fn enumerate_options(show_all_disks: bool) -> anyhow::Result<Vec<ListOption>> {
-    let burn_targets = enumerate_devices()
+    let mut burn_targets: Vec<BurnTarget> = enumerate_devices()
         .filter(|d| show_all_disks || d.removable == Removable::Yes)
-        .map(ListOption::Device);
+        .collect();
 
-    let options = burn_targets.chain([
+    burn_targets.sort();
+
+    let options = burn_targets.into_iter().map(ListOption::Device).chain([
         ListOption::Refresh,
         ListOption::RetryWithShowAll(!show_all_disks),
     ]);

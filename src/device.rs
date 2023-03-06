@@ -69,7 +69,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
             };
 
             let target_type = match d.dev_type {
-                native::DEV_TYPE_DISK => Type::Block,
+                native::DEV_TYPE_DISK => Type::Disk,
                 native::DEV_TYPE_PARTITION => Type::Partition,
                 _ => Type::File,
             };
@@ -104,6 +104,12 @@ pub struct BurnTarget {
 }
 
 impl BurnTarget {
+    #[cfg(target_os = "macos")]
+    fn from_dev_name(name: &OsStr) -> Result<Self, DeviceParseError> {
+        todo!()
+    }
+
+    #[cfg(target_os = "linux")]
     fn from_dev_name(name: &OsStr) -> Result<Self, DeviceParseError> {
         let devnode = PathBuf::from("/dev").join(name);
         if !devnode.exists() {
@@ -128,6 +134,11 @@ impl BurnTarget {
 
         let model =
             Model(read_sys_file(sysnode.join("device/model"))?.map(|m| m.trim().to_owned()));
+        
+        let target_type = match sysnode.join("partition").exists() {
+            true => Type::Partition,
+            false => Type::Disk,
+        };
 
         Ok(Self {
             name: name.to_string_lossy().into(),
@@ -135,7 +146,7 @@ impl BurnTarget {
             size,
             removable,
             model,
-            target_type: Type::Block,
+            target_type,
         })
     }
 
@@ -167,11 +178,20 @@ impl TryFrom<&Path> for BurnTarget {
     type Error = DeviceParseError;
 
     fn try_from(value: &Path) -> Result<Self, Self::Error> {
+        #[cfg(target_os = "linux")]
         if value.starts_with("/sys/class/block") || value.starts_with("/dev") {
             if let Some(n) = value.file_name() {
                 return Ok(Self::from_dev_name(n)?);
             }
         }
+
+        #[cfg(target_os = "macos")]
+        if value.starts_with("/dev") {
+            if let Some(n) = value.file_name() {
+                return Ok(Self::from_dev_name(n)?);
+            }
+        }
+
         Ok(Self::from_normal_file(value.to_owned())?)
     }
 }
@@ -243,7 +263,7 @@ impl Display for Removable {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Type {
     File,
-    Block,
+    Disk,
     Partition,
 }
 
@@ -254,7 +274,7 @@ impl Display for Type {
             "{}",
             match self {
                 Type::File => "file",
-                Type::Block => "block",
+                Type::Disk => "disk",
                 Type::Partition => "partition",
             }
         )
