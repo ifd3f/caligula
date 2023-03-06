@@ -9,7 +9,7 @@ use tracing_unwrap::ResultExt;
 use tui::{backend::CrosstermBackend, Terminal};
 
 pub struct TUICapture {
-    pub terminal: Terminal<CrosstermBackend<Stdout>>,
+    terminal: Terminal<CrosstermBackend<Stdout>>,
     _private: (),
 }
 
@@ -26,6 +26,10 @@ impl TUICapture {
             terminal,
             _private: (),
         })
+    }
+
+    pub fn terminal(&mut self) -> &mut Terminal<CrosstermBackend<Stdout>> {
+        &mut self.terminal
     }
 }
 

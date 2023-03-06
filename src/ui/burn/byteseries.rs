@@ -9,6 +9,7 @@ pub enum EstimatedTime {
     Unknown,
 }
 
+#[derive(Debug)]
 pub struct ByteSeries {
     max_bytes: ByteSize,
     raw: Vec<(f64, u64)>,

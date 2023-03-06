@@ -5,12 +5,13 @@ use std::{
 
 #[cfg(target_os = "linux")]
 pub fn open_blockdev(path: impl AsRef<Path>) -> std::io::Result<File> {
-    use nix::fcntl::OFlag;
     use std::os::unix::fs::OpenOptionsExt;
+
+    use libc::O_SYNC;
 
     OpenOptions::new()
         .write(true)
-        .custom_flags((OFlag::O_DIRECT | OFlag::O_SYNC).bits())
+        .custom_flags(O_SYNC)
         .open(path)
 }
 

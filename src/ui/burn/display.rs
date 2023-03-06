@@ -8,7 +8,7 @@ use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
-    widgets::{Block, Borders, Cell, Row, Table},
+    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
     Terminal,
 };
 
@@ -16,6 +16,7 @@ use crate::{
     burn::{self, Handle},
     cli::BurnArgs,
     device::BurnTarget,
+    logging::get_bug_report_msg,
     ui::burn::state::UIEvent,
 };
 
@@ -87,20 +88,20 @@ where
 }
 
 async fn child_dead(events: &mut EventStream) -> anyhow::Result<UIEvent> {
-    Ok(UIEvent::TermEvent(events.next().await.unwrap()?))
+    Ok(UIEvent::RecvTermEvent(events.next().await.unwrap()?))
 }
 
 async fn child_active(events: &mut EventStream, handle: &mut Handle) -> anyhow::Result<UIEvent> {
     let sleep = tokio::time::sleep(time::Duration::from_millis(250));
     select! {
         _ = sleep => {
-            return Ok(UIEvent::Sleep);
+            return Ok(UIEvent::SleepTimeout);
         }
         msg = handle.next_message() => {
-            return Ok(UIEvent::Child(Instant::now(), msg?));
+            return Ok(UIEvent::RecvChildStatus(Instant::now(), msg?));
         }
         event = events.next() => {
-            return Ok(UIEvent::TermEvent(event.unwrap()?));
+            return Ok(UIEvent::RecvTermEvent(event.unwrap()?));
         }
     }
 }
@@ -142,6 +143,11 @@ pub fn draw(
     let final_time = match state.child {
         ChildState::Finished { finish_time, .. } => finish_time,
         _ => Instant::now(),
+    };
+
+    let error = match &state.child {
+        ChildState::Finished { error, .. } => error.as_ref(),
+        _ => None,
     };
 
     let mut rows = vec![
@@ -200,7 +206,21 @@ pub fn draw(
 
         history.draw_progress(f, layout.progress);
         history.draw_speed_chart(f, layout.graph, final_time);
-        f.render_widget(info_table, layout.args_display);
+
+        if let Some(error) = error {
+            f.render_widget(
+                Paragraph::new(format!("{error}\n{}", get_bug_report_msg()))
+                    .block(
+                        Block::default()
+                            .title("!!! ERROR !!!")
+                            .borders(Borders::ALL),
+                    )
+                    .wrap(Wrap { trim: true }),
+                layout.args_display,
+            )
+        } else {
+            f.render_widget(info_table, layout.args_display);
+        }
     })?;
     Ok(())
 }

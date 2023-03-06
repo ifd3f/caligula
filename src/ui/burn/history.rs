@@ -91,7 +91,11 @@ impl<'a> History<'a> {
                 write.bytes_written(),
                 write.max_bytes(),
                 if *error { "Error!" } else { "Done!" },
-                Style::default().fg(Color::Green).bg(Color::Black),
+                if *error {
+                    Style::default().fg(Color::White).bg(Color::Red)
+                } else {
+                    Style::default().fg(Color::Green).bg(Color::Black)
+                },
             ),
         };
 

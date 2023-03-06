@@ -1,59 +1,55 @@
-use crate::ui::ask_outfile;
+use crate::{
+    logging::{get_log_paths, init_logging_parent},
+    ui::ask_outfile,
+};
 use burn::{
     child::is_in_burn_mode,
     handle::StartProcessError,
-    ipc::{BurnConfig, TerminateResult},
+    ipc::{BurnConfig, ErrorType},
 };
 use clap::Parser;
 use cli::{Args, BurnArgs, Command};
 use device::BurnTarget;
-use inquire::Confirm;
+use inquire::{Confirm, InquireError};
 use tracing::debug;
-use tracing_unwrap::ResultExt;
 use ui::{confirm_write, utils::TUICapture};
 
 pub mod burn;
 pub mod cli;
 mod device;
+pub mod logging;
 pub mod native;
 mod ui;
 
 fn main() {
-    init_tracing_subscriber();
-
     if is_in_burn_mode() {
-        debug!("We are in child process mode");
         burn::child::main();
     } else {
+        init_logging_parent();
+
         debug!("Starting primary process");
-        cli_main().unwrap_or_log();
+        match inner_main() {
+            Ok(_) => (),
+            Err(e) => handle_toplevel_error(e),
+        }
     }
 }
 
-#[cfg(not(debug_assertions))]
-fn init_tracing_subscriber() {}
-
-#[cfg(debug_assertions)]
-fn init_tracing_subscriber() {
-    use std::{fs::File, sync::Mutex};
-    use tracing::Level;
-
-    let is_parent = !is_in_burn_mode();
-
-    let writer = File::create(if is_parent { "dev.log" } else { "child.log" }).unwrap_or_log();
-
-    tracing_subscriber::fmt()
-        .with_writer(Mutex::new(writer))
-        .with_max_level(if is_parent {
-            Level::TRACE
-        } else {
-            Level::TRACE
-        })
-        .init();
+fn handle_toplevel_error(err: anyhow::Error) {
+    if let Some(e) = err.downcast_ref::<InquireError>() {
+        match e {
+            InquireError::OperationCanceled
+            | InquireError::OperationInterrupted
+            | InquireError::NotTTY => eprintln!("{e}"),
+            _ => panic!("{err}"),
+        }
+    } else {
+        panic!("{err}");
+    }
 }
 
 #[tokio::main]
-async fn cli_main() -> anyhow::Result<()> {
+async fn inner_main() -> anyhow::Result<()> {
     let args = Args::parse();
     let args = match args.command {
         Command::Burn(a) => a,
@@ -74,6 +70,7 @@ async fn cli_main() -> anyhow::Result<()> {
     let burn_args = BurnConfig {
         dest: target.devnode.clone(),
         src: args.input.to_owned(),
+        logfile: get_log_paths().child.clone(),
         verify: true,
     };
 
@@ -91,7 +88,7 @@ async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
         Err(e) => {
             if let Some(dc) = e.downcast_ref::<StartProcessError>() {
                 match dc {
-                    StartProcessError::Failed(Some(TerminateResult::PermissionDenied)) => {
+                    StartProcessError::Failed(Some(ErrorType::PermissionDenied)) => {
                         debug!("Failure due to insufficient perms, asking user to escalate");
 
                         let response = Confirm::new(&format!(
@@ -122,9 +119,10 @@ async fn begin_writing(
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
     let mut tui = TUICapture::new()?;
+    let terminal = tui.terminal();
 
     // create app and run it
-    ui::burn::UI::new(handle, &mut tui.terminal, target, args)
+    ui::burn::UI::new(handle, terminal, target, args)
         .show()
         .await?;
 
