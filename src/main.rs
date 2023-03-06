@@ -117,7 +117,7 @@ async fn begin_writing(
     args: &BurnArgs,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
-    let tui = TUICapture::new()?;
+    let mut tui = TUICapture::new()?;
     let terminal = tui.terminal();
 
     // create app and run it

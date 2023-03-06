@@ -1,9 +1,9 @@
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use bytesize::ByteSize;
 use crossterm::event::EventStream;
 use futures::StreamExt;
-use tokio::{select, sync::Mutex, time};
+use tokio::{select, time};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
@@ -25,24 +25,24 @@ use super::{
     state::{ChildState, Quit, State},
 };
 
-pub struct UI<B>
+pub struct UI<'a, B>
 where
     B: Backend,
 {
-    terminal: Arc<Mutex<Terminal<B>>>,
+    terminal: &'a mut Terminal<B>,
     events: EventStream,
     state: State,
 }
 
-impl<B> UI<B>
+impl<'a, B> UI<'a, B>
 where
     B: Backend,
 {
     pub fn new(
         handle: burn::Handle,
-        terminal: Arc<Mutex<Terminal<B>>>,
+        terminal: &'a mut Terminal<B>,
         target: BurnTarget,
-        args: &BurnArgs,
+        args: &'a BurnArgs,
     ) -> Self {
         let max_bytes = ByteSize::b(handle.initial_info().input_file_bytes);
         Self {
@@ -71,7 +71,7 @@ where
         Ok(())
     }
 
-    async fn get_and_handle_events(mut self) -> anyhow::Result<UI<B>> {
+    async fn get_and_handle_events(mut self) -> anyhow::Result<UI<'a, B>> {
         let msg = {
             let handle = self.state.child.child_process();
             if let Some(handle) = handle {
@@ -81,10 +81,7 @@ where
             }?
         };
         self.state = self.state.on_event(msg)?;
-        {
-            let mut lock = self.terminal.lock().await;
-            draw(&self.state, &mut lock)?;
-        }
+        draw(&self.state, &mut self.terminal)?;
         Ok(self)
     }
 }
