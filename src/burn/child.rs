@@ -1,19 +1,19 @@
-use std::os::unix::fs::OpenOptionsExt;
 use std::panic::set_hook;
 use std::{
     env,
-    fs::{File, OpenOptions},
+    fs::File,
     io::{self, Read, Seek, Write},
     path::PathBuf,
 };
 
 use bytesize::ByteSize;
 use interprocess::local_socket::LocalSocketStream;
-use nix::fcntl::OFlag;
 use tracing::{debug, error, info, trace};
 use tracing_unwrap::ResultExt;
 
 use crate::logging::init_logging_child;
+
+use crate::burn::xplat::open_blockdev;
 
 use super::{ipc::*, BURN_ENV};
 
@@ -78,10 +78,7 @@ impl Ctx {
     fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
         debug!("Opening {} for writing", self.args.dest.to_string_lossy());
 
-        let mut dest = OpenOptions::new()
-            .write(true)
-            .custom_flags((OFlag::O_DIRECT | OFlag::O_SYNC).bits())
-            .open(&self.args.dest)?;
+        let mut dest = open_blockdev(&self.args.dest)?;
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
 
         for_each_block(self, src, |offset, block, _| {

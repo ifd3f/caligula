@@ -4,6 +4,7 @@
 pub mod child;
 pub mod handle;
 pub mod ipc;
+mod xplat;
 
 pub const BURN_ENV: &str = "_CALIGULA_RUN_IN_BURN_MODE";
 

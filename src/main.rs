@@ -18,6 +18,7 @@ pub mod burn;
 pub mod cli;
 mod device;
 pub mod logging;
+pub mod native;
 mod ui;
 
 fn main() {
