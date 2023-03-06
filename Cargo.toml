@@ -1,6 +1,6 @@
 [package]
 name = "caligula"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "GPL-3.0"
 
@@ -35,4 +35,3 @@ test-case = "3.0.0"
 opt-level = 2
 lto = true
 codegen-units = 1
-strip = true
