@@ -6,6 +6,8 @@
 
 **Caligula** is a safe, user-friendly, low-resource TUI for imaging disks.
 
+**!!! Warning !!!** This software is new and experimental. If you have problems, please file an issue and I will try to address it!
+
 ```
 $ caligula burn
 Burn an image to a disk
