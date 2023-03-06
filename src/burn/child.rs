@@ -32,7 +32,7 @@ pub fn main() {
         error!("{p}");
     }));
 
-    debug!("We are in child process mode");
+    debug!("We are in child process mode with args {:#?}", args);
 
     let sock = cli_args[2].as_str();
     info!("Opening socket {sock}");
