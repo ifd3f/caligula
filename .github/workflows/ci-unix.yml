@@ -1,0 +1,55 @@
+on:
+  workflow_call:
+    inputs:
+      triple:
+        required: true
+        type: string
+      runner:
+        required: true
+        type: string
+    secrets:
+      CACHIX_AUTH_TOKEN:
+        required: true
+
+jobs:
+  build:
+    name: "Build using Nix"
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: cachix/install-nix-action@v20
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - uses: cachix/cachix-action@v12
+        with:
+          name: astralbijection
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      - name: Build package
+        run: nix build . --show-trace
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: caligula-bin-${{ inputs.triple }}
+          path: result/bin/caligula
+
+      - name: Smoke test
+        run: nix run . -- --help
+
+  smoke-test-fresh:
+    name: Smoke test on fresh ${{ inputs.runner }}
+    runs-on: ${{ inputs.runner }}
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v3
+      with:
+        name: caligula-bin-${{ inputs.triple }}
+        
+    - name: Set permissions on artifact
+      run: chmod +x caligula
+      
+    - name: Ensure the command runs
+      run: ./caligula --help

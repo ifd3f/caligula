@@ -1,0 +1,30 @@
+name: "CI"
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  ci-linux:
+    name: Linux
+    uses: ./.github/workflows/ci-unix.yml
+    with:
+      runner: ubuntu-latest
+      triple: x86_64-linux
+    secrets: inherit
+
+  ci-macos-x86:
+    name: MacOS x86
+    uses: ./.github/workflows/ci-unix.yml
+    with:
+      runner: macos-latest
+      triple: x86_64-darwin
+    secrets: inherit
+
+  # # M1 runners take way too long to get.
+  # ci-macos-aarch64:
+  #   uses: ./.github/workflows/ci-unix.yml
+  #   with:
+  #     runner: m1max
+  #     triple: aarch64-darwin
+  #   secrets: inherit
