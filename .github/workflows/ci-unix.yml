@@ -1,20 +1,27 @@
 on:
   workflow_call:
     inputs:
-      triple:
+      build_runner:
         required: true
         type: string
-      runner:
+      target_triple:
         required: true
         type: string
+      do_smoke_tests:
+        required: true
+        type: boolean
     secrets:
       CACHIX_AUTH_TOKEN:
         required: true
 
+env:
+  nix_target: ".#packages.${{ inputs.target_triple }}.caligula"
+  artifact: "caligula-${{ inputs.target_triple }}"
+
 jobs:
   build:
     name: "Build using Nix"
-    runs-on: ${{ inputs.runner }}
+    runs-on: ${{ inputs.build_runner }}
     steps:
       - uses: actions/checkout@v3
 
@@ -28,25 +35,27 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build package
-        run: nix build . --show-trace
+        run: nix build ${{ env.nix_target }} --show-trace
 
       - uses: actions/upload-artifact@v3
         with:
-          name: caligula-bin-${{ inputs.triple }}
+          name: ${{ env.artifact }}
           path: result/bin/caligula
 
       - name: Smoke test
-        run: nix run . -- --help
+        if: inputs.do_smoke_tests
+        run: nix run ${{ env.nix_target }} -- --help
 
   smoke-test-fresh:
-    name: Smoke test on fresh ${{ inputs.runner }}
-    runs-on: ${{ inputs.runner }}
+    name: Smoke test on fresh ${{ inputs.smoke_test_runner }}
+    runs-on: ${{ inputs.smoke_test_runner }}
     needs: build
+    if: inputs.do_smoke_tests
 
     steps:
     - uses: actions/download-artifact@v3
       with:
-        name: caligula-bin-${{ inputs.triple }}
+        name: ${{ env.artifact }}
         
     - name: Set permissions on artifact
       run: chmod +x caligula

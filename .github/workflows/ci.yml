@@ -2,29 +2,30 @@ name: "CI"
 
 on:
   push:
-  pull_request:
 
 jobs:
-  ci-linux:
-    name: Linux
+  ci:
     uses: ./.github/workflows/ci-unix.yml
     with:
-      runner: ubuntu-latest
-      triple: x86_64-linux
+      build_runner: ${{ matrix.params.build_runner }}
+      target_triple: ${{ matrix.params.target_triple }}
+      do_smoke_tests: ${{ matrix.params.do_smoke_tests }}
     secrets: inherit
+    strategy:
+      matrix:
+        params:
+          - build_runner: ubuntu-latest
+            target_triple: x86_64-linux
+            do_smoke_tests: true
 
-  ci-macos-x86:
-    name: MacOS x86
-    uses: ./.github/workflows/ci-unix.yml
-    with:
-      runner: macos-latest
-      triple: x86_64-darwin
-    secrets: inherit
+          - build_runner: macos-latest
+            target_triple: x86_64-darwin
+            do_smoke_tests: true
 
-  # # M1 runners take way too long to get.
-  # ci-macos-aarch64:
-  #   uses: ./.github/workflows/ci-unix.yml
-  #   with:
-  #     runner: m1max
-  #     triple: aarch64-darwin
-  #   secrets: inherit
+          - build_runner: ubuntu-latest
+            target_triple: aarch64-linux
+            do_smoke_tests: false
+
+          - build_runner: macos-latest
+            target_triple: aarch64-darwin
+            do_smoke_tests: false
