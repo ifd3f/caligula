@@ -8,4 +8,7 @@
 *.gz
 *.o
 *.a
+
 result
+result-info
+result-man

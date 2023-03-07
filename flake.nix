@@ -7,7 +7,11 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, naersk, rust-overlay }@inputs:
-    let
+    {
+      lib = import ./nix inputs;
+    } //
+
+    (let
       supportedSystems =
         [ "aarch64-darwin" "aarch64-linux" "x86_64-darwin" "x86_64-linux" ];
     in flake-utils.lib.eachSystem supportedSystems (system:
@@ -17,7 +21,7 @@
           overlays = [ rust-overlay.overlays.default ];
         };
 
-        crossHelpers = import ./nix/cross-helpers.nix system inputs;
+        crossHelpers = self.lib.crossHelpers system;
       in {
         packages = {
           default = self.packages."${system}".caligula;
@@ -27,9 +31,8 @@
         devShell = let tc = crossHelpers.forTarget system;
         in with pkgs;
         mkShell {
-          buildInputs = [ nixfmt tc.rust-toolchain-dev ]
-            ++ tc.platformDeps;
+          buildInputs = [ nixfmt tc.rust-toolchain-dev ] ++ tc.platformDeps;
           CARGO_BUILD_TARGET = tc.rustTarget;
         };
-      });
+      }));
 }

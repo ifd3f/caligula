@@ -1,11 +1,7 @@
-host:
 { nixpkgs, naersk, rust-overlay, ... }:
+host:
 let
-  pkgs = import nixpkgs {
-    system = host;
-    overlays = [ rust-overlay.overlays.default ];
-  };
-  lib = pkgs.lib;
+  lib = nixpkgs.lib;
   hostInfo = lib.systems.parse.mkSystemFromString host;
 in rec {
   supportedSystems = if hostInfo.kernel.name == "linux" then [
@@ -19,12 +15,11 @@ in rec {
 
   forTarget = target:
     let
+      # Determine some platform-specific parameters.
       targetInfo = lib.systems.parse.mkSystemFromString target;
-
       buildCfg = if targetInfo.kernel.name == "linux" then {
         rustTarget = "${targetInfo.cpu.name}-unknown-linux-musl";
         platformDeps = [ ];
-        cross = pkgs.pkgsCross."${targetInfo.cpu.name}-multiplatform";
       } else if targetInfo.kernel.name == "darwin" then {
         rustTarget = "${targetInfo.cpu.name}-apple-darwin";
         platformDeps = with pkgs.darwin.apple_sdk.frameworks; [
@@ -33,40 +28,62 @@ in rec {
           Foundation
           DiskArbitration
         ];
-        cross = pkgs.pkgsCross."${targetInfo.cpu.name}-darwin";
       } else
         throw "unsupported target system ${target}";
 
+      # Construct pkgs (host = target = this system)
+      pkgs = import nixpkgs {
+        system = host;
+        overlays = [ rust-overlay.overlays.default ];
+      };
+
+      # Construct pkgsCross (host = this system, target = target we want)
+      pkgsCross = import nixpkgs {
+        system = host;
+        crossSystem.config = buildCfg.rustTarget;
+        overlays = [ rust-overlay.overlays.default ];
+      };
+
+      # Determine name for the linker env var to pass to cargo
       targetLinkerEnvName = "CARGO_TARGET_${
           builtins.replaceStrings [ "-" ] [ "_" ]
           (lib.toUpper buildCfg.rustTarget)
         }_LINKER";
 
+      # Construct a rust toolchain that runs on the host
       rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
         targets = [ buildCfg.rustTarget ];
-      };
-      rust-toolchain-dev = rust-toolchain.override {
-        extensions = [ "rust-src" "rust-analyzer" ];
       };
       naersk' = pkgs.callPackage naersk {
         cargo = rust-toolchain;
         rustc = rust-toolchain;
       };
 
+      extraBuildEnv = if host != target then {
+        "${targetLinkerEnvName}" =
+          "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-ld";
+      } else
+        { };
+
+      # The actual package
       caligula = with pkgs;
         naersk'.buildPackage ({
           src = ../.;
           doCheck = true;
           buildInputs = buildCfg.platformDeps;
           CARGO_BUILD_TARGET = buildCfg.rustTarget;
-        } // (if host != target then {
-          "${targetLinkerEnvName}" = "${buildCfg.cross.gcc}/bin/ld";
-        } else
-          { }));
+        } // extraBuildEnv);
 
-    in rec {
-      inherit rust-toolchain-dev caligula;
+    in {
+      inherit pkgs pkgsCross rust-toolchain caligula extraBuildEnv;
       inherit (buildCfg) platformDeps rustTarget;
+
+      naersk = naersk';
+
+      # The development toolchain config with IDE goodies
+      rust-toolchain-dev = rust-toolchain.override {
+        extensions = [ "rust-src" "rust-analyzer" ];
+      };
     };
 
   caligulaPackages = lib.listToAttrs (lib.forEach supportedSystems (target: {
