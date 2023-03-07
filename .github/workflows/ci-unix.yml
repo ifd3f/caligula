@@ -15,7 +15,7 @@ on:
         required: true
 
 env:
-  nix_target: ".#packages.${{ inputs.target_triple }}.caligula"
+  nix_target: ".#caligula-${{ inputs.target_triple }}"
   artifact: "caligula-${{ inputs.target_triple }}"
 
 jobs:
@@ -24,9 +24,6 @@ jobs:
     runs-on: ${{ inputs.build_runner }}
     steps:
       - uses: actions/checkout@v3
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
 
       - uses: cachix/install-nix-action@v20
         with:
