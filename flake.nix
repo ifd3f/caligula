@@ -42,13 +42,17 @@
           rustc = rust-toolchain;
         };
       in {
-        packages.default = with pkgs;
-          naersk'.buildPackage {
-            src = "${self}";
-            doCheck = true;
-            buildInputs = targetInfo.platformDeps;
-            CARGO_BUILD_TARGET = targetInfo.rustTarget;
-          };
+        packages = {
+          default = self.packages."${system}".caligula;
+
+          caligula = with pkgs;
+            naersk'.buildPackage {
+              src = "${self}";
+              doCheck = true;
+              buildInputs = targetInfo.platformDeps;
+              CARGO_BUILD_TARGET = targetInfo.rustTarget;
+            };
+        };
 
         devShell = with pkgs;
           mkShell {
