@@ -7,7 +7,7 @@ on:
       target_triple:
         required: true
         type: string
-      do_smoke_tests:
+      do_e2e_tests:
         required: true
         type: boolean
     secrets:
@@ -42,15 +42,15 @@ jobs:
           name: ${{ env.artifact }}
           path: result/bin/caligula
 
-      - name: Smoke test
-        if: inputs.do_smoke_tests
+      - name: e2e test
+        if: inputs.do_e2e_tests
         run: nix run ${{ env.nix_target }} -- --help
 
-  smoke-test-fresh:
-    name: Smoke test on fresh ${{ inputs.smoke_test_runner }}
-    runs-on: ${{ inputs.smoke_test_runner }}
+  e2e-test-fresh:
+    name: e2e test on fresh ${{ inputs.smoke_test_runner }}
+    runs-on: ${{ inputs.e2e_test_runner }}
     needs: build
-    if: inputs.do_smoke_tests
+    if: inputs.do_e2e_tests
 
     steps:
     - uses: actions/download-artifact@v3

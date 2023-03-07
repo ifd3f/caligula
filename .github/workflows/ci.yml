@@ -2,30 +2,37 @@ name: "CI"
 
 on:
   push:
+  pull_request:
 
 jobs:
-  ci:
+  ci-x86_64-linux:
     uses: ./.github/workflows/ci-unix.yml
     with:
-      build_runner: ${{ matrix.params.build_runner }}
-      target_triple: ${{ matrix.params.target_triple }}
-      do_smoke_tests: ${{ matrix.params.do_smoke_tests }}
+      build_runner: ubuntu-latest
+      target_triple: x86_64-linux
+      do_e2e_tests: true
     secrets: inherit
-    strategy:
-      matrix:
-        params:
-          - build_runner: ubuntu-latest
-            target_triple: x86_64-linux
-            do_smoke_tests: true
 
-          - build_runner: macos-latest
-            target_triple: x86_64-darwin
-            do_smoke_tests: true
+  ci-x86_64-darwin:
+    uses: ./.github/workflows/ci-unix.yml
+    with:
+      build_runner: macos-latest
+      target_triple: x86_64-darwin
+      do_e2e_tests: true
+    secrets: inherit
 
-          - build_runner: ubuntu-latest
-            target_triple: aarch64-linux
-            do_smoke_tests: false
+  ci-aarch64-linux:
+    uses: ./.github/workflows/ci-unix.yml
+    with:
+      build_runner: ubuntu-latest
+      target_triple: aarch64-linux
+      do_e2e_tests: false
+    secrets: inherit
 
-          - build_runner: macos-latest
-            target_triple: aarch64-darwin
-            do_smoke_tests: false
+  ci-aarch64-darwin:
+    uses: ./.github/workflows/ci-unix.yml
+    with:
+      build_runner: macos-latest
+      target_triple: aarch64-darwin
+      do_e2e_tests: false
+    secrets: inherit
