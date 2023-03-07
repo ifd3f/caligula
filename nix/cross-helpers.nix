@@ -69,7 +69,7 @@ in rec {
       caligula = with pkgs;
         naersk'.buildPackage ({
           src = ../.;
-          doCheck = true;
+          doCheck = host == target;
           buildInputs = buildCfg.platformDeps;
           CARGO_BUILD_TARGET = buildCfg.rustTarget;
         } // extraBuildEnv);
