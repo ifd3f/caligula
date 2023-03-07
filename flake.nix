@@ -7,7 +7,10 @@
   };
 
   outputs = { self, nixpkgs, flake-utils, naersk, rust-overlay }:
-    flake-utils.lib.eachDefaultSystem (system:
+    let
+      supportedSystems =
+        [ "aarch64-darwin" "aarch64-linux" "x86_64-darwin" "x86_64-linux" ];
+    in flake-utils.lib.eachSystem supportedSystems (system:
       let
         pkgs = import nixpkgs {
           inherit system;
@@ -15,50 +18,74 @@
         };
         lib = pkgs.lib;
 
-        # On Linux, we want to only support one target.
-        sysinfo = lib.systems.parse.mkSystemFromString system;
-        targetInfo = if sysinfo.kernel.name == "linux" then {
-          rustTarget = "${sysinfo.cpu.name}-unknown-linux-musl";
-          platformDeps = [ ];
-        } else if sysinfo.kernel.name == "darwin" then {
-          rustTarget = "${sysinfo.cpu.name}-apple-darwin";
-          platformDeps = with pkgs.darwin.apple_sdk.frameworks; [
-            Cocoa
-            IOKit
-            Foundation
-            DiskArbitration
-          ];
-        } else
-          throw "unknown system ${system}";
+        getTargetInfo = target:
+          let sysinfo = lib.systems.parse.mkSystemFromString target;
+          in if sysinfo.kernel.name == "linux" then {
+            # On Linux, we want to only support musl.
+            rustTarget = "${sysinfo.cpu.name}-unknown-linux-musl";
+            platformDeps = [ ];
+            cross = pkgs.pkgsCross."${sysinfo.cpu.name}-multiplatform";
+          } else if sysinfo.kernel.name == "darwin" then {
+            rustTarget = "${sysinfo.cpu.name}-apple-darwin";
+            platformDeps = with pkgs.darwin.apple_sdk.frameworks; [
+              Cocoa
+              IOKit
+              Foundation
+              DiskArbitration
+            ];
+            cross = pkgs.pkgsCross."${sysinfo.cpu.name}-darwin";
+          } else
+            throw "unsupported system ${system}";
 
-        rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
-          targets = [ targetInfo.rustTarget ];
+        makeToolchainForTarget = target: rec {
+          targetInfo = getTargetInfo target;
+          rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
+            targets = [ targetInfo.rustTarget ];
+          };
+          rust-toolchain-dev = rust-toolchain.override {
+            extensions = [ "rust-src" "rust-analyzer" ];
+          };
+          naersk' = pkgs.callPackage naersk {
+            cargo = rust-toolchain;
+            rustc = rust-toolchain;
+          };
+          targetLinkerEnvName = "CARGO_TARGET_${
+              builtins.replaceStrings [ "-" ] [ "_" ]
+              (lib.toUpper targetInfo.rustTarget)
+            }_LINKER";
         };
-        rust-toolchain-dev = rust-toolchain.override {
-          extensions = [ "rust-src" "rust-analyzer" ];
-        };
-        naersk' = pkgs.callPackage naersk {
-          cargo = rust-toolchain;
-          rustc = rust-toolchain;
-        };
+
+        makePackageForTarget = target:
+          let tc = makeToolchainForTarget target;
+          in with pkgs;
+          tc.naersk'.buildPackage ({
+            src = ./.;
+            doCheck = true;
+            buildInputs = tc.targetInfo.platformDeps;
+            CARGO_BUILD_TARGET = tc.targetInfo.rustTarget;
+          } // (if system != target then {
+            "${tc.targetLinkerEnvName}" = "${tc.targetInfo.cross.gcc}/bin/ld";
+          } else
+            { }));
+
+        caligulaPackages = lib.listToAttrs (lib.forEach supportedSystems
+          (target: {
+            name = "caligula-${target}";
+            value = makePackageForTarget target;
+          }));
       in {
         packages = {
           default = self.packages."${system}".caligula;
 
-          caligula = with pkgs;
-            naersk'.buildPackage {
-              src = "${self}";
-              doCheck = true;
-              buildInputs = targetInfo.platformDeps;
-              CARGO_BUILD_TARGET = targetInfo.rustTarget;
-            };
-        };
+          caligula = self.packages."${system}"."caligula-${system}";
+        } // caligulaPackages;
 
-        devShell = with pkgs;
-          mkShell {
-            buildInputs = [ nixfmt rust-toolchain-dev ]
-              ++ targetInfo.platformDeps;
-            CARGO_BUILD_TARGET = targetInfo.rustTarget;
-          };
+        devShell = let tc = makeToolchainForTarget system;
+        in with pkgs;
+        mkShell {
+          buildInputs = [ nixfmt tc.rust-toolchain-dev ]
+            ++ tc.targetInfo.platformDeps;
+          CARGO_BUILD_TARGET = tc.targetInfo.rustTarget;
+        };
       });
 }
