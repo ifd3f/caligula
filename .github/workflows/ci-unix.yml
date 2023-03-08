@@ -4,6 +4,9 @@ on:
       build_runner:
         required: true
         type: string
+      e2e_test_runner:
+        required: false
+        type: string
       target_triple:
         required: true
         type: string
@@ -49,7 +52,7 @@ jobs:
         run: nix run ${{ env.nix_target }} -- --help
 
   e2e-test-fresh:
-    name: e2e test on fresh ${{ inputs.smoke_test_runner }}
+    name: e2e test on fresh ${{ inputs.e2e_test_runner }}
     runs-on: ${{ inputs.e2e_test_runner }}
     needs: build
     if: inputs.do_e2e_tests
@@ -58,9 +61,9 @@ jobs:
     - uses: actions/download-artifact@v3
       with:
         name: ${{ env.artifact }}
-        
+
     - name: Set permissions on artifact
       run: chmod +x caligula
-      
+
     - name: Ensure the command runs
       run: ./caligula --help
