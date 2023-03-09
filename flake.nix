@@ -31,7 +31,7 @@
         devShell = let tc = crossHelpers.forTarget system;
         in with pkgs;
         mkShell {
-          buildInputs = [ nixfmt tc.rust-toolchain-dev ] ++ tc.platformDeps;
+          buildInputs = [ nixfmt tc.rust-toolchain-dev ] ++ tc.buildInputs;
           CARGO_BUILD_TARGET = tc.rustTarget;
         };
       }));

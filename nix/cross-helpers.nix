@@ -45,38 +45,40 @@ in rec {
       };
 
       # Determine name for the linker env var to pass to cargo
-      targetLinkerEnvName = "CARGO_TARGET_${
+      cargoTargetPrefix = "CARGO_TARGET_${
           builtins.replaceStrings [ "-" ] [ "_" ]
           (lib.toUpper buildCfg.rustTarget)
-        }_LINKER";
+        }";
 
       # Construct a rust toolchain that runs on the host
       rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
         targets = [ buildCfg.rustTarget ];
       };
-      naersk' = pkgs.callPackage naersk {
+      naersk' = naersk.lib.${host}.override {
         cargo = rust-toolchain;
         rustc = rust-toolchain;
       };
 
       extraBuildEnv = if host != target then {
-        "${targetLinkerEnvName}" =
+        "${cargoTargetPrefix}_LINKER" =
           "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-ld";
+        CARGO_BUILD_TARGET = buildCfg.rustTarget;
       } else
         { };
 
+      depsBuildBuild = with pkgsCross; [ stdenv.cc ];
+      buildInputs = with pkgsCross; buildCfg.platformDeps ++ [ stdenv.cc ];
+
       # The actual package
-      caligula = with pkgs;
-        naersk'.buildPackage ({
-          src = ../.;
-          doCheck = host == target;
-          buildInputs = buildCfg.platformDeps;
-          CARGO_BUILD_TARGET = buildCfg.rustTarget;
-        } // extraBuildEnv);
+      caligula = naersk'.buildPackage ({
+        src = ../.;
+        doCheck = host == target;
+        inherit depsBuildBuild buildInputs;
+      } // extraBuildEnv);
 
     in {
-      inherit pkgs pkgsCross rust-toolchain caligula extraBuildEnv;
-      inherit (buildCfg) platformDeps rustTarget;
+      inherit pkgs pkgsCross rust-toolchain caligula extraBuildEnv buildInputs;
+      inherit (buildCfg) rustTarget;
 
       naersk = naersk';
 
