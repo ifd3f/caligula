@@ -1,6 +1,5 @@
 use std::time::Instant;
 
-use bytesize::ByteSize;
 use crossterm::event::EventStream;
 use futures::StreamExt;
 use tokio::{select, time};
@@ -15,6 +14,7 @@ use tui::{
 use crate::{
     burn::{self, Handle},
     cli::BurnArgs,
+    compression::CompressionFormat,
     device::BurnTarget,
     logging::get_bug_report_msg,
     ui::burn::state::UIEvent,
@@ -43,9 +43,10 @@ where
         handle: burn::Handle,
         terminal: &'a mut Terminal<B>,
         target: BurnTarget,
+        cf: CompressionFormat,
         args: &'a BurnArgs,
     ) -> Self {
-        let max_bytes = ByteSize::b(handle.initial_info().input_file_bytes);
+        let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,
             events: EventStream::new(),
@@ -54,7 +55,14 @@ where
                 target_filename: target.devnode.to_string_lossy().to_string(),
                 child: ChildState::Burning {
                     handle,
-                    write_hist: ByteSeries::new(Instant::now(), max_bytes),
+                    write_hist: ByteSeries::new(Instant::now()),
+                    read_hist: ByteSeries::new(Instant::now()),
+                    max_bytes: if cf.is_identity() {
+                        Some(input_file_bytes)
+                    } else {
+                        None
+                    },
+                    input_file_bytes,
                 },
             },
         }
@@ -166,14 +174,27 @@ pub fn draw(
     ];
 
     match &state.child {
-        ChildState::Burning { .. } => {
+        ChildState::Burning {
+            max_bytes,
+            read_hist,
+            input_file_bytes,
+            ..
+        } => {
             rows.push(Row::new([
                 Cell::from("ETA Write"),
-                Cell::from(format!("{}", wdata.estimated_time_left())),
+                Cell::from(format!(
+                    "{}",
+                    match max_bytes {
+                        Some(m) => wdata.estimated_time_left(*m),
+                        None => read_hist.estimated_time_left(*input_file_bytes),
+                    }
+                )),
             ]));
         }
         ChildState::Verifying {
-            verify_hist: vdata, ..
+            verify_hist: vdata,
+            max_bytes,
+            ..
         } => {
             rows.push(Row::new([
                 Cell::from("Avg. Verify"),
@@ -181,7 +202,7 @@ pub fn draw(
             ]));
             rows.push(Row::new([
                 Cell::from("ETA verify"),
-                Cell::from(format!("{}", vdata.estimated_time_left())),
+                Cell::from(format!("{}", vdata.estimated_time_left(*max_bytes))),
             ]));
         }
         ChildState::Finished {

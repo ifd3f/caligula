@@ -22,7 +22,7 @@ pub enum StatusMessage {
     InitSuccess(InitialInfo),
     TotalBytes {
         src: u64,
-        dest: u64
+        dest: u64,
     },
     FinishedWriting {
         verifying: bool,

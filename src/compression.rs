@@ -28,7 +28,7 @@ impl CompressionFormat {
         }
     }
 
-    pub fn decompress<R>(&self, r: R) -> DecompressRead<R>
+    pub fn decompress<R>(self, r: R) -> DecompressRead<R>
     where
         R: BufRead,
     {
@@ -37,6 +37,13 @@ impl CompressionFormat {
             CompressionFormat::Gzip => DecompressRead::Gzip(GzDecoder::new(r)),
             CompressionFormat::Bzip2 => DecompressRead::Bzip2(BzDecoder::new(r)),
             CompressionFormat::Xz => DecompressRead::Xz(XzDecoder::new(r)),
+        }
+    }
+
+    pub fn is_identity(self) -> bool {
+        match self {
+            CompressionFormat::Identity => true,
+            _ => false,
         }
     }
 }

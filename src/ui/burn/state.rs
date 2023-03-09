@@ -1,6 +1,5 @@
 use std::time::Instant;
 
-use bytesize::ByteSize;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::{debug, info, trace};
 
@@ -31,17 +30,22 @@ pub enum ChildState {
     Burning {
         handle: Handle,
         write_hist: ByteSeries,
+        read_hist: ByteSeries,
+        max_bytes: Option<u64>,
+        input_file_bytes: u64,
     },
     Verifying {
         handle: Handle,
         write_hist: ByteSeries,
         verify_hist: ByteSeries,
+        max_bytes: u64,
     },
     Finished {
         finish_time: Instant,
         error: Option<ErrorType>,
         write_hist: ByteSeries,
         verify_hist: Option<ByteSeries>,
+        max_bytes: u64,
     },
 }
 
@@ -81,18 +85,18 @@ impl State {
                 debug!(verifying, "Got FinishedWriting");
                 let child = match self.child {
                     ChildState::Burning {
-                        handle,
-                        mut write_hist,
+                        handle, write_hist, ..
                     } => {
-                        write_hist.finished_verifying_at(now);
+                        let max_bytes = write_hist.bytes_encountered();
+
                         if verifying {
                             info!(verifying, "Transition to verifying");
 
-                            let max_bytes = ByteSize::b(handle.initial_info().input_file_bytes);
                             ChildState::Verifying {
                                 handle,
                                 write_hist,
-                                verify_hist: ByteSeries::new(now, max_bytes),
+                                verify_hist: ByteSeries::new(now),
+                                max_bytes,
                             }
                         } else {
                             info!(verifying, "Transition to finished");
@@ -101,6 +105,7 @@ impl State {
                                 error: None,
                                 write_hist,
                                 verify_hist: None,
+                                max_bytes,
                             }
                         }
                     }
@@ -133,7 +138,14 @@ impl State {
 impl ChildState {
     pub fn on_total_bytes(&mut self, now: Instant, src: u64, dest: u64) {
         match self {
-            ChildState::Burning { write_hist, .. } => write_hist.push(now, src),
+            ChildState::Burning {
+                write_hist,
+                read_hist,
+                ..
+            } => {
+                read_hist.push(now, src);
+                write_hist.push(now, dest);
+            }
             ChildState::Verifying { verify_hist, .. } => verify_hist.push(now, dest),
             ChildState::Finished { .. } => {}
         };
@@ -149,22 +161,30 @@ impl ChildState {
 
     fn into_finished(self, now: Instant, error: Option<ErrorType>) -> ChildState {
         match self {
-            ChildState::Burning { write_hist, .. } => ChildState::Finished {
-                finish_time: now,
-                error,
-                write_hist,
-                verify_hist: None,
-            },
+            ChildState::Burning { write_hist, .. } => {
+                let max_bytes = write_hist.bytes_encountered();
+                ChildState::Finished {
+                    finish_time: now,
+                    error,
+                    write_hist,
+                    verify_hist: None,
+                    max_bytes,
+                }
+            }
             ChildState::Verifying {
                 write_hist,
                 verify_hist,
                 ..
-            } => ChildState::Finished {
-                finish_time: now,
-                error,
-                write_hist,
-                verify_hist: Some(verify_hist),
-            },
+            } => {
+                let max_bytes = write_hist.bytes_encountered();
+                ChildState::Finished {
+                    finish_time: now,
+                    error,
+                    write_hist,
+                    verify_hist: Some(verify_hist),
+                    max_bytes,
+                }
+            }
             fin => fin,
         }
     }

@@ -84,15 +84,12 @@ pub fn confirm_write(
     } else {
         let input_size = ByteSize::b(File::open(&args.input)?.metadata()?.len());
         println!("Input: {}", args.input.to_string_lossy());
-        match compression {
-            CompressionFormat::Identity => {
-                println!("  Size: {}", input_size);
-                println!("  Compression: {}", compression);
-            }
-            _ => {
-                println!("  Size (compressed): {}", input_size);
-                println!("  Compression: {}", compression);
-            }
+        if compression.is_identity() {
+            println!("  Size: {}", input_size);
+            println!("  Compression: {}", compression);
+        } else {
+            println!("  Size (compressed): {}", input_size);
+            println!("  Compression: {}", compression);
         }
         println!();
 

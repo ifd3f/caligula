@@ -138,11 +138,11 @@ fn for_each_block(
     let checkpoint_blocks: usize = 32;
     let mut offset: u64 = 0;
 
-    loop {
+    'outer: loop {
         for _ in 0..checkpoint_blocks {
             let read_bytes = decompress.read(&mut full_block)?;
             if read_bytes == 0 {
-                return Ok(());
+                break 'outer;
             }
 
             action(&full_block[..read_bytes], &mut closure_block[..read_bytes])?;
@@ -154,6 +154,13 @@ fn for_each_block(
             dest: offset,
         });
     }
+
+    ctx.send_msg(StatusMessage::TotalBytes {
+        src: decompress.get_mut().stream_position()?,
+        dest: offset,
+    });
+
+    Ok(())
 }
 
 struct StatusReporter(LocalSocketStream);

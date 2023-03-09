@@ -6,7 +6,7 @@ use std::{
 };
 
 use bytesize::ByteSize;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use valuable::Valuable;
 
 #[cfg(target_os = "linux")]

@@ -15,15 +15,20 @@ use super::{byteseries::ByteSeries, state::ChildState};
 
 pub enum History<'a> {
     Burning {
+        max_bytes: Option<u64>,
+        input_file_bytes: u64,
         write: &'a ByteSeries,
+        read: &'a ByteSeries,
     },
     Verifying {
+        max_bytes: u64,
         write: &'a ByteSeries,
         verify: &'a ByteSeries,
     },
     Finished {
         write: &'a ByteSeries,
         verify: Option<&'a ByteSeries>,
+        max_bytes: u64,
         when: Instant,
         error: bool,
     },
@@ -32,21 +37,36 @@ pub enum History<'a> {
 impl<'a> From<&'a ChildState> for History<'a> {
     fn from(value: &'a ChildState) -> Self {
         match value {
-            ChildState::Burning { write_hist, .. } => Self::Burning { write: write_hist },
+            ChildState::Burning {
+                write_hist,
+                read_hist,
+                max_bytes,
+                input_file_bytes,
+                ..
+            } => Self::Burning {
+                max_bytes: *max_bytes,
+                input_file_bytes: *input_file_bytes,
+                write: write_hist,
+                read: read_hist,
+            },
             ChildState::Verifying {
+                max_bytes,
                 write_hist,
                 verify_hist,
                 ..
             } => Self::Verifying {
+                max_bytes: *max_bytes,
                 write: write_hist,
                 verify: verify_hist,
             },
             ChildState::Finished {
+                max_bytes,
                 finish_time,
                 error,
                 write_hist,
                 verify_hist,
             } => Self::Finished {
+                max_bytes: *max_bytes,
                 write: write_hist,
                 verify: verify_hist.as_ref(),
                 when: finish_time.clone(),
@@ -59,7 +79,7 @@ impl<'a> From<&'a ChildState> for History<'a> {
 impl<'a> History<'a> {
     pub fn write_data(&self) -> &ByteSeries {
         match self {
-            History::Burning { write } => write,
+            History::Burning { write, .. } => write,
             History::Verifying { write, .. } => write,
             History::Finished { write, .. } => write,
         }
@@ -74,22 +94,42 @@ impl<'a> History<'a> {
     }
 
     pub fn draw_progress(&self, frame: &mut Frame<impl Backend>, area: Rect) {
-        let (bw, max, label, style) = match self {
-            History::Burning { write } => (
-                write.bytes_written(),
-                write.max_bytes(),
-                "Burning...",
-                Style::default().fg(Color::Yellow),
-            ),
-            History::Verifying { verify, .. } => (
-                verify.bytes_written(),
-                verify.max_bytes(),
+        let bar = match self {
+            History::Burning {
+                write,
+                read,
+                max_bytes,
+                input_file_bytes,
+                ..
+            } => {
+                let ratio = match max_bytes {
+                    Some(mb) => write.bytes_encountered() as f64 / *mb as f64,
+                    None => read.bytes_encountered() as f64 / *input_file_bytes as f64,
+                };
+                StateProgressBar {
+                    bytes_written: write.bytes_encountered(),
+                    label_state: "Burning...",
+                    style: Style::default().fg(Color::Yellow),
+                    ratio,
+                    display_max_bytes: *max_bytes,
+                }
+            }
+            History::Verifying {
+                verify, max_bytes, ..
+            } => StateProgressBar::from_simple(
+                verify.bytes_encountered(),
+                *max_bytes,
                 "Verifying...",
                 Style::default().fg(Color::Blue).bg(Color::Yellow),
             ),
-            History::Finished { write, error, .. } => (
-                write.bytes_written(),
-                write.max_bytes(),
+            History::Finished {
+                write,
+                error,
+                max_bytes,
+                ..
+            } => StateProgressBar::from_simple(
+                write.bytes_encountered(),
+                *max_bytes,
                 if *error { "Error!" } else { "Done!" },
                 if *error {
                     Style::default().fg(Color::White).bg(Color::Red)
@@ -99,12 +139,7 @@ impl<'a> History<'a> {
             ),
         };
 
-        let gauge = Gauge::default()
-            .label(format!("{} {} / {}", label, bw, max))
-            .ratio((bw.0 as f64) / (max.0 as f64))
-            .gauge_style(style);
-
-        frame.render_widget(gauge, area);
+        frame.render_widget(bar.render(), area);
     }
 
     pub fn draw_speed_chart(
@@ -190,5 +225,48 @@ impl<'a> History<'a> {
             );
 
         frame.render_widget(chart, area);
+    }
+}
+
+struct StateProgressBar {
+    bytes_written: u64,
+    display_max_bytes: Option<u64>,
+    ratio: f64,
+    label_state: &'static str,
+    style: Style,
+}
+
+impl StateProgressBar {
+    fn from_simple(bytes_written: u64, max: u64, label_state: &'static str, style: Style) -> Self {
+        Self {
+            bytes_written,
+            display_max_bytes: Some(max),
+            ratio: bytes_written as f64 / max as f64,
+            label_state,
+            style,
+        }
+    }
+
+    fn render(&self) -> Gauge {
+        if let Some(max) = self.display_max_bytes {
+            Gauge::default()
+                .label(format!(
+                    "{} {} / {}",
+                    self.label_state,
+                    ByteSize::b(self.bytes_written),
+                    ByteSize::b(max)
+                ))
+                .ratio(self.ratio)
+                .gauge_style(self.style)
+        } else {
+            Gauge::default()
+                .label(format!(
+                    "{} {} / ???",
+                    self.label_state,
+                    ByteSize::b(self.bytes_written),
+                ))
+                .ratio(self.ratio)
+                .gauge_style(self.style)
+        }
     }
 }

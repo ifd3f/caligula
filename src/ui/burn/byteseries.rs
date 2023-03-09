@@ -1,7 +1,5 @@
 use std::{fmt::Display, time::Instant};
 
-use bytesize::ByteSize;
-
 use crate::ui::utils::ByteSpeed;
 
 pub enum EstimatedTime {
@@ -11,7 +9,6 @@ pub enum EstimatedTime {
 
 #[derive(Debug)]
 pub struct ByteSeries {
-    max_bytes: ByteSize,
     raw: Vec<(f64, u64)>,
     start: Instant,
 }
@@ -36,10 +33,9 @@ impl Display for EstimatedTime {
 }
 
 impl ByteSeries {
-    pub fn new(start: Instant, max_bytes: ByteSize) -> Self {
+    pub fn new(start: Instant) -> Self {
         Self {
             start,
-            max_bytes,
             raw: vec![(0.0, 0)],
         }
     }
@@ -49,36 +45,25 @@ impl ByteSeries {
         self.raw.push((secs, bytes));
     }
 
-    pub fn finished_verifying_at(&mut self, time: Instant) {
-        self.push(time, self.max_bytes.0);
+    pub fn last_datapoint(&self) -> (f64, u64) {
+        self.raw.last().copied().unwrap_or((0.0, 0))
     }
 
-    pub fn last_datapoint(&self) -> (f64, ByteSize) {
-        self.raw
-            .last()
-            .map(|(x, y)| (*x, ByteSize::b(*y)))
-            .unwrap_or((0.0, ByteSize::b(0)))
-    }
-
-    pub fn bytes_written(&self) -> ByteSize {
+    pub fn bytes_encountered(&self) -> u64 {
         self.last_datapoint().1
     }
 
     pub fn total_avg_speed(&self) -> ByteSpeed {
-        let s = self.bytes_written();
-        let speed = s.0 as f64 / self.last_datapoint().0;
+        let s = self.bytes_encountered();
+        let speed = s as f64 / self.last_datapoint().0;
         ByteSpeed(if speed.is_nan() { 0.0 } else { speed })
     }
 
-    pub fn estimated_time_left(&self) -> EstimatedTime {
+    pub fn estimated_time_left(&self, total_bytes: u64) -> EstimatedTime {
         let speed = self.total_avg_speed().0;
-        let bytes_left = self.max_bytes().0 - self.bytes_written().0;
+        let bytes_left = total_bytes - self.bytes_encountered();
         let secs_left = bytes_left as f64 / speed;
         EstimatedTime::from(secs_left)
-    }
-
-    pub fn max_bytes(&self) -> ByteSize {
-        self.max_bytes
     }
 
     pub fn start(&self) -> Instant {
@@ -86,8 +71,8 @@ impl ByteSeries {
     }
 
     pub fn speed(&self, t: f64, window: f64) -> f64 {
-        let b0 = self.interp_bytes(t - window);
-        let b1 = self.interp_bytes(t);
+        let b0 = self.interp(t - window);
+        let b1 = self.interp(t);
 
         (b1 - b0) / window
     }
@@ -126,14 +111,14 @@ impl ByteSeries {
         }
     }
 
-    /// Returns the interpolated number of bytes written at the given time.
-    pub fn interp_bytes(&self, t: f64) -> f64 {
+    /// Returns the interpolated number of bytes encountered at the given time.
+    pub fn interp(&self, t: f64) -> f64 {
         if t < 0.0 {
             return self.raw[0].1 as f64;
         }
         let (last, last_val) = self.last_datapoint();
         if t >= last {
-            return last_val.as_u64() as f64;
+            return last_val as f64;
         }
 
         let i0 = self.find_idx_below(t);
@@ -184,7 +169,7 @@ mod tests {
     #[test_case(2.0, 100.0; "exactly last")]
     #[test_case(3.0, 100.0; "over")]
     fn interp_bytes(t: f64, expected: f64) {
-        let actual = example_2s().interp_bytes(t);
+        let actual = example_2s().interp(t);
         assert_relative_eq!(actual, expected);
     }
 }

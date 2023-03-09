@@ -10,6 +10,7 @@ use burn::{
 };
 use clap::Parser;
 use cli::{Args, BurnArgs, Command};
+use compression::CompressionFormat;
 use device::BurnTarget;
 use inquire::{Confirm, InquireError};
 use tracing::debug;
@@ -82,7 +83,7 @@ async fn inner_main() -> anyhow::Result<()> {
 
     let handle = try_start_burn(&burn_args).await?;
 
-    begin_writing(target, handle, &args).await?;
+    begin_writing(target, handle, compression, &args).await?;
 
     debug!("Done!");
     Ok(())
@@ -121,6 +122,7 @@ async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
 async fn begin_writing(
     target: BurnTarget,
     handle: burn::Handle,
+    cf: CompressionFormat,
     args: &BurnArgs,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
@@ -128,7 +130,7 @@ async fn begin_writing(
     let terminal = tui.terminal();
 
     // create app and run it
-    ui::burn::UI::new(handle, terminal, target, args)
+    ui::burn::UI::new(handle, terminal, target, cf, args)
         .show()
         .await?;
 
