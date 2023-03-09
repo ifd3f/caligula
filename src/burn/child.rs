@@ -11,6 +11,7 @@ use interprocess::local_socket::LocalSocketStream;
 use tracing::{debug, error, info, trace};
 use tracing_unwrap::ResultExt;
 
+use crate::device;
 use crate::logging::init_logging_child;
 
 use crate::burn::xplat::open_blockdev;
@@ -78,7 +79,10 @@ impl Ctx {
     fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
         debug!("Opening {} for writing", self.args.dest.to_string_lossy());
 
-        let mut dest = open_blockdev(&self.args.dest)?;
+        let mut dest = match self.args.target_type {
+            device::Type::File => File::create(&self.args.dest)?,
+            device::Type::Disk | device::Type::Partition => open_blockdev(&self.args.dest)?,
+        };
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
 
         for_each_block(self, src, |offset, block, _| {

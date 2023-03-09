@@ -6,6 +6,8 @@ use std::{
 };
 
 use bytesize::ByteSize;
+use serde::{Serialize, Deserialize};
+use valuable::Valuable;
 
 #[cfg(target_os = "linux")]
 pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
@@ -293,7 +295,7 @@ impl Display for Removable {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Serialize, Deserialize, Valuable)]
 pub enum Type {
     File,
     Disk,
