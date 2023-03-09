@@ -4,11 +4,19 @@ version = "0.2.0-pre1"
 edition = "2021"
 license = "GPL-3.0"
 
+[features]
+default = ["gz", "xz", "bz2"]
+gz = ["dep:flate2"]
+xz = ["dep:xz2"]
+bz2 = ["dep:bzip2"]
+
 [dependencies]
 anyhow = "1.0.69"
 bytesize = "1.2.0"
+bzip2 = { version = "0.4.4", optional = true, features = ["static"] }
 clap = { version = "4.1.8", features = ["derive", "cargo"] }
 crossterm = { version = "0.26.1", features = ["event-stream"] }
+flate2 = { version = "1.0.25", optional = true }
 format-bytes = "0.3.0"
 futures = "0.3.26"
 futures-io = "0.3.26"
@@ -24,11 +32,17 @@ static_cell = "1.0.0"
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["full"] }
 tokio-util = { version = "0.7.7", features = ["compat"] }
-tracing = { version = "0.1.37", features = ["async-await", "log", "release_max_level_debug", "valuable"] }
+tracing = { version = "0.1.37", features = [
+    "async-await",
+    "log",
+    "release_max_level_debug",
+    "valuable",
+] }
 tracing-subscriber = "0.3.16"
 tracing-unwrap = "0.10.0"
 tui = "0.19.0"
 valuable = { version = "0.1.0", features = ["derive"] }
+xz2 = { version = "0.1.7", optional = true, features = ["static"] }
 
 [dev-dependencies]
 approx = "0.5.1"

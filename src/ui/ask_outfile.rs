@@ -6,10 +6,42 @@ use tracing::debug;
 
 use crate::{
     cli::BurnArgs,
+    compression::{CompressionFormat, AVAILABLE_FORMATS, DecompressError},
     device::{enumerate_devices, BurnTarget, Removable},
 };
 
-pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
+pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
+    if let Some(cf) = args.compression.detect_format(&args.input) {
+        if args.force {
+            return Ok(cf);
+        }
+        eprintln!("Input file: {}", args.input.to_string_lossy());
+        eprintln!("Detected compression format: {}", cf);
+        if !cf.is_available() {
+            eprintln!("Compression format {} is not supported on your platform!", cf);
+            Err(DecompressError::UnsupportedFormat(cf))?;
+        }
+        if !Confirm::new("Is this okay?").prompt()? {
+            Err(InquireError::OperationCanceled)?;
+        }
+        return Ok(cf);
+    }
+
+    eprintln!(
+        "Couldn't detect compression format for {}",
+        args.input.to_string_lossy()
+    );
+    if args.force {
+        eprintln!("Since --force was provided, assuming it's uncompressed!");
+        return Ok(CompressionFormat::Identity);
+    }
+    let format =
+        Select::new("What format to use?", AVAILABLE_FORMATS.to_vec()).prompt()?;
+
+    return Ok(format);
+}
+
+pub fn ask_outfile(args: &BurnArgs, compression: CompressionFormat) -> anyhow::Result<BurnTarget> {
     let mut show_all_disks = args.show_all_disks;
 
     loop {
@@ -36,7 +68,7 @@ pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
             }
         };
 
-        if !confirm_write(args, &dev)? {
+        if !confirm_write(args, compression, &dev)? {
             continue;
         }
 
@@ -44,14 +76,24 @@ pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
     }
 }
 
-pub fn confirm_write(args: &BurnArgs, device: &BurnTarget) -> Result<bool, InquireError> {
+pub fn confirm_write(
+    args: &BurnArgs,
+    compression: CompressionFormat,
+    device: &BurnTarget,
+) -> Result<bool, InquireError> {
     if args.force {
         debug!("Skipping confirm because of --force");
         Ok(true)
     } else {
         let input_size = ByteSize::b(File::open(&args.input)?.metadata()?.len());
         println!("Input: {}", args.input.to_string_lossy());
-        println!("  Size: {}", input_size);
+        if compression.is_identity() {
+            println!("  Size: {}", input_size);
+            println!("  Compression: {}", compression);
+        } else {
+            println!("  Size (compressed): {}", input_size);
+            println!("  Compression: {}", compression);
+        }
         println!();
 
         println!("Output: {}", device.name);

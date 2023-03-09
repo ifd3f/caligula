@@ -62,6 +62,7 @@ in rec {
       extraBuildEnv = if host != target then {
         "${targetLinkerEnvName}" =
           "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-ld";
+        cargoBuildOptions = o: o ++ [ "--no-default-features" "-F" "gz" ];
       } else
         { };
 

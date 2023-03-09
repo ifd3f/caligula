@@ -2,6 +2,7 @@ use crate::{
     logging::{get_log_paths, init_logging_parent},
     ui::ask_outfile,
 };
+use ask_outfile::ask_compression;
 use burn::{
     child::is_in_burn_mode,
     handle::StartProcessError,
@@ -9,6 +10,7 @@ use burn::{
 };
 use clap::Parser;
 use cli::{Args, BurnArgs, Command};
+use compression::CompressionFormat;
 use device::BurnTarget;
 use inquire::{Confirm, InquireError};
 use tracing::debug;
@@ -16,6 +18,7 @@ use ui::{confirm_write, utils::TUICapture};
 
 pub mod burn;
 pub mod cli;
+mod compression;
 mod device;
 pub mod logging;
 pub mod native;
@@ -55,16 +58,18 @@ async fn inner_main() -> anyhow::Result<()> {
         Command::Burn(a) => a,
     };
 
+    let compression = ask_compression(&args)?;
+
     let target = match &args.out {
         Some(f) => {
             let dev = BurnTarget::try_from(f.as_ref())?;
-            if !confirm_write(&args, &dev)? {
+            if !confirm_write(&args, compression, &dev)? {
                 eprintln!("Aborting.");
                 return Ok(());
             }
             dev
         }
-        None => ask_outfile(&args)?,
+        None => ask_outfile(&args, compression)?,
     };
 
     let burn_args = BurnConfig {
@@ -72,12 +77,13 @@ async fn inner_main() -> anyhow::Result<()> {
         src: args.input.to_owned(),
         logfile: get_log_paths().child.clone(),
         verify: true,
+        compression,
         target_type: target.target_type,
     };
 
     let handle = try_start_burn(&burn_args).await?;
 
-    begin_writing(target, handle, &args).await?;
+    begin_writing(target, handle, compression, &args).await?;
 
     debug!("Done!");
     Ok(())
@@ -116,6 +122,7 @@ async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
 async fn begin_writing(
     target: BurnTarget,
     handle: burn::Handle,
+    cf: CompressionFormat,
     args: &BurnArgs,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
@@ -123,7 +130,7 @@ async fn begin_writing(
     let terminal = tui.terminal();
 
     // create app and run it
-    ui::burn::UI::new(handle, terminal, target, args)
+    ui::burn::UI::new(handle, terminal, target, cf, args)
         .show()
         .await?;
 
