@@ -142,7 +142,7 @@ mod tests {
 
     fn example_2s() -> ByteSeries {
         let now = Instant::now();
-        let mut s = ByteSeries::new(now, ByteSize::b(100));
+        let mut s = ByteSeries::new(now);
         s.push(now.checked_add(Duration::from_secs_f64(0.1)).unwrap(), 10);
         s.push(now.checked_add(Duration::from_secs_f64(0.2)).unwrap(), 20);
         s.push(now.checked_add(Duration::from_secs_f64(0.5)).unwrap(), 30);
