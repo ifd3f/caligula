@@ -2,12 +2,11 @@ use std::{fmt, fs::File};
 
 use bytesize::ByteSize;
 use inquire::{Confirm, InquireError, Select};
-use strum::IntoEnumIterator;
 use tracing::debug;
 
 use crate::{
     cli::BurnArgs,
-    compression::CompressionFormat,
+    compression::{CompressionFormat, AVAILABLE_FORMATS, DecompressError},
     device::{enumerate_devices, BurnTarget, Removable},
 };
 
@@ -18,6 +17,10 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
         }
         eprintln!("Input file: {}", args.input.to_string_lossy());
         eprintln!("Detected compression format: {}", cf);
+        if !cf.is_available() {
+            eprintln!("Compression format {} is not supported on your platform!", cf);
+            Err(DecompressError::UnsupportedFormat(cf))?;
+        }
         if !Confirm::new("Is this okay?").prompt()? {
             Err(InquireError::OperationCanceled)?;
         }
@@ -33,7 +36,7 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
         return Ok(CompressionFormat::Identity);
     }
     let format =
-        Select::new("What format to use?", CompressionFormat::iter().collect()).prompt()?;
+        Select::new("What format to use?", AVAILABLE_FORMATS.to_vec()).prompt()?;
 
     return Ok(format);
 }

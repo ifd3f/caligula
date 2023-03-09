@@ -63,6 +63,9 @@ in rec {
         "${cargoTargetPrefix}_LINKER" =
           "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-ld";
         CARGO_BUILD_TARGET = buildCfg.rustTarget;
+
+        # Disable xz and bz because native cross-compile is borked
+        cargoOptions = [ "--no-default-features" "-F" "gz" ];
       } else
         { };
 

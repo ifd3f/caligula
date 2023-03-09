@@ -3,96 +3,151 @@ use std::{
     io::{BufRead, Read},
 };
 
-use bzip2::bufread::BzDecoder;
-use flate2::bufread::GzDecoder;
 use serde::{Deserialize, Serialize};
-use strum::EnumIter;
 use valuable::Valuable;
-use xz2::bufread::XzDecoder;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, Valuable)]
-pub enum CompressionFormat {
-    Identity,
-    Gzip,
-    Bzip2,
-    Xz,
-}
-
-impl CompressionFormat {
-    pub fn detect_from_extension(ext: &str) -> Self {
-        match ext.to_lowercase().trim_start_matches(".") {
-            "gz" => Self::Gzip,
-            "xz" => Self::Xz,
-            "bz2" => Self::Bzip2,
-            _ => Self::Identity,
-        }
-    }
-
-    pub fn decompress<R>(self, r: R) -> DecompressRead<R>
-    where
-        R: BufRead,
+macro_rules! generate {
     {
-        match self {
-            CompressionFormat::Identity => DecompressRead::Identity(r),
-            CompressionFormat::Gzip => DecompressRead::Gzip(GzDecoder::new(r)),
-            CompressionFormat::Bzip2 => DecompressRead::Bzip2(BzDecoder::new(r)),
-            CompressionFormat::Xz => DecompressRead::Xz(XzDecoder::new(r)),
+        $readervar:ident: $r:ident {
+            $(
+                [feature=$feature:expr] $extpat:pat => 
+                    $enumarm:ident($display:expr, $inner:ty)
+                    $dcrinner:expr,
+            )*
         }
-    }
+    } => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Valuable)]
+        pub enum CompressionFormat {
+            Identity,
+            $(
+                $enumarm,
+            )*
+        }
 
-    pub fn is_identity(self) -> bool {
-        match self {
-            CompressionFormat::Identity => true,
-            _ => false,
+        pub const AVAILABLE_FORMATS: &[CompressionFormat] = &[
+            CompressionFormat::Identity,
+            $(
+                CompressionFormat::$enumarm,
+            )*
+        ];
+
+        impl CompressionFormat {
+            pub fn detect_from_extension(ext: &str) -> Self {
+                match ext.to_lowercase().trim_start_matches(".") {
+                    $(
+                        $extpat => Self::$enumarm,
+                    )*
+                    _ => Self::Identity,
+                }
+            }
+
+            pub fn is_identity(self) -> bool {
+                match self {
+                    Self::Identity => true,
+                    _ => false,
+                }
+            }
+
+            pub fn is_available(self) -> bool {
+                match self {
+                    Self::Identity => true,
+                    $(
+                        Self::$enumarm => cfg!(feature = $feature),
+                    )*
+                }
+            }
+        }
+
+        impl Display for CompressionFormat {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    CompressionFormat::Identity => write!(f, "no compression"),
+                    $(
+                        Self::$enumarm => write!(f, $display),
+                    )*
+                }
+            }
+        }
+
+        pub enum DecompressRead<$r> {
+            Identity($r),
+            $(
+                #[cfg(feature = $feature)]
+                $enumarm($inner),
+            )*
+        }
+
+        impl<R> DecompressRead<R>
+        where
+            R: BufRead,
+        {
+            pub fn get_mut(&mut self) -> &mut R {
+                match self {
+                    Self::Identity(r) => r,
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$enumarm(r) => r.get_mut(),
+                    )*
+                }
+            }
+        }
+
+        impl<R> Read for DecompressRead<R>
+        where
+            R: BufRead,
+        {
+            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+                match self {
+                    Self::Identity(r) => r.read(buf),
+                    $(
+                        #[cfg(feature = $feature)]
+                        Self::$enumarm(r) => r.read(buf),
+                    )*
+                }
+            }
+        }
+
+        pub fn decompress<R>(cf: CompressionFormat, $readervar: R) -> Result<DecompressRead<R>, DecompressError>
+        where
+            R : BufRead
+        {
+            match cf {
+                CompressionFormat::Identity => Ok(DecompressRead::Identity($readervar)),
+                $(
+                    CompressionFormat::$enumarm => {
+                        #[cfg(feature = $feature)]
+                        let result = Ok(DecompressRead::$enumarm($dcrinner));
+
+                        #[cfg(not(feature = $feature))]
+                        let result = Err(DecompressError::UnsupportedFormat(
+                            CompressionFormat::$enumarm
+                        ));
+
+                        result
+                    }
+                )*
+            }
         }
     }
 }
 
-pub enum DecompressRead<R>
-where
-    R: BufRead,
-{
-    Identity(R),
-    Gzip(GzDecoder<R>),
-    Bzip2(BzDecoder<R>),
-    Xz(XzDecoder<R>),
-}
-
-impl<R> DecompressRead<R>
-where
-    R: BufRead,
-{
-    pub fn get_mut(&mut self) -> &mut R {
-        match self {
-            DecompressRead::Identity(r) => r,
-            DecompressRead::Gzip(r) => r.get_mut(),
-            DecompressRead::Bzip2(r) => r.get_mut(),
-            DecompressRead::Xz(r) => r.get_mut(),
-        }
+generate! {
+    r: R {
+        [feature = "gz"] "gz" => Gzip("gzip", flate2::bufread::GzDecoder<R>) {
+            flate2::bufread::GzDecoder::new(r)
+        },
+        [feature = "bz2"] "bz2" => Bzip2("bzip2", bzip2::bufread::BzDecoder<R>) {
+            bzip2::bufread::BzDecoder::new(r)
+        },
+        [feature = "xz"] "xz" => Xz("xz/LZMA", xz2::bufread::XzDecoder<R>) {
+            xz2::bufread::XzDecoder::new(r)
+        },
     }
 }
 
-impl<R> Read for DecompressRead<R>
-where
-    R: BufRead,
-{
-    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        match self {
-            DecompressRead::Identity(r) => r.read(buf),
-            DecompressRead::Gzip(r) => r.read(buf),
-            DecompressRead::Bzip2(r) => r.read(buf),
-            DecompressRead::Xz(r) => r.read(buf),
-        }
-    }
-}
-
-impl Display for CompressionFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CompressionFormat::Identity => write!(f, "no compression"),
-            CompressionFormat::Gzip => write!(f, "gzip"),
-            CompressionFormat::Bzip2 => write!(f, "bzip2"),
-            CompressionFormat::Xz => write!(f, "LZMA (xz)"),
-        }
-    }
+#[derive(Debug, thiserror::Error)]
+pub enum DecompressError {
+    #[allow(unused)]
+    #[error("Unsupported compression format {0}!")]
+    UnsupportedFormat(CompressionFormat),
 }

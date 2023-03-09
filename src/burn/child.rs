@@ -12,6 +12,7 @@ use interprocess::local_socket::LocalSocketStream;
 use tracing::{debug, error, info, trace};
 use tracing_unwrap::ResultExt;
 
+use crate::compression::decompress;
 use crate::device;
 use crate::logging::init_logging_child;
 
@@ -133,7 +134,7 @@ fn for_each_block(
     let mut full_block = vec![0u8; block_size];
     let mut closure_block = vec![0u8; block_size]; // A block for the user to mutate
 
-    let mut decompress = ctx.args.compression.decompress(BufReader::new(src));
+    let mut decompress = decompress(ctx.args.compression, BufReader::new(src)).unwrap();
 
     let checkpoint_blocks: usize = 32;
     let mut offset: u64 = 0;

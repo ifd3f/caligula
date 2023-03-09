@@ -14,10 +14,9 @@ use tui::{
 use crate::{
     burn::{self, Handle},
     cli::BurnArgs,
-    compression::CompressionFormat,
     device::BurnTarget,
     logging::get_bug_report_msg,
-    ui::burn::state::UIEvent,
+    ui::burn::state::UIEvent, compression::CompressionFormat,
 };
 
 use super::{
