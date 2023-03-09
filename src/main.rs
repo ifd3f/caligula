@@ -20,6 +20,7 @@ mod device;
 pub mod logging;
 pub mod native;
 mod ui;
+mod compression;
 
 fn main() {
     if is_in_burn_mode() {
