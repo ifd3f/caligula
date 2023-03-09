@@ -45,43 +45,39 @@ in rec {
       };
 
       # Determine name for the linker env var to pass to cargo
-      cargoTargetPrefix = "CARGO_TARGET_${
+      targetLinkerEnvName = "CARGO_TARGET_${
           builtins.replaceStrings [ "-" ] [ "_" ]
           (lib.toUpper buildCfg.rustTarget)
-        }";
+        }_LINKER";
 
       # Construct a rust toolchain that runs on the host
       rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
         targets = [ buildCfg.rustTarget ];
       };
-      naersk' = naersk.lib.${host}.override {
+      naersk' = pkgs.callPackage naersk {
         cargo = rust-toolchain;
         rustc = rust-toolchain;
       };
 
       extraBuildEnv = if host != target then {
-        "${cargoTargetPrefix}_LINKER" =
+        "${targetLinkerEnvName}" =
           "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-ld";
-        CARGO_BUILD_TARGET = buildCfg.rustTarget;
-
-        # Disable xz and bz because native cross-compile is borked
-        cargoOptions = [ "--no-default-features" "-F" "gz" ];
+        cargoBuildOptions = o: o ++ [ "--no-default-features" "-F" "gz" ];
       } else
         { };
 
-      depsBuildBuild = with pkgsCross; [ stdenv.cc ];
-      buildInputs = with pkgsCross; buildCfg.platformDeps ++ [ stdenv.cc ];
-
       # The actual package
-      caligula = naersk'.buildPackage ({
-        src = ../.;
-        doCheck = host == target;
-        inherit depsBuildBuild buildInputs;
-      } // extraBuildEnv);
+      caligula = with pkgs;
+        naersk'.buildPackage ({
+          src = ../.;
+          doCheck = host == target;
+          buildInputs = buildCfg.platformDeps;
+          CARGO_BUILD_TARGET = buildCfg.rustTarget;
+        } // extraBuildEnv);
 
     in {
-      inherit pkgs pkgsCross rust-toolchain caligula extraBuildEnv buildInputs;
-      inherit (buildCfg) rustTarget;
+      inherit pkgs pkgsCross rust-toolchain caligula extraBuildEnv;
+      inherit (buildCfg) platformDeps rustTarget;
 
       naersk = naersk';
 
