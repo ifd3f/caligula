@@ -79,6 +79,7 @@ in rec {
       inherit pkgs pkgsCross rust-toolchain caligula extraBuildEnv;
       inherit (buildCfg) platformDeps rustTarget;
 
+      buildInputs = [];
       naersk = naersk';
 
       # The development toolchain config with IDE goodies
