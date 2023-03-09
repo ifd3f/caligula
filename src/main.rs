@@ -77,6 +77,7 @@ async fn inner_main() -> anyhow::Result<()> {
         logfile: get_log_paths().child.clone(),
         verify: true,
         compression,
+        target_type: target.target_type,
     };
 
     let handle = try_start_burn(&burn_args).await?;
