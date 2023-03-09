@@ -65,30 +65,35 @@ in rec {
         rustc = rust-toolchain;
       };
 
-      extraBuildEnv = if host != target then {
-        "${targetLinkerEnvName}" =
-          "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-ld";
+      crossParams = if host == target then {
+        cc = pkgs.stdenv.cc;
+        extraBuildEnv = { };
+      } else rec {
+        cc = pkgsCross.stdenv.cc;
+        extraBuildEnv = {
+          "${targetLinkerEnvName}" = "${cc}/bin/${buildCfg.rustTarget}-ld";
 
-        "CC_${builtins.replaceStrings [ "-" ] [ "_" ] buildCfg.rustTarget}" =
-          "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-cc";
-      } else
-        { };
+          "CC_${builtins.replaceStrings [ "-" ] [ "_" ] buildCfg.rustTarget}" =
+            "${cc}/bin/${buildCfg.rustTarget}-cc";
+        };
+      };
 
-      buildInputs = buildCfg.platformDeps ++ [ pkgsCross.stdenv.cc ];
+      buildInputs = buildCfg.platformDeps ++ [ crossParams.cc ];
 
       # The actual package
       caligula = with pkgs;
         naersk'.buildPackage ({
           src = ../.;
           doCheck = host == target;
-          propagatedBuildInputs = [ pkgsCross.stdenv.cc ];
+          propagatedBuildInputs = [ crossParams.cc ];
           inherit buildInputs;
           CARGO_BUILD_TARGET = buildCfg.rustTarget;
-        } // extraBuildEnv);
+        } // crossParams.extraBuildEnv);
 
     in {
-      inherit pkgs pkgsCross rust-toolchain caligula extraBuildEnv buildInputs;
+      inherit pkgs pkgsCross rust-toolchain caligula buildInputs;
       inherit (buildCfg) platformDeps rustTarget;
+      inherit (crossParams) extraBuildEnv;
 
       naersk = naersk';
     };
