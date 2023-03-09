@@ -20,7 +20,10 @@ pub struct BurnConfig {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub enum StatusMessage {
     InitSuccess(InitialInfo),
-    TotalBytes(usize),
+    TotalBytes {
+        src: u64,
+        dest: u64
+    },
     FinishedWriting {
         verifying: bool,
     },

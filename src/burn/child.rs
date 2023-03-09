@@ -1,3 +1,4 @@
+use std::io::BufReader;
 use std::panic::set_hook;
 use std::{
     env,
@@ -85,8 +86,8 @@ impl Ctx {
         };
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
 
-        for_each_block(self, src, |offset, block, _| {
-            trace!(offset, block_len = block.len(), "Writing block");
+        for_each_block(self, src, |block, _| {
+            trace!(block_len = block.len(), "Writing block");
 
             let written = dest.write(block).expect("Failed to write block to disk");
             if written != block.len() {
@@ -103,8 +104,8 @@ impl Ctx {
         );
 
         let mut dest = File::open(&self.args.dest)?;
-        for_each_block(self, src, |offset, block, dst| {
-            trace!(offset, block_len = block.len(), "Verifying block");
+        for_each_block(self, src, |block, dst| {
+            trace!(block_len = block.len(), "Verifying block");
 
             let read = dest.read(dst).expect("Failed to read block from disk");
             if read != block.len() {
@@ -126,33 +127,32 @@ impl Ctx {
 fn for_each_block(
     ctx: &mut Ctx,
     src: &mut File,
-    mut action: impl FnMut(usize, &[u8], &mut [u8]) -> Result<(), ErrorType>,
+    mut action: impl FnMut(&[u8], &mut [u8]) -> Result<(), ErrorType>,
 ) -> Result<(), ErrorType> {
     let block_size = ByteSize::kb(128).as_u64() as usize;
     let mut full_block = vec![0u8; block_size];
     let mut closure_block = vec![0u8; block_size]; // A block for the user to mutate
 
-    let mut offset: usize = 0;
+    let mut decompress = ctx.args.compression.decompress(BufReader::new(src));
 
     let checkpoint_blocks: usize = 32;
+    let mut offset: u64 = 0;
 
     loop {
         for _ in 0..checkpoint_blocks {
-            let read_bytes = src.read(&mut full_block)?;
+            let read_bytes = decompress.read(&mut full_block)?;
             if read_bytes == 0 {
                 return Ok(());
             }
 
-            action(
-                offset,
-                &full_block[..read_bytes],
-                &mut closure_block[..read_bytes],
-            )?;
-
-            offset += read_bytes;
+            action(&full_block[..read_bytes], &mut closure_block[..read_bytes])?;
+            offset += read_bytes as u64;
         }
 
-        ctx.send_msg(StatusMessage::TotalBytes(offset));
+        ctx.send_msg(StatusMessage::TotalBytes {
+            src: decompress.get_mut().stream_position()?,
+            dest: offset,
+        });
     }
 }
 

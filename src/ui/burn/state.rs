@@ -73,8 +73,8 @@ impl State {
 
     fn on_child_status(mut self, now: Instant, msg: Option<StatusMessage>) -> Self {
         match msg {
-            Some(StatusMessage::TotalBytes(b)) => {
-                self.child.on_total_bytes(now, b as u64);
+            Some(StatusMessage::TotalBytes { src, dest }) => {
+                self.child.on_total_bytes(now, src, dest);
                 self
             }
             Some(StatusMessage::FinishedWriting { verifying }) => {
@@ -131,10 +131,10 @@ impl State {
 }
 
 impl ChildState {
-    pub fn on_total_bytes(&mut self, now: Instant, bytes: u64) {
+    pub fn on_total_bytes(&mut self, now: Instant, src: u64, dest: u64) {
         match self {
-            ChildState::Burning { write_hist, .. } => write_hist.push(now, bytes),
-            ChildState::Verifying { verify_hist, .. } => verify_hist.push(now, bytes),
+            ChildState::Burning { write_hist, .. } => write_hist.push(now, src),
+            ChildState::Verifying { verify_hist, .. } => verify_hist.push(now, dest),
             ChildState::Finished { .. } => {}
         };
     }

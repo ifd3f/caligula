@@ -28,7 +28,10 @@ impl CompressionFormat {
         }
     }
 
-    pub fn decompress(&self, r: impl BufRead) -> impl Read {
+    pub fn decompress<R>(&self, r: R) -> DecompressRead<R>
+    where
+        R: BufRead,
+    {
         match self {
             CompressionFormat::Identity => DecompressRead::Identity(r),
             CompressionFormat::Gzip => DecompressRead::Gzip(GzDecoder::new(r)),
@@ -38,38 +41,43 @@ impl CompressionFormat {
     }
 }
 
-macro_rules! decompress_read {
-    (
-        $name:ident <$var:ident> {
-            $( $enumname:ident ($inner:ty), )*
-        }
-    ) => {
-        enum $name<$var> where $var : BufRead {
-            $(
-                $enumname($inner),
-            )*
-        }
-
-        impl<R> Read for DecompressRead<R> where R : BufRead {
-            fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-                match self {
-                    $(
-                        Self::$enumname(r) => r.read(buf),
-                    )*
-                }
-            }
-        }
-    };
+pub enum DecompressRead<R>
+where
+    R: BufRead,
+{
+    Identity(R),
+    Gzip(GzDecoder<R>),
+    Bzip2(BzDecoder<R>),
+    Xz(XzDecoder<R>),
 }
 
-decompress_read!(
-    DecompressRead<R> {
-        Identity(R),
-        Gzip(GzDecoder<R>),
-        Bzip2(BzDecoder<R>),
-        Xz(XzDecoder<R>),
+impl<R> DecompressRead<R>
+where
+    R: BufRead,
+{
+    pub fn get_mut(&mut self) -> &mut R {
+        match self {
+            DecompressRead::Identity(r) => r,
+            DecompressRead::Gzip(r) => r.get_mut(),
+            DecompressRead::Bzip2(r) => r.get_mut(),
+            DecompressRead::Xz(r) => r.get_mut(),
+        }
     }
-);
+}
+
+impl<R> Read for DecompressRead<R>
+where
+    R: BufRead,
+{
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            DecompressRead::Identity(r) => r.read(buf),
+            DecompressRead::Gzip(r) => r.read(buf),
+            DecompressRead::Bzip2(r) => r.read(buf),
+            DecompressRead::Xz(r) => r.read(buf),
+        }
+    }
+}
 
 impl Display for CompressionFormat {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
