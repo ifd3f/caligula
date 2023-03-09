@@ -11,6 +11,8 @@ use crate::{
     ui::burn::byteseries::ByteSeries,
 };
 
+use super::history::UIState;
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum UIEvent {
     SleepTimeout,
@@ -23,6 +25,7 @@ pub struct State {
     pub input_filename: String,
     pub target_filename: String,
     pub child: ChildState,
+    pub ui_state: UIState,
 }
 
 #[derive(Debug)]

@@ -13,6 +13,11 @@ use tui::{
 
 use super::{byteseries::ByteSeries, state::ChildState};
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct UIState {
+    graph_max_speed: f64,
+}
+
 pub enum History<'a> {
     Burning {
         max_bytes: Option<u64>,
@@ -76,7 +81,7 @@ impl<'a> From<&'a ChildState> for History<'a> {
     }
 }
 
-impl<'a> History<'a> {
+impl History<'_> {
     pub fn write_data(&self) -> &ByteSeries {
         match self {
             History::Burning { write, .. } => write,
@@ -141,19 +146,22 @@ impl<'a> History<'a> {
 
         frame.render_widget(bar.render(), area);
     }
+}
 
+impl UIState {
     pub fn draw_speed_chart(
-        &self,
+        &mut self,
+        history: &History,
         frame: &mut Frame<impl Backend>,
         area: Rect,
         final_time: Instant,
     ) {
-        let wdata = self.write_data();
+        let wdata = history.write_data();
         let max_time = f64::max(final_time.duration_since(wdata.start()).as_secs_f64(), 3.0);
         let window = max_time / frame.size().width as f64;
 
         let wspeeds: Vec<(f64, f64)> = wdata.speeds(window).collect();
-        let vspeeds: Option<Vec<(f64, f64)>> = self.verify_data().map(|vdata| {
+        let vspeeds: Option<Vec<(f64, f64)>> = history.verify_data().map(|vdata| {
             vdata
                 .speeds(window)
                 .into_iter()
@@ -161,14 +169,18 @@ impl<'a> History<'a> {
                 .collect()
         });
 
-        let max_speed = if let Some(vs) = &vspeeds {
+        // update max y-axis
+        self.graph_max_speed = if let Some(vs) = &vspeeds {
             wspeeds
                 .iter()
                 .chain(vs.iter())
                 .map(|x| x.1)
-                .fold(0.0, f64::max)
+                .fold(self.graph_max_speed, f64::max)
         } else {
-            wspeeds.iter().map(|x| x.1).fold(0.0, f64::max)
+            wspeeds
+                .iter()
+                .map(|x| x.1)
+                .fold(self.graph_max_speed, f64::max)
         };
 
         let n_x_ticks = (frame.size().width / 16).min(9);
@@ -183,7 +195,7 @@ impl<'a> History<'a> {
 
         let y_ticks: Vec<_> = (0..=n_y_ticks)
             .map(|i| {
-                let y = i as f64 * max_speed / n_y_ticks as f64;
+                let y = i as f64 * self.graph_max_speed / n_y_ticks as f64;
                 let bytes = ByteSize::b(y as u64);
                 Span::from(format!("{bytes}/s"))
             })
@@ -219,7 +231,7 @@ impl<'a> History<'a> {
             )
             .y_axis(
                 Axis::default()
-                    .bounds([0.0, max_speed])
+                    .bounds([0.0, self.graph_max_speed])
                     .labels(y_ticks)
                     .labels_alignment(Alignment::Right),
             );
@@ -267,6 +279,14 @@ impl StateProgressBar {
                 ))
                 .ratio(self.ratio)
                 .gauge_style(self.style)
+        }
+    }
+}
+
+impl Default for UIState {
+    fn default() -> Self {
+        Self {
+            graph_max_speed: 0.0,
         }
     }
 }

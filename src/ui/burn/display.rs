@@ -22,7 +22,7 @@ use crate::{
 
 use super::{
     byteseries::ByteSeries,
-    history::History,
+    history::{History, UIState},
     state::{ChildState, Quit, State},
 };
 
@@ -53,6 +53,7 @@ where
             state: State {
                 input_filename: args.input.to_string_lossy().to_string(),
                 target_filename: target.devnode.to_string_lossy().to_string(),
+                ui_state: UIState::default(),
                 child: ChildState::Burning {
                     handle,
                     write_hist: ByteSeries::new(Instant::now()),
@@ -90,7 +91,7 @@ where
             }?
         };
         self.state = self.state.on_event(msg)?;
-        draw(&self.state, &mut self.terminal)?;
+        draw(&mut self.state, &mut self.terminal)?;
         Ok(self)
     }
 }
@@ -142,7 +143,7 @@ impl From<Rect> for ComputedLayout {
 }
 
 pub fn draw(
-    state: &State,
+    state: &mut State,
     terminal: &mut Terminal<impl tui::backend::Backend>,
 ) -> anyhow::Result<()> {
     let history = History::from(&state.child);
@@ -226,7 +227,9 @@ pub fn draw(
         let layout = ComputedLayout::from(f.size());
 
         history.draw_progress(f, layout.progress);
-        history.draw_speed_chart(f, layout.graph, final_time);
+        state
+            .ui_state
+            .draw_speed_chart(&history, f, layout.graph, final_time);
 
         if let Some(error) = error {
             f.render_widget(
