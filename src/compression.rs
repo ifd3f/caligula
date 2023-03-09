@@ -8,7 +8,7 @@ use flate2::bufread::GzDecoder;
 use serde::{Deserialize, Serialize};
 use strum::EnumIter;
 use valuable::Valuable;
-use xz::bufread::XzDecoder;
+use xz2::bufread::XzDecoder;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, Valuable)]
 pub enum CompressionFormat {
