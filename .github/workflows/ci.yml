@@ -5,26 +5,28 @@ on:
   pull_request:
 
 jobs:
-  ci-linux:
-    name: Linux
+  ci-x86_64-linux:
     uses: ./.github/workflows/ci-unix.yml
     with:
-      runner: ubuntu-latest
-      triple: x86_64-linux
+      build_runner: ubuntu-latest
+      e2e_test_runner: ubuntu-latest
+      target_triple: x86_64-linux
+      do_e2e_tests: true
     secrets: inherit
 
-  ci-macos-x86:
-    name: MacOS x86
+  ci-x86_64-darwin:
     uses: ./.github/workflows/ci-unix.yml
     with:
-      runner: macos-latest
-      triple: x86_64-darwin
+      build_runner: macos-latest
+      e2e_test_runner: macos-latest
+      target_triple: x86_64-darwin
+      do_e2e_tests: true
     secrets: inherit
 
-  # # M1 runners take way too long to get.
-  # ci-macos-aarch64:
-  #   uses: ./.github/workflows/ci-unix.yml
-  #   with:
-  #     runner: m1max
-  #     triple: aarch64-darwin
-  #   secrets: inherit
+  ci-aarch64-linux:
+    uses: ./.github/workflows/ci-unix.yml
+    with:
+      build_runner: ubuntu-latest
+      target_triple: aarch64-linux
+      do_e2e_tests: false
+    secrets: inherit
