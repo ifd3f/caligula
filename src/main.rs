@@ -72,6 +72,7 @@ async fn inner_main() -> anyhow::Result<()> {
         src: args.input.to_owned(),
         logfile: get_log_paths().child.clone(),
         verify: true,
+        target_type: target.target_type,
     };
 
     let handle = try_start_burn(&burn_args).await?;

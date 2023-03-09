@@ -4,12 +4,15 @@ use serde::{Deserialize, Serialize};
 
 use valuable::Valuable;
 
+use crate::device::Type;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub struct BurnConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
     pub logfile: PathBuf,
     pub verify: bool,
+    pub target_type: Type,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
