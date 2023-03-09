@@ -16,11 +16,11 @@ use ui::{confirm_write, utils::TUICapture};
 
 pub mod burn;
 pub mod cli;
+mod compression;
 mod device;
 pub mod logging;
 pub mod native;
 mod ui;
-mod compression;
 
 fn main() {
     if is_in_burn_mode() {

@@ -1,9 +1,14 @@
-use std::io::{BufRead, Read};
+use std::{
+    fmt::Display,
+    io::{BufRead, Read},
+};
 
 use bzip2::bufread::BzDecoder;
 use flate2::bufread::GzDecoder;
+use serde::{Deserialize, Serialize};
 use xz::bufread::XzDecoder;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CompressionFormat {
     Identity,
     Gzip,
@@ -66,3 +71,14 @@ decompress_read!(
         Xz(XzDecoder<R>),
     }
 );
+
+impl Display for CompressionFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompressionFormat::Identity => write!(f, "no compression"),
+            CompressionFormat::Gzip => write!(f, "gzip"),
+            CompressionFormat::Bzip2 => write!(f, "bzip2"),
+            CompressionFormat::Xz => write!(f, "xz/lzma"),
+        }
+    }
+}

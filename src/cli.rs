@@ -1,6 +1,8 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+use crate::compression::CompressionFormat;
 
 /// A safe, user-friendly disk imager.
 #[derive(Parser, Debug)]
@@ -37,6 +39,20 @@ pub struct BurnArgs {
     /// If you use this option, please proceed with caution!
     #[arg(long)]
     pub show_all_disks: bool,
+
+    /// What compression format the input file is. If `auto`, then we will guess
+    /// based on the extension.
+    #[arg(short = 'z', long, default_value = "auto")]
+    pub compression: CompressionArg,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
+pub enum CompressionArg {
+    Auto,
+    None,
+    Bz2,
+    Gz,
+    Xz,
 }
 
 fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
@@ -45,4 +61,24 @@ fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
         return Err(format!("path does not exist"));
     }
     Ok(path)
+}
+
+impl CompressionArg {
+    pub fn detect_format(&self, path: impl AsRef<Path>) -> Option<CompressionFormat> {
+        match self {
+            CompressionArg::Auto => {
+                if let Some(ext) = path.as_ref().extension() {
+                    Some(CompressionFormat::detect_from_extension(
+                        &ext.to_string_lossy(),
+                    ))
+                } else {
+                    None
+                }
+            }
+            CompressionArg::None => Some(CompressionFormat::Identity),
+            CompressionArg::Bz2 => Some(CompressionFormat::Bzip2),
+            CompressionArg::Gz => Some(CompressionFormat::Gzip),
+            CompressionArg::Xz => Some(CompressionFormat::Xz),
+        }
+    }
 }
