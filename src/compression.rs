@@ -6,9 +6,11 @@ use std::{
 use bzip2::bufread::BzDecoder;
 use flate2::bufread::GzDecoder;
 use serde::{Deserialize, Serialize};
+use strum::EnumIter;
+use valuable::Valuable;
 use xz::bufread::XzDecoder;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, EnumIter, Valuable)]
 pub enum CompressionFormat {
     Identity,
     Gzip,
@@ -18,14 +20,11 @@ pub enum CompressionFormat {
 
 impl CompressionFormat {
     pub fn detect_from_extension(ext: &str) -> Self {
-        match ext.to_lowercase().strip_prefix(".") {
-            Some(ext) => match ext {
-                "gz" => Self::Gzip,
-                "xz" => Self::Xz,
-                "bz2" => Self::Bzip2,
-                _ => Self::Identity,
-            },
-            None => Self::Identity,
+        match ext.to_lowercase().trim_start_matches(".") {
+            "gz" => Self::Gzip,
+            "xz" => Self::Xz,
+            "bz2" => Self::Bzip2,
+            _ => Self::Identity,
         }
     }
 
@@ -78,7 +77,7 @@ impl Display for CompressionFormat {
             CompressionFormat::Identity => write!(f, "no compression"),
             CompressionFormat::Gzip => write!(f, "gzip"),
             CompressionFormat::Bzip2 => write!(f, "bzip2"),
-            CompressionFormat::Xz => write!(f, "xz/lzma"),
+            CompressionFormat::Xz => write!(f, "LZMA (xz)"),
         }
     }
 }

@@ -64,6 +64,8 @@ fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
 }
 
 impl CompressionArg {
+    /// Detect what compression format to use. If we couldn't figure it out,
+    /// returns None.
     pub fn detect_format(&self, path: impl AsRef<Path>) -> Option<CompressionFormat> {
         match self {
             CompressionArg::Auto => {

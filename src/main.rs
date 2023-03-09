@@ -2,6 +2,7 @@ use crate::{
     logging::{get_log_paths, init_logging_parent},
     ui::ask_outfile,
 };
+use ask_outfile::ask_compression;
 use burn::{
     child::is_in_burn_mode,
     handle::StartProcessError,
@@ -56,16 +57,18 @@ async fn inner_main() -> anyhow::Result<()> {
         Command::Burn(a) => a,
     };
 
+    let compression = ask_compression(&args)?;
+
     let target = match &args.out {
         Some(f) => {
             let dev = BurnTarget::try_from(f.as_ref())?;
-            if !confirm_write(&args, &dev)? {
+            if !confirm_write(&args, compression, &dev)? {
                 eprintln!("Aborting.");
                 return Ok(());
             }
             dev
         }
-        None => ask_outfile(&args)?,
+        None => ask_outfile(&args, compression)?,
     };
 
     let burn_args = BurnConfig {
@@ -73,6 +76,7 @@ async fn inner_main() -> anyhow::Result<()> {
         src: args.input.to_owned(),
         logfile: get_log_paths().child.clone(),
         verify: true,
+        compression,
     };
 
     let handle = try_start_burn(&burn_args).await?;

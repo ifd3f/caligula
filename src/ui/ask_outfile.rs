@@ -2,14 +2,43 @@ use std::{fmt, fs::File};
 
 use bytesize::ByteSize;
 use inquire::{Confirm, InquireError, Select};
+use strum::IntoEnumIterator;
 use tracing::debug;
 
 use crate::{
     cli::BurnArgs,
+    compression::CompressionFormat,
     device::{enumerate_devices, BurnTarget, Removable},
 };
 
-pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
+pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
+    if let Some(cf) = args.compression.detect_format(&args.input) {
+        if args.force {
+            return Ok(cf);
+        }
+        eprintln!("Input file: {}", args.input.to_string_lossy());
+        eprintln!("Detected compression format: {}", cf);
+        if !Confirm::new("Is this okay?").prompt()? {
+            Err(InquireError::OperationCanceled)?;
+        }
+        return Ok(cf);
+    }
+
+    eprintln!(
+        "Couldn't detect compression format for {}",
+        args.input.to_string_lossy()
+    );
+    if args.force {
+        eprintln!("Since --force was provided, assuming it's uncompressed!");
+        return Ok(CompressionFormat::Identity);
+    }
+    let format =
+        Select::new("What format to use?", CompressionFormat::iter().collect()).prompt()?;
+
+    return Ok(format);
+}
+
+pub fn ask_outfile(args: &BurnArgs, compression: CompressionFormat) -> anyhow::Result<BurnTarget> {
     let mut show_all_disks = args.show_all_disks;
 
     loop {
@@ -36,7 +65,7 @@ pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
             }
         };
 
-        if !confirm_write(args, &dev)? {
+        if !confirm_write(args, compression, &dev)? {
             continue;
         }
 
@@ -44,14 +73,27 @@ pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
     }
 }
 
-pub fn confirm_write(args: &BurnArgs, device: &BurnTarget) -> Result<bool, InquireError> {
+pub fn confirm_write(
+    args: &BurnArgs,
+    compression: CompressionFormat,
+    device: &BurnTarget,
+) -> Result<bool, InquireError> {
     if args.force {
         debug!("Skipping confirm because of --force");
         Ok(true)
     } else {
         let input_size = ByteSize::b(File::open(&args.input)?.metadata()?.len());
         println!("Input: {}", args.input.to_string_lossy());
-        println!("  Size: {}", input_size);
+        match compression {
+            CompressionFormat::Identity => {
+                println!("  Size: {}", input_size);
+                println!("  Compression: {}", compression);
+            }
+            _ => {
+                println!("  Size (compressed): {}", input_size);
+                println!("  Compression: {}", compression);
+            }
+        }
         println!();
 
         println!("Output: {}", device.name);

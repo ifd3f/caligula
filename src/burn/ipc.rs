@@ -4,12 +4,15 @@ use serde::{Deserialize, Serialize};
 
 use valuable::Valuable;
 
+use crate::compression::CompressionFormat;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub struct BurnConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
     pub logfile: PathBuf,
     pub verify: bool,
+    pub compression: CompressionFormat,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
