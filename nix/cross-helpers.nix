@@ -4,13 +4,22 @@ let
   lib = nixpkgs.lib;
   hostInfo = lib.systems.parse.mkSystemFromString host;
 in rec {
+  pkgs = import nixpkgs {
+    system = host;
+    overlays = [ rust-overlay.overlays.default ];
+  };
+
+  baseToolchain = pkgs.rust-bin.stable.latest.default;
+
   supportedSystems = if hostInfo.kernel.name == "linux" then [
     "aarch64-linux"
     "x86_64-linux"
-  ] else if hostInfo.kernel.name == "darwin" then [
+  ] else if host == "x86_64-darwin" then [
     "aarch64-darwin"
     "x86_64-darwin"
-  ] else
+  ] else if host == "aarch64-darwin" then
+    [ "aarch64-darwin" ]
+  else
     throw "unsupported host system ${host}";
 
   forTarget = target:
@@ -32,10 +41,7 @@ in rec {
         throw "unsupported target system ${target}";
 
       # Construct pkgs (host = target = this system)
-      pkgs = import nixpkgs {
-        system = host;
-        overlays = [ rust-overlay.overlays.default ];
-      };
+      pkgs = import nixpkgs { system = host; };
 
       # Construct pkgsCross (host = this system, target = target we want)
       pkgsCross = import nixpkgs {
@@ -51,42 +57,60 @@ in rec {
         }_LINKER";
 
       # Construct a rust toolchain that runs on the host
-      rust-toolchain = pkgs.rust-bin.stable.latest.default.override {
-        targets = [ buildCfg.rustTarget ];
-      };
+      rust-toolchain =
+        baseToolchain.override { targets = [ buildCfg.rustTarget ]; };
+
       naersk' = pkgs.callPackage naersk {
         cargo = rust-toolchain;
         rustc = rust-toolchain;
       };
 
-      extraBuildEnv = if host != target then {
-        "${targetLinkerEnvName}" =
-          "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-ld";
-        cargoBuildOptions = o: o ++ [ "--no-default-features" "-F" "gz" ];
-      } else
-        { };
+      crossParams = if host == target then {
+        cc = pkgs.stdenv.cc;
+        extraBuildEnv = { };
+      } else rec {
+        cc = pkgsCross.stdenv.cc;
+        extraBuildEnv = {
+          "${targetLinkerEnvName}" = "${cc}/bin/${buildCfg.rustTarget}-ld";
+
+          "CC_${builtins.replaceStrings [ "-" ] [ "_" ] buildCfg.rustTarget}" =
+            "${cc}/bin/${buildCfg.rustTarget}-cc";
+        };
+      };
+
+      buildInputs = buildCfg.platformDeps ++ [ crossParams.cc ];
 
       # The actual package
       caligula = with pkgs;
         naersk'.buildPackage ({
           src = ../.;
           doCheck = host == target;
-          buildInputs = buildCfg.platformDeps;
+          propagatedBuildInputs = [ crossParams.cc ];
+          inherit buildInputs;
           CARGO_BUILD_TARGET = buildCfg.rustTarget;
-        } // extraBuildEnv);
+        } // crossParams.extraBuildEnv);
 
     in {
-      inherit pkgs pkgsCross rust-toolchain caligula extraBuildEnv;
+      inherit pkgs pkgsCross rust-toolchain caligula buildInputs;
       inherit (buildCfg) platformDeps rustTarget;
+      inherit (crossParams) extraBuildEnv;
 
-      buildInputs = [];
       naersk = naersk';
-
-      # The development toolchain config with IDE goodies
-      rust-toolchain-dev = rust-toolchain.override {
-        extensions = [ "rust-src" "rust-analyzer" ];
-      };
     };
+
+  crossCompileDevShell = let
+    rust = baseToolchain.override {
+      extensions = [ "rust-src" "rust-analyzer" ];
+      targets = [ "aarch64-unknown-linux-musl" ];
+    };
+    extraEnv = lib.foldl' (a: b: a // b) { }
+      (map (target: (forTarget target).extraBuildEnv) supportedSystems);
+
+  in pkgs.mkShell ({
+    buildInputs = [ rust ]
+      ++ lib.concatMap (target: (forTarget target).buildInputs)
+      supportedSystems;
+  } // extraEnv);
 
   caligulaPackages = lib.listToAttrs (lib.forEach supportedSystems (target: {
     name = "caligula-${target}";

@@ -28,11 +28,9 @@
           caligula = self.packages."${system}"."caligula-${system}";
         } // crossHelpers.caligulaPackages;
 
-        devShell = let tc = crossHelpers.forTarget system;
-        in with pkgs;
-        mkShell {
-          buildInputs = [ nixfmt tc.rust-toolchain-dev ] ++ tc.buildInputs;
-          CARGO_BUILD_TARGET = tc.rustTarget;
-        };
+        devShells.default = crossHelpers.crossCompileDevShell.overrideAttrs
+          (final: prev: {
+            buildInputs = prev.buildInputs ++ (with pkgs; [ nixfmt ]);
+          });
       }));
 }
