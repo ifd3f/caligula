@@ -35,13 +35,14 @@ ARM and x86 architectures are also officially supported.
 
 - Listing attached disks, and telling you their size and hardware model information
 - Confirmation dialogs so you don't `dd` your filesystem
+- Automatically decompressing your input file
+- Verifying your disk to make sure it was written correctly
 - Running sudo for you if you don't have permissions on a disk
 - Cool graphs
 
 ## Planned features
 
 - Support for more platforms
-- Support for compression formats
 - Post-burn patching (i.e. adding `ssh` and `wpa_supplicant.conf` files to Raspberry Pi disks)
 - Lightweight GUI
 
