@@ -68,6 +68,9 @@ in rec {
       extraBuildEnv = if host != target then {
         "${targetLinkerEnvName}" =
           "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-ld";
+
+        "CC_${builtins.replaceStrings [ "-" ] [ "_" ] buildCfg.rustTarget}" =
+          "${pkgsCross.stdenv.cc}/bin/${buildCfg.rustTarget}-cc";
       } else
         { };
 
