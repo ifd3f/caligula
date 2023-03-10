@@ -31,12 +31,12 @@ in rec {
         platformDeps = [ ];
       } else if targetInfo.kernel.name == "darwin" then {
         rustTarget = "${targetInfo.cpu.name}-apple-darwin";
-        platformDeps = with pkgs.darwin.apple_sdk.frameworks; [
-          Cocoa
-          IOKit
-          Foundation
-          DiskArbitration
-        ];
+        platformDeps = let
+          sdk = if host == target then
+            pkgs.darwin.apple_sdk
+          else
+            pkgsCross.darwin.apple_sdk;
+        in with sdk.frameworks; [ Cocoa IOKit Foundation DiskArbitration ];
       } else
         throw "unsupported target system ${target}";
 
