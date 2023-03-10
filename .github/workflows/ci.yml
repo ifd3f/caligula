@@ -50,4 +50,4 @@ jobs:
           name: astralbijection
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - name: Build dev shell
-        run: nix build .#devShells.${{ matrix.platform }}.default --show-trace --log-lines 10000
+        run: nix build .#devShells.${{ matrix.platform }}.default --show-trace --log-lines 10000 --fallback
