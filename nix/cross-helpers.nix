@@ -69,15 +69,16 @@ in rec {
         cc = pkgs.stdenv.cc;
         extraBuildEnv = { };
       } else rec {
-        cc = pkgsCross.stdenv.cc;
+        cc = if targetInfo.kernel.name == "darwin" then
+          pkgsCross.clangStdenv.cc
+        else
+          pkgsCross.stdenv.cc;
+
         extraBuildEnv = {
           "${targetLinkerEnvName}" = "${cc}/bin/${buildCfg.rustTarget}-ld";
 
           "CC_${builtins.replaceStrings [ "-" ] [ "_" ] buildCfg.rustTarget}" =
-            if targetInfo.kernel.name == "darwin" then
-              "${cc}/bin/${buildCfg.rustTarget}-clang"
-            else
-              "${cc}/bin/${buildCfg.rustTarget}-cc";
+            "${cc}/bin/${buildCfg.rustTarget}-cc";
         };
       };
 
