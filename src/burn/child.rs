@@ -81,7 +81,7 @@ impl Ctx {
     fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
         debug!("Opening {} for writing", self.args.dest.to_string_lossy());
 
-        let mut dest = match self.args.target_type {
+        let file = match self.args.target_type {
             device::Type::File => File::create(&self.args.dest)?,
             device::Type::Disk | device::Type::Partition => {
                 open_blockdev(&self.args.dest, self.args.compression)?
@@ -89,15 +89,7 @@ impl Ctx {
         };
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
 
-        for_each_block(self, src, |block, _| {
-            trace!(block_len = block.len(), "Writing block");
-
-            let written = dest.write(block).expect("Failed to write block to disk");
-            if written != block.len() {
-                return Err(ErrorType::EndOfOutput);
-            }
-            Ok(())
-        })
+        for_each_block(self, src, WriteSink { file })
     }
 
     fn verify(&mut self, src: &mut File) -> Result<(), ErrorType> {
@@ -106,19 +98,8 @@ impl Ctx {
             self.args.dest.to_string_lossy()
         );
 
-        let mut dest = File::open(&self.args.dest)?;
-        for_each_block(self, src, |block, dst| {
-            trace!(block_len = block.len(), "Verifying block");
-
-            let read = dest.read(dst).expect("Failed to read block from disk");
-            if read != block.len() {
-                return Err(ErrorType::EndOfOutput);
-            }
-            if block != dst {
-                return Err(ErrorType::VerificationFailed);
-            }
-            Ok(())
-        })
+        let file = File::open(&self.args.dest)?;
+        for_each_block(self, src, VerifySink { file })
     }
 
     pub fn send_msg(&mut self, result: StatusMessage) {
@@ -130,11 +111,11 @@ impl Ctx {
 fn for_each_block(
     ctx: &mut Ctx,
     src: &mut File,
-    mut action: impl FnMut(&[u8], &mut [u8]) -> Result<(), ErrorType>,
+    mut sink: impl BlockSink,
 ) -> Result<(), ErrorType> {
-    let block_size = ByteSize::kb(128).as_u64() as usize;
-    let mut full_block = vec![0u8; block_size];
-    let mut closure_block = vec![0u8; block_size]; // A block for the user to mutate
+    let block_size = ByteSize::kb(512).as_u64() as usize;
+    let mut read_block = vec![0u8; block_size];
+    let mut scratch_block = vec![0u8; block_size]; // A block for the user to mutate
 
     let mut decompress = decompress(ctx.args.compression, BufReader::new(src)).unwrap();
 
@@ -143,21 +124,23 @@ fn for_each_block(
 
     'outer: loop {
         for _ in 0..checkpoint_blocks {
-            let read_bytes = decompress.read(&mut full_block)?;
+            let read_bytes = decompress.read(&mut read_block)?;
             if read_bytes == 0 {
                 break 'outer;
             }
 
-            action(&full_block[..read_bytes], &mut closure_block[..read_bytes])?;
+            sink.on_block(&read_block[..read_bytes], &mut scratch_block[..read_bytes])?;
             offset += read_bytes as u64;
         }
 
+        sink.on_checkpoint()?;
         ctx.send_msg(StatusMessage::TotalBytes {
             src: decompress.get_mut().stream_position()?,
             dest: offset,
         });
     }
 
+    sink.on_checkpoint()?;
     ctx.send_msg(StatusMessage::TotalBytes {
         src: decompress.get_mut().stream_position()?,
         dest: offset,
@@ -177,5 +160,64 @@ impl StatusReporter {
         trace!("Sending message {:?}", msg);
         serde_json::to_writer(&mut self.0, &msg).expect("Failed to convert message to JSON");
         self.0.write(b"\n").expect("Failed to write to socket");
+    }
+}
+
+trait BlockSink {
+    fn on_block(&mut self, block: &[u8], scratch: &mut [u8]) -> Result<(), ErrorType>;
+    fn on_checkpoint(&mut self) -> Result<(), ErrorType>;
+}
+
+struct WriteSink {
+    file: File,
+}
+
+impl BlockSink for WriteSink {
+    #[inline]
+    fn on_block(&mut self, block: &[u8], _scratch: &mut [u8]) -> Result<(), ErrorType> {
+        trace!(block_len = block.len(), "Writing block");
+
+        let written = self
+            .file
+            .write(block)
+            .expect("Failed to write block to disk");
+        if written != block.len() {
+            return Err(ErrorType::EndOfOutput);
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn on_checkpoint(&mut self) -> Result<(), ErrorType> {
+        self.file.flush()?;
+        Ok(())
+    }
+}
+
+struct VerifySink {
+    file: File,
+}
+
+impl BlockSink for VerifySink {
+    #[inline]
+    fn on_block(&mut self, block: &[u8], scratch: &mut [u8]) -> Result<(), ErrorType> {
+        trace!(block_len = block.len(), "Verifying block");
+
+        let read = self
+            .file
+            .read(scratch)
+            .expect("Failed to read block from disk");
+        if read != block.len() {
+            return Err(ErrorType::EndOfOutput);
+        }
+        if block != scratch {
+            return Err(ErrorType::VerificationFailed);
+        }
+        Ok(())
+    }
+
+    #[inline]
+    fn on_checkpoint(&mut self) -> Result<(), ErrorType> {
+        Ok(())
     }
 }
