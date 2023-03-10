@@ -83,7 +83,9 @@ impl Ctx {
 
         let mut dest = match self.args.target_type {
             device::Type::File => File::create(&self.args.dest)?,
-            device::Type::Disk | device::Type::Partition => open_blockdev(&self.args.dest)?,
+            device::Type::Disk | device::Type::Partition => {
+                open_blockdev(&self.args.dest, self.args.compression)?
+            }
         };
         self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
 
