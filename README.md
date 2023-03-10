@@ -18,11 +18,12 @@ Arguments:
   <INPUT>  Input file to burn
 
 Options:
-  -o <OUT>              Where to write the output. If not supplied, we will search for possible disks and ask you for where you want to burn
-  -f, --force           If supplied, we will not ask for confirmation before destroying your disk
-      --show-all-disks  If provided, we will not only show you removable disks, but all disks. If you use this option, please proceed with caution!
-  -h, --help            Print help
-  -V, --version         Print version
+  -o <OUT>                         Where to write the output. If not supplied, we will search for possible disks and ask you for where you want to burn
+  -f, --force                      If supplied, we will not ask for confirmation before destroying your disk
+      --show-all-disks             If provided, we will not only show you removable disks, but all disks. If you use this option, please proceed with caution!
+  -z, --compression <COMPRESSION>  What compression format the input file is. If `auto`, then we will guess based on the extension [default: auto] [possible values: auto, none, bz2, gz, xz]
+  -h, --help                       Print help
+  -V, --version                    Print version
 ```
 
 ## Supported platforms
