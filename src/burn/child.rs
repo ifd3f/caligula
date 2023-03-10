@@ -110,7 +110,7 @@ impl Ctx {
 #[inline]
 fn for_each_block(
     ctx: &mut Ctx,
-    src: &mut File,
+    src: impl Read + Seek,
     mut sink: impl BlockSink,
 ) -> Result<(), ErrorType> {
     let block_size = ByteSize::kb(512).as_u64() as usize;
@@ -168,11 +168,17 @@ trait BlockSink {
     fn on_checkpoint(&mut self) -> Result<(), ErrorType>;
 }
 
-struct WriteSink {
-    file: File,
+struct WriteSink<W>
+where
+    W: Write,
+{
+    file: W,
 }
 
-impl BlockSink for WriteSink {
+impl<W> BlockSink for WriteSink<W>
+where
+    W: Write,
+{
     #[inline]
     fn on_block(&mut self, block: &[u8], _scratch: &mut [u8]) -> Result<(), ErrorType> {
         trace!(block_len = block.len(), "Writing block");
@@ -194,11 +200,17 @@ impl BlockSink for WriteSink {
     }
 }
 
-struct VerifySink {
-    file: File,
+struct VerifySink<R>
+where
+    R: Read,
+{
+    file: R,
 }
 
-impl BlockSink for VerifySink {
+impl<R> BlockSink for VerifySink<R>
+where
+    R: Read,
+{
     #[inline]
     fn on_block(&mut self, block: &[u8], scratch: &mut [u8]) -> Result<(), ErrorType> {
         trace!(block_len = block.len(), "Verifying block");
@@ -219,5 +231,67 @@ impl BlockSink for VerifySink {
     #[inline]
     fn on_checkpoint(&mut self) -> Result<(), ErrorType> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::io::Cursor;
+
+    use rand::{thread_rng, RngCore};
+
+    use crate::burn::{child::VerifySink, ipc::ErrorType};
+
+    use super::{BlockSink, WriteSink};
+
+    fn make_random(n: usize) -> Vec<u8> {
+        let mut rng = thread_rng();
+        let mut dest = vec![0; n];
+        rng.fill_bytes(&mut dest);
+        dest
+    }
+
+    #[test]
+    fn write_sink_on_block() {
+        let mut sink = WriteSink { file: vec![] };
+
+        sink.on_block(&[1, 2, 3, 4], &mut make_random(4)).unwrap();
+        sink.on_block(&[1, 2, 3, 4, 5, 6], &mut make_random(6))
+            .unwrap();
+
+        assert_eq!(sink.file, vec![1, 2, 3, 4, 1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn verify_sink_multiple_blocks_incorrect() {
+        let src = make_random(1000);
+        let mut file = src.clone();
+        file[593] = 5;
+
+        let mut sink = VerifySink {
+            file: Cursor::new(file),
+        };
+
+        sink.on_block(&src[..250], &mut make_random(250)).unwrap();
+        sink.on_block(&src[250..500], &mut make_random(250))
+            .unwrap();
+        let r2 = sink
+            .on_block(&src[500..750], &mut make_random(250))
+            .unwrap_err();
+
+        assert_eq!(r2, ErrorType::VerificationFailed);
+    }
+
+    #[test]
+    fn verify_sink_multiple_blocks_correct() {
+        let src = make_random(1000);
+        let file = src.clone();
+
+        let mut sink = VerifySink {
+            file: Cursor::new(file),
+        };
+
+        sink.on_block(&src[..500], &mut make_random(500)).unwrap();
+        sink.on_block(&src[500..], &mut make_random(500)).unwrap();
     }
 }
