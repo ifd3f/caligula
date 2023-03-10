@@ -74,7 +74,10 @@ in rec {
           "${targetLinkerEnvName}" = "${cc}/bin/${buildCfg.rustTarget}-ld";
 
           "CC_${builtins.replaceStrings [ "-" ] [ "_" ] buildCfg.rustTarget}" =
-            "${cc}/bin/${buildCfg.rustTarget}-cc";
+            if targetInfo.kernel.name == "darwin" then
+              "${cc}/bin/${buildCfg.rustTarget}-clang"
+            else
+              "${cc}/bin/${buildCfg.rustTarget}-cc";
         };
       };
 
