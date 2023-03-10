@@ -1,20 +1,18 @@
 use crate::{
-    logging::{get_log_paths, init_logging_parent},
-    ui::ask_outfile,
+    logging::init_logging_parent,
+    ui::{
+        ask_outfile,
+        burn::start::{begin_writing, try_start_burn, BeginParams},
+    },
 };
 use ask_outfile::ask_compression;
-use burn::{
-    child::is_in_burn_mode,
-    handle::StartProcessError,
-    ipc::{BurnConfig, ErrorType},
-};
+use burn::child::is_in_burn_mode;
 use clap::Parser;
-use cli::{Args, BurnArgs, Command};
-use compression::CompressionFormat;
+use cli::{Args, Command};
 use device::BurnTarget;
-use inquire::{Confirm, InquireError};
+use inquire::InquireError;
 use tracing::debug;
-use ui::{confirm_write, utils::TUICapture};
+use ui::confirm_write;
 
 pub mod burn;
 pub mod cli;
@@ -61,80 +59,19 @@ async fn inner_main() -> anyhow::Result<()> {
     let compression = ask_compression(&args)?;
 
     let target = match &args.out {
-        Some(f) => {
-            let dev = BurnTarget::try_from(f.as_ref())?;
-            if !confirm_write(&args, compression, &dev)? {
-                eprintln!("Aborting.");
-                return Ok(());
-            }
-            dev
-        }
-        None => ask_outfile(&args, compression)?,
+        Some(f) => BurnTarget::try_from(f.as_ref())?,
+        None => ask_outfile(&args)?,
     };
 
-    let burn_args = BurnConfig {
-        dest: target.devnode.clone(),
-        src: args.input.to_owned(),
-        logfile: get_log_paths().child.clone(),
-        verify: true,
-        compression,
-        target_type: target.target_type,
-    };
+    let begin_params = BeginParams::new(args.input.clone(), compression, target)?;
+    if !confirm_write(&args, &begin_params)? {
+        eprintln!("Aborting.");
+        return Ok(());
+    }
 
-    let handle = try_start_burn(&burn_args).await?;
-
-    begin_writing(target, handle, compression, &args).await?;
+    let handle = try_start_burn(&begin_params.make_child_config()).await?;
+    begin_writing(begin_params, handle).await?;
 
     debug!("Done!");
-    Ok(())
-}
-
-async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
-    match burn::Handle::start(args, false).await {
-        Ok(p) => Ok(p),
-        Err(e) => {
-            if let Some(dc) = e.downcast_ref::<StartProcessError>() {
-                match dc {
-                    StartProcessError::Failed(Some(ErrorType::PermissionDenied)) => {
-                        debug!("Failure due to insufficient perms, asking user to escalate");
-
-                        let response = Confirm::new(&format!(
-                            "We don't have permissions on {}. Escalate using sudo?",
-                            args.dest.to_string_lossy()
-                        ))
-                        .with_help_message(
-                            "We will use the sudo command, which may prompt you for a password.",
-                        )
-                        .prompt()?;
-
-                        if response {
-                            return burn::Handle::start(args, true).await;
-                        }
-                    }
-                    _ => (),
-                }
-            }
-            return Err(e);
-        }
-    }
-}
-
-async fn begin_writing(
-    target: BurnTarget,
-    handle: burn::Handle,
-    cf: CompressionFormat,
-    args: &BurnArgs,
-) -> anyhow::Result<()> {
-    debug!("Opening TUI");
-    let mut tui = TUICapture::new()?;
-    let terminal = tui.terminal();
-
-    // create app and run it
-    ui::burn::UI::new(handle, terminal, target, cf, args)
-        .show()
-        .await?;
-
-    debug!("Closing TUI");
-
     Ok(())
 }

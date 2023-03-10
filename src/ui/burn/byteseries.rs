@@ -135,7 +135,6 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use approx::assert_relative_eq;
-    use bytesize::ByteSize;
 
     use super::ByteSeries;
     use test_case::test_case;

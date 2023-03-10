@@ -1,14 +1,15 @@
-use std::{fmt, fs::File};
+use std::fmt;
 
-use bytesize::ByteSize;
 use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
 
 use crate::{
     cli::BurnArgs,
-    compression::{CompressionFormat, AVAILABLE_FORMATS, DecompressError},
+    compression::{CompressionFormat, DecompressError, AVAILABLE_FORMATS},
     device::{enumerate_devices, BurnTarget, Removable},
 };
+
+use super::burn::start::BeginParams;
 
 pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
     if let Some(cf) = args.compression.detect_format(&args.input) {
@@ -18,7 +19,10 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
         eprintln!("Input file: {}", args.input.to_string_lossy());
         eprintln!("Detected compression format: {}", cf);
         if !cf.is_available() {
-            eprintln!("Compression format {} is not supported on your platform!", cf);
+            eprintln!(
+                "Compression format {} is not supported on your platform!",
+                cf
+            );
             Err(DecompressError::UnsupportedFormat(cf))?;
         }
         if !Confirm::new("Is this okay?").prompt()? {
@@ -35,13 +39,12 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
         eprintln!("Since --force was provided, assuming it's uncompressed!");
         return Ok(CompressionFormat::Identity);
     }
-    let format =
-        Select::new("What format to use?", AVAILABLE_FORMATS.to_vec()).prompt()?;
+    let format = Select::new("What format to use?", AVAILABLE_FORMATS.to_vec()).prompt()?;
 
     return Ok(format);
 }
 
-pub fn ask_outfile(args: &BurnArgs, compression: CompressionFormat) -> anyhow::Result<BurnTarget> {
+pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
     let mut show_all_disks = args.show_all_disks;
 
     loop {
@@ -67,42 +70,16 @@ pub fn ask_outfile(args: &BurnArgs, compression: CompressionFormat) -> anyhow::R
                 continue;
             }
         };
-
-        if !confirm_write(args, compression, &dev)? {
-            continue;
-        }
-
         return Ok(dev);
     }
 }
 
-pub fn confirm_write(
-    args: &BurnArgs,
-    compression: CompressionFormat,
-    device: &BurnTarget,
-) -> Result<bool, InquireError> {
+pub fn confirm_write(args: &BurnArgs, begin_params: &BeginParams) -> Result<bool, InquireError> {
     if args.force {
         debug!("Skipping confirm because of --force");
         Ok(true)
     } else {
-        let input_size = ByteSize::b(File::open(&args.input)?.metadata()?.len());
-        println!("Input: {}", args.input.to_string_lossy());
-        if compression.is_identity() {
-            println!("  Size: {}", input_size);
-            println!("  Compression: {}", compression);
-        } else {
-            println!("  Size (compressed): {}", input_size);
-            println!("  Compression: {}", compression);
-        }
-        println!();
-
-        println!("Output: {}", device.name);
-        println!("  Model: {}", device.model);
-        println!("  Size: {}", device.size);
-        println!("  Type: {}", device.target_type);
-        println!("  Path: {}", device.devnode.to_string_lossy());
-        println!("  Removable: {}", device.removable);
-        println!();
+        println!("{}", begin_params);
 
         Confirm::new("Is this okay?")
             .with_help_message("THIS ACTION WILL DESTROY ALL DATA ON THIS DEVICE!!!")
