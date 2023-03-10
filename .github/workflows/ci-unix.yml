@@ -40,7 +40,7 @@ jobs:
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
 
       - name: Build package
-        run: nix build ${{ env.nix_target }} --show-trace --log-lines 10000
+        run: nix build ${{ env.nix_target }} --show-trace --log-lines 10000 --fallback
 
       - uses: actions/upload-artifact@v3
         with:
