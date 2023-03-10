@@ -101,8 +101,9 @@ in rec {
   crossCompileDevShell = let
     rust = baseToolchain.override {
       extensions = [ "rust-src" "rust-analyzer" ];
-      targets = [ "aarch64-unknown-linux-musl" ];
+      targets = (map (target: (forTarget target).rustTarget) supportedSystems);
     };
+
     extraEnv = lib.foldl' (a: b: a // b) { }
       (map (target: (forTarget target).extraBuildEnv) supportedSystems);
 
