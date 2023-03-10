@@ -10,7 +10,7 @@ macro_rules! generate {
     {
         $readervar:ident: $r:ident {
             $(
-                [feature=$feature:expr] $extpat:pat => 
+                [feature=$feature:expr] $extpat:pat =>
                     $enumarm:ident($display:expr, $inner:ty)
                     $dcrinner:expr,
             )*

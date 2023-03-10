@@ -17,8 +17,6 @@ pub struct LogPaths {
 static LOG_PATHS: StaticCell<LogPaths> = StaticCell::new();
 static mut LOG_PATHS_REF: Option<&'static LogPaths> = None;
 
-pub const CHILD_LOG_PATH_ENV: &str = "_CALIGULA_CHILD_LOG_PATH";
-
 #[cfg(not(debug_assertions))]
 const FILE_LOG_LEVEL: Level = Level::DEBUG;
 

@@ -13,15 +13,14 @@ use tui::{
 
 use crate::{
     burn::{self, Handle},
-    cli::BurnArgs,
-    device::BurnTarget,
     logging::get_bug_report_msg,
-    ui::burn::state::UIEvent, compression::CompressionFormat,
+    ui::burn::state::UIEvent,
 };
 
 use super::{
     byteseries::ByteSeries,
     history::{History, UIState},
+    start::BeginParams,
     state::{ChildState, Quit, State},
 };
 
@@ -38,26 +37,20 @@ impl<'a, B> UI<'a, B>
 where
     B: Backend,
 {
-    pub fn new(
-        handle: burn::Handle,
-        terminal: &'a mut Terminal<B>,
-        target: BurnTarget,
-        cf: CompressionFormat,
-        args: &'a BurnArgs,
-    ) -> Self {
+    pub fn new(params: BeginParams, handle: burn::Handle, terminal: &'a mut Terminal<B>) -> Self {
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,
             events: EventStream::new(),
             state: State {
-                input_filename: args.input.to_string_lossy().to_string(),
-                target_filename: target.devnode.to_string_lossy().to_string(),
+                input_filename: params.input_file.to_string_lossy().to_string(),
+                target_filename: params.target.devnode.to_string_lossy().to_string(),
                 ui_state: UIState::default(),
                 child: ChildState::Burning {
                     handle,
                     write_hist: ByteSeries::new(Instant::now()),
                     read_hist: ByteSeries::new(Instant::now()),
-                    max_bytes: if cf.is_identity() {
+                    max_bytes: if params.compression.is_identity() {
                         Some(input_file_bytes)
                     } else {
                         None

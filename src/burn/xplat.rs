@@ -3,20 +3,28 @@ use std::{
     path::Path,
 };
 
+use crate::compression::CompressionFormat;
+
 #[cfg(target_os = "linux")]
-pub fn open_blockdev(path: impl AsRef<Path>) -> std::io::Result<File> {
+pub fn open_blockdev(path: impl AsRef<Path>, cf: CompressionFormat) -> std::io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
 
     use libc::O_SYNC;
 
-    OpenOptions::new()
-        .write(true)
-        .custom_flags(O_SYNC)
-        .open(path)
+    let mut opts = OpenOptions::new();
+    opts.write(true);
+
+    // Decompression is a bigger bottleneck than write, so only bypass the
+    // cache if there is compression.
+    if cf.is_identity() {
+        opts.custom_flags(O_SYNC);
+    }
+
+    opts.open(path)
 }
 
 #[cfg(target_os = "macos")]
-pub fn open_blockdev(path: impl AsRef<Path>) -> std::io::Result<File> {
+pub fn open_blockdev(path: impl AsRef<Path>, cf: CompressionFormat) -> std::io::Result<File> {
     // For more info, see:
     // https://stackoverflow.com/questions/2299402/how-does-one-do-raw-io-on-mac-os-x-ie-equivalent-to-linuxs-o-direct-flag
 
