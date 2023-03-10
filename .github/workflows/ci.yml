@@ -31,6 +31,14 @@ jobs:
       do_e2e_tests: false
     secrets: inherit
 
+  ci-aarch64-darwin:
+    uses: ./.github/workflows/ci-unix.yml
+    with:
+      build_runner: macos-latest
+      target_triple: aarch64-darwin
+      do_e2e_tests: false
+    secrets: inherit
+
   ci-devshell:
     strategy:
       matrix:
