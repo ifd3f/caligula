@@ -4,9 +4,9 @@ use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
 
 use crate::{
-    cli::BurnArgs,
     compression::{CompressionFormat, DecompressError, AVAILABLE_FORMATS},
     device::{enumerate_devices, BurnTarget, Removable},
+    ui::cli::BurnArgs,
 };
 
 use super::burn::start::BeginParams;
