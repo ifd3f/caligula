@@ -7,22 +7,38 @@ use valuable::Valuable;
 
 macro_rules! generate {
     {
-        $writer_var:ident: $wty:ident {
-            $(
-                $digest_bits:expr => [
-                    $(
-                        $enumarm:ident($display:expr) {
-                            $makehash_expr:expr
-                        }
-                    )*
-                ]
-            )*
-        }
+        $(
+            $digest_bits:expr => [
+                $(
+                    $enumarm:ident($display:expr): $hash_inner:ty {
+                        $makehash_expr:expr
+                    }
+                )*
+            ]
+        )*
     } => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Valuable)]
         pub enum HashAlg {
             $($(
                 $enumarm,
+            )*)*
+        }
+
+        /// Represents a hashing operation in progress.
+        /// This is mostly useful to make a cute progress bar.
+        pub struct Hashing<R>
+        where
+            R : Read,
+        {
+            inner: HashingInner<R>
+        }
+
+        enum HashingInner<R>
+        where
+            R : Read,
+        {
+            $($(
+                $enumarm(GenericHashing<$hash_inner, R>),
             )*)*
         }
 
@@ -59,81 +75,96 @@ macro_rules! generate {
             }
         }
 
-        /// Hash the given `Read` with the given algorithm.
-        /// A callback can be provided to receive intermediate state.
-        #[inline]
-        pub fn hash_with_reporting<R>(
-            alg: HashAlg,
-            r: R,
-            block_size: usize,
-            checkpoint_blocks: usize,
-            mut cb: impl FnMut(usize, &mut R) -> std::io::Result<()>
-        ) -> std::io::Result<FileHashInfo>
+        impl<R> Hashing<R>
         where
             R: Read,
         {
-            match alg {
-                $($(
-                    HashAlg::$enumarm => {
-                        let h = $makehash_expr;
-                        let mut hashing = Hashing::new(h, r, block_size);
-                        loop {
-                            let mut offset = 0;
-                            for _ in (0..checkpoint_blocks) {
-                                match hashing.next() {
-                                    None => return hashing.finalize(),
-                                    Some(i) => {
-                                        offset = i;
-                                    }
-                                }
-                            }
-                            cb(offset, hashing.get_reader_mut())?
-                        }
-                    }
-                )*)*
+            #[inline]
+            pub fn new(alg: HashAlg, r: R, block_size: usize) -> Self {
+                let inner = match alg {
+                    $($(
+                        HashAlg::$enumarm => HashingInner::$enumarm(
+                            GenericHashing::new($makehash_expr, r, block_size)
+                        ),
+                    )*)*
+                };
+
+                Self { inner }
+            }
+
+            #[inline]
+            pub fn finalize(self) -> std::io::Result<FileHashInfo> {
+                match self.inner {
+                    $($(
+                        HashingInner::$enumarm(i) => i.finalize(),
+                    )*)*
+                }
+            }
+
+            #[inline]
+            pub fn get_reader_mut(&mut self) -> &mut R {
+                match &mut self.inner {
+                    $($(
+                        HashingInner::$enumarm(i) => i.get_reader_mut(),
+                    )*)*
+                }
+            }
+        }
+
+        impl<R> Iterator for Hashing<R>
+        where
+            R: Read,
+        {
+            type Item = usize;
+
+            #[inline]
+            fn next(&mut self) -> Option<Self::Item> {
+                match &mut self.inner {
+                    $($(
+                        HashingInner::$enumarm(i) => i.next(),
+                    )*)*
+                }
             }
         }
     }
 }
 
 generate! {
-    w: W {
-        128 => [
-            Md5("MD5") {
-                md5::Md5::new()
-            }
-        ]
-        160 => [
-            Sha1("SHA-1") {
-                sha1::Sha1::new()
-            }
-        ]
-        224 => [
-            Sha224("SHA-224") {
-                sha2::Sha224::new()
-            }
-        ]
-        256 => [
-            Sha256("SHA-256") {
-                sha2::Sha256::new()
-            }
-        ]
-        384 => [
-            Sha384("SHA-384") {
-                sha2::Sha384::new()
-            }
-        ]
-        512 => [
-            Sha512("SHA-512") {
-                sha2::Sha512::new()
-            }
-        ]
-    }
+    128 => [
+        Md5("MD5"): md5::Md5 {
+            md5::Md5::new()
+        }
+    ]
+    160 => [
+        Sha1("SHA-1"): sha1::Sha1 {
+            sha1::Sha1::new()
+        }
+    ]
+    224 => [
+        Sha224("SHA-224"): sha2::Sha224 {
+            sha2::Sha224::new()
+        }
+    ]
+    256 => [
+        Sha256("SHA-256"): sha2::Sha256 {
+            sha2::Sha256::new()
+        }
+    ]
+    384 => [
+        Sha384("SHA-384"): sha2::Sha384 {
+            sha2::Sha384::new()
+        }
+    ]
+    512 => [
+        Sha512("SHA-512"): sha2::Sha512 {
+            sha2::Sha512::new()
+        }
+    ]
 }
 
-/// Represents a hashing operation that has not completed yet.
+/// Represents a hashing operation in progress.
 /// This is mostly useful to make a cute progress bar.
-struct Hashing<H, R>
+struct GenericHashing<H, R>
 where
     H: Digest,
     R: Read,
@@ -151,7 +182,7 @@ pub struct FileHashInfo {
     pub file_hash: Vec<u8>,
 }
 
-impl<H, R> Hashing<H, R>
+impl<H, R> GenericHashing<H, R>
 where
     H: Digest,
     R: Read,
@@ -192,7 +223,7 @@ where
     }
 }
 
-impl<H, R> Iterator for Hashing<H, R>
+impl<H, R> Iterator for GenericHashing<H, R>
 where
     H: Digest,
     R: Read,

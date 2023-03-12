@@ -11,7 +11,7 @@ use inquire::{Select, Text};
 
 use crate::{
     compression::{decompress, CompressionFormat},
-    hash::{guess_hashalg_from_str, hash_with_reporting, FileHashInfo, HashAlg},
+    hash::{guess_hashalg_from_str, FileHashInfo, HashAlg, Hashing},
 };
 
 pub fn ask_hash(
@@ -126,17 +126,21 @@ fn do_hashing(path: &Path, params: &BeginHashParams) -> anyhow::Result<FileHashI
     progress_bar.set_style(ProgressStyle::with_template("{bytes} / {total_bytes}").unwrap());
 
     let decompress = decompress(params.hasher_compression, BufReader::new(file))?;
-    let hash_result = hash_with_reporting(
+
+    let mut hashing = Hashing::new(
         params.alg,
         decompress,
         ByteSize::kib(512).as_u64() as usize, // TODO
-        128,
-        |_, file| {
-            progress_bar.set_position(file.get_mut().stream_position()?);
-            Ok(())
-        },
-    )?;
-    Ok(hash_result)
+    );
+    loop {
+        for _ in 0..32 {
+            match hashing.next() {
+                Some(_) => {}
+                None => return Ok(hashing.finalize()?),
+            }
+        }
+        progress_bar.set_position(hashing.get_reader_mut().get_mut().stream_position()?);
+    }
 }
 
 struct BeginHashParams {
