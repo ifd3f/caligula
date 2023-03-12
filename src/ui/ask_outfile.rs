@@ -1,12 +1,11 @@
-use std::{fmt, path::Path};
+use std::fmt;
 
-use inquire::{Confirm, InquireError, Select, Text};
+use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
 
 use crate::{
     compression::{CompressionFormat, DecompressError, AVAILABLE_FORMATS},
     device::{enumerate_devices, BurnTarget, Removable},
-    hash::{guess_hashalg_from_str, FileHashInfo},
     ui::cli::BurnArgs,
 };
 

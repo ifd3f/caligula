@@ -9,7 +9,7 @@ macro_rules! generate {
     {
         $writer_var:ident: $wty:ident {
             $(
-                $digest_size:expr => [
+                $digest_bits:expr => [
                     $(
                         $enumarm:ident($display:expr) {
                             $makehash_expr:expr
@@ -36,9 +36,9 @@ macro_rules! generate {
             /// Based on length of a hash, detects the possible hash algs
             /// this hash could be from.
             pub fn detect_from_length(bytes: usize) -> &'static [Self] {
-                match bytes {
+                match bytes * 8 {
                     $(
-                        $digest_size => &[
+                        $digest_bits => &[
                             $(
                                 Self::$enumarm,
                             )*
@@ -66,6 +66,7 @@ macro_rules! generate {
             alg: HashAlg,
             r: R,
             block_size: usize,
+            checkpoint_blocks: usize,
             mut cb: impl FnMut(usize, &mut R) -> std::io::Result<()>
         ) -> std::io::Result<FileHashInfo>
         where
@@ -77,10 +78,16 @@ macro_rules! generate {
                         let h = $makehash_expr;
                         let mut hashing = Hashing::new(h, r, block_size);
                         loop {
-                            match hashing.next() {
-                                Some(i) => cb(i, hashing.get_reader_mut())?,
-                                None => return hashing.finalize(),
+                            let mut offset = 0;
+                            for _ in (0..checkpoint_blocks) {
+                                match hashing.next() {
+                                    None => return hashing.finalize(),
+                                    Some(i) => {
+                                        offset = i;
+                                    }
+                                }
                             }
+                            cb(offset, hashing.get_reader_mut())?
                         }
                     }
                 )*)*
@@ -141,7 +148,7 @@ where
 /// Represents the full results of hashing.
 pub struct FileHashInfo {
     pub file_bytes: u64,
-    pub hash_value: Vec<u8>,
+    pub file_hash: Vec<u8>,
 }
 
 impl<H, R> Hashing<H, R>
@@ -168,7 +175,7 @@ where
             Some(e) => Err(e),
             None => Ok(FileHashInfo {
                 file_bytes: self.len as u64,
-                hash_value: self.hash.finalize()[..].into(),
+                file_hash: self.hash.finalize()[..].into(),
             }),
         }
     }

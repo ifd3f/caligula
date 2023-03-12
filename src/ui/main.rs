@@ -45,12 +45,12 @@ async fn inner_main() -> anyhow::Result<()> {
 
     let compression = ask_compression(&args)?;
 
+    let _hash_info = ask_hash(&args.input, compression)?;
+
     let target = match &args.out {
         Some(f) => BurnTarget::try_from(f.as_ref())?,
         None => ask_outfile(&args)?,
     };
-
-    let hash = ask_hash(&args.input, compression)?;
 
     let begin_params = BeginParams::new(args.input.clone(), compression, target)?;
     if !confirm_write(&args, &begin_params)? {

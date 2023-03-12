@@ -1,12 +1,13 @@
 use std::{
     fs::File,
-    io::{BufRead, BufReader, Seek},
+    io::{BufReader, Seek},
     path::Path,
+    process::exit,
 };
 
 use bytesize::ByteSize;
 use indicatif::{ProgressBar, ProgressStyle};
-use inquire::{Confirm, Select, Text};
+use inquire::{Select, Text};
 
 use crate::{
     compression::{decompress, CompressionFormat},
@@ -35,7 +36,23 @@ pub fn ask_hash(
         }
     };
 
-    Ok(Some(do_hashing(input_file, params)?))
+    let hash_result = do_hashing(input_file, &params)?;
+
+    if hash_result.file_hash == params.expected_hash {
+    } else {
+        eprintln!("Hash did not match!");
+        eprintln!(
+            "  Expected: {}",
+            base16::encode_lower(&params.expected_hash)
+        );
+        eprintln!(
+            "    Actual: {}",
+            base16::encode_lower(&hash_result.file_hash)
+        );
+        exit(-1);
+    }
+
+    Ok(Some(hash_result))
 }
 
 fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
@@ -43,17 +60,19 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
         .with_help_message("We will guess the hash algorithm from your input.")
         .prompt_skippable()?;
 
-    let hash = match input_hash.as_deref() {
+    let hashalg = match input_hash.as_deref() {
         None | Some("skip") => Err(Recoverable::Skip)?,
         Some(hash) => guess_hashalg_from_str(hash),
     };
 
-    let (hash, algs) = if let Some(x) = hash {
+    let (hash, algs) = if let Some(x) = hashalg {
         x
     } else {
         eprintln!("Could not decode your hash! It doesn't seem to be base16 or base64.");
         Err(Recoverable::AskAgain)?
     };
+
+    eprintln!("{}", hash.len());
 
     let alg = match algs {
         &[] => {
@@ -61,11 +80,8 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
             Err(Recoverable::AskAgain)?
         }
         &[only_alg] => {
-            if Confirm::new(&format!("Is it {}?", only_alg)).prompt()? {
-                only_alg
-            } else {
-                Err(Recoverable::AskAgain)?
-            }
+            eprintln!("Detected {}", only_alg);
+            only_alg
         }
         multiple => {
             let ans = Select::new("Which algorithm is it?", multiple.into()).prompt_skippable()?;
@@ -84,8 +100,8 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
         )
         .prompt()?
         {
-            "Before" => cf,
             "After" => CompressionFormat::Identity,
+            "Before" => cf,
             _ => panic!("Impossible state!"),
         }
     } else {
@@ -93,13 +109,13 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
     };
 
     Ok(BeginHashParams {
-        hash,
+        expected_hash: hash,
         alg,
         hasher_compression,
     })
 }
 
-fn do_hashing(path: &Path, params: BeginHashParams) -> anyhow::Result<FileHashInfo> {
+fn do_hashing(path: &Path, params: &BeginHashParams) -> anyhow::Result<FileHashInfo> {
     let mut file = File::open(path)?;
 
     // Calculate total file size
@@ -114,6 +130,7 @@ fn do_hashing(path: &Path, params: BeginHashParams) -> anyhow::Result<FileHashIn
         params.alg,
         decompress,
         ByteSize::kib(512).as_u64() as usize, // TODO
+        128,
         |_, file| {
             progress_bar.set_position(file.get_mut().stream_position()?);
             Ok(())
@@ -123,7 +140,7 @@ fn do_hashing(path: &Path, params: BeginHashParams) -> anyhow::Result<FileHashIn
 }
 
 struct BeginHashParams {
-    hash: Vec<u8>,
+    expected_hash: Vec<u8>,
     alg: HashAlg,
     hasher_compression: CompressionFormat,
 }
