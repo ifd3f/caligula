@@ -10,7 +10,7 @@ macro_rules! generate {
         $(
             $digest_bits:expr => [
                 $(
-                    $enumarm:ident($display:expr): $hash_inner:ty {
+                    $sri_prefix:expr => $enumarm:ident($display:expr): $hash_inner:ty {
                         $makehash_expr:expr
                     }
                 )*
@@ -42,13 +42,19 @@ macro_rules! generate {
             )*)*
         }
 
-        pub const AVAILABLE_ALGS: &[HashAlg] = &[
-            $($(
-                HashAlg::$enumarm,
-            )*)*
-        ];
-
         impl HashAlg {
+            /// Parses from SRI algorithm prefix. See https://www.w3.org/TR/SRI/ for more information.
+            /// Note that although SRI only supports sha256, sha384, and sha512, we parse out
+            /// more than that, so it's not actually to spec, but who cares.
+            pub fn from_sri_alg(alg: &str) -> Option<Self> {
+                match alg {
+                    $($(
+                        $sri_prefix => Some(Self::$enumarm),
+                    )*)*
+                    _ => None,
+                }
+            }
+
             /// Based on length of a hash, detects the possible hash algs
             /// this hash could be from.
             pub fn detect_from_length(bytes: usize) -> &'static [Self] {
@@ -131,32 +137,32 @@ macro_rules! generate {
 
 generate! {
     128 => [
-        Md5("MD5"): md5::Md5 {
+        "md5" => Md5("MD5"): md5::Md5 {
             md5::Md5::new()
         }
     ]
     160 => [
-        Sha1("SHA-1"): sha1::Sha1 {
+        "sha1" => Sha1("SHA-1"): sha1::Sha1 {
             sha1::Sha1::new()
         }
     ]
     224 => [
-        Sha224("SHA-224"): sha2::Sha224 {
+        "sha224" => Sha224("SHA-224"): sha2::Sha224 {
             sha2::Sha224::new()
         }
     ]
     256 => [
-        Sha256("SHA-256"): sha2::Sha256 {
+        "sha256" => Sha256("SHA-256"): sha2::Sha256 {
             sha2::Sha256::new()
         }
     ]
     384 => [
-        Sha384("SHA-384"): sha2::Sha384 {
+        "sha384" => Sha384("SHA-384"): sha2::Sha384 {
             sha2::Sha384::new()
         }
     ]
     512 => [
-        Sha512("SHA-512"): sha2::Sha512 {
+        "sha512" => Sha512("SHA-512"): sha2::Sha512 {
             sha2::Sha512::new()
         }
     ]
