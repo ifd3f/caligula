@@ -16,6 +16,7 @@ bytesize = "1.2.0"
 bzip2 = { version = "0.4.4", optional = true, features = ["static"] }
 clap = { version = "4.1.8", features = ["derive", "cargo"] }
 crossterm = { version = "0.26.1", features = ["event-stream"] }
+digest = "0.10.6"
 flate2 = { version = "1.0.25", optional = true }
 format-bytes = "0.3.0"
 futures = "0.3.26"
@@ -24,10 +25,13 @@ inquire = "0.5.3"
 interprocess = { version = "1.2.1", features = ["tokio", "tokio_support"] }
 is-terminal = "0.4.4"
 libc = "0.2.139"
+md-5 = "0.10.5"
 process_path = "0.1.4"
 rand = "0.8.5"
 serde = { version = "1.0.152", features = ["derive"] }
 serde_json = "1.0.93"
+sha1 = "0.10.5"
+sha2 = "0.10.6"
 static_cell = "1.0.0"
 thiserror = "1.0.38"
 tokio = { version = "1.25.0", features = ["full"] }
