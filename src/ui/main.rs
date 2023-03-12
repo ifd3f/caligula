@@ -2,6 +2,7 @@ use crate::{
     device::BurnTarget,
     logging::init_logging_parent,
     ui::{
+        ask_hash::ask_hash,
         ask_outfile,
         burn::start::{begin_writing, try_start_burn, BeginParams},
         cli::{Args, Command},
@@ -48,6 +49,8 @@ async fn inner_main() -> anyhow::Result<()> {
         Some(f) => BurnTarget::try_from(f.as_ref())?,
         None => ask_outfile(&args)?,
     };
+
+    let hash = ask_hash(&args.input, compression)?;
 
     let begin_params = BeginParams::new(args.input.clone(), compression, target)?;
     if !confirm_write(&args, &begin_params)? {

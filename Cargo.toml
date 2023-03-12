@@ -12,6 +12,8 @@ bz2 = ["dep:bzip2"]
 
 [dependencies]
 anyhow = "1.0.69"
+base16 = "0.2.1"
+base64 = "0.21.0"
 bytesize = "1.2.0"
 bzip2 = { version = "0.4.4", optional = true, features = ["static"] }
 clap = { version = "4.1.8", features = ["derive", "cargo"] }
@@ -21,6 +23,7 @@ flate2 = { version = "1.0.25", optional = true }
 format-bytes = "0.3.0"
 futures = "0.3.26"
 futures-io = "0.3.26"
+indicatif = "0.17.3"
 inquire = "0.5.3"
 interprocess = { version = "1.2.1", features = ["tokio", "tokio_support"] }
 is-terminal = "0.4.4"

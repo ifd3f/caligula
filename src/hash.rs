@@ -1,3 +1,4 @@
+use base64::Engine;
 use digest::Digest;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
@@ -60,11 +61,12 @@ macro_rules! generate {
 
         /// Hash the given `Read` with the given algorithm.
         /// A callback can be provided to receive intermediate state.
+        #[inline]
         pub fn hash_with_reporting<R>(
             alg: HashAlg,
             r: R,
             block_size: usize,
-            mut cb: impl FnMut(usize, &mut R)
+            mut cb: impl FnMut(usize, &mut R) -> std::io::Result<()>
         ) -> std::io::Result<FileHashInfo>
         where
             R: Read,
@@ -76,7 +78,7 @@ macro_rules! generate {
                         let mut hashing = Hashing::new(h, r, block_size);
                         loop {
                             match hashing.next() {
-                                Some(i) => cb(i, hashing.get_reader_mut()),
+                                Some(i) => cb(i, hashing.get_reader_mut())?,
                                 None => return hashing.finalize(),
                             }
                         }
@@ -138,8 +140,8 @@ where
 
 /// Represents the full results of hashing.
 pub struct FileHashInfo {
-    file_bytes: u64,
-    hash_value: Vec<u8>,
+    pub file_bytes: u64,
+    pub hash_value: Vec<u8>,
 }
 
 impl<H, R> Hashing<H, R>
@@ -204,4 +206,21 @@ where
             }
         }
     }
+}
+
+pub fn guess_hashalg_from_str(s: &str) -> Option<(Vec<u8>, &'static [HashAlg])> {
+    let decode = base16::decode(s)
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(&s))
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(&s));
+
+    if let Ok(b) = decode {
+        let algs = guess_hashalg_from_bytes(&b);
+        Some((b, algs))
+    } else {
+        None
+    }
+}
+
+pub fn guess_hashalg_from_bytes(b: &[u8]) -> &'static [HashAlg] {
+    HashAlg::detect_from_length(b.len())
 }
