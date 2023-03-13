@@ -8,7 +8,7 @@ use valuable::Valuable;
 macro_rules! generate {
     {
         $(
-            $digest_bits:expr => [
+            $digest_bytes:expr => [
                 $(
                     $sri_prefix:expr => $enumarm:ident($display:expr): $hash_inner:ty {
                         $makehash_expr:expr
@@ -58,15 +58,24 @@ macro_rules! generate {
             /// Based on length of a hash, detects the possible hash algs
             /// this hash could be from.
             pub fn detect_from_length(bytes: usize) -> &'static [Self] {
-                match bytes * 8 {
+                match bytes {
                     $(
-                        $digest_bits => &[
+                        $digest_bytes => &[
                             $(
                                 Self::$enumarm,
                             )*
                         ],
                     )*
                     _ => &[],
+                }
+            }
+
+            /// Returns the digest size in bits.
+            pub fn digest_bytes(&self) -> usize {
+                match self {
+                    $($(
+                        Self::$enumarm => $digest_bytes,
+                    )*)*
                 }
             }
         }
@@ -136,32 +145,32 @@ macro_rules! generate {
 }
 
 generate! {
-    128 => [
+    16 => [
         "md5" => Md5("MD5"): md5::Md5 {
             md5::Md5::new()
         }
     ]
-    160 => [
+    20 => [
         "sha1" => Sha1("SHA-1"): sha1::Sha1 {
             sha1::Sha1::new()
         }
     ]
-    224 => [
+    28 => [
         "sha224" => Sha224("SHA-224"): sha2::Sha224 {
             sha2::Sha224::new()
         }
     ]
-    256 => [
+    32 => [
         "sha256" => Sha256("SHA-256"): sha2::Sha256 {
             sha2::Sha256::new()
         }
     ]
-    384 => [
+    48 => [
         "sha384" => Sha384("SHA-384"): sha2::Sha384 {
             sha2::Sha384::new()
         }
     ]
-    512 => [
+    64 => [
         "sha512" => Sha512("SHA-512"): sha2::Sha512 {
             sha2::Sha512::new()
         }
@@ -253,18 +262,21 @@ where
 }
 
 pub fn guess_hashalg_from_str(s: &str) -> Option<(Vec<u8>, &'static [HashAlg])> {
-    let decode = base16::decode(s)
-        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(&s))
-        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(&s));
+    let decode = parse_base16_or_base64(s);
 
-    if let Ok(b) = decode {
-        let algs = guess_hashalg_from_bytes(&b);
-        Some((b, algs))
-    } else {
-        None
-    }
+    decode.map(|b| {
+        let alg = guess_hashalg_from_bytes(&b);
+        (b, alg)
+    })
 }
 
 pub fn guess_hashalg_from_bytes(b: &[u8]) -> &'static [HashAlg] {
     HashAlg::detect_from_length(b.len())
+}
+
+pub fn parse_base16_or_base64(s: &str) -> Option<Vec<u8>> {
+    base16::decode(s)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(&s))
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(&s))
+        .ok()
 }
