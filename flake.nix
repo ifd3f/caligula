@@ -21,10 +21,20 @@
           overlays = [ rust-overlay.overlays.default ];
         };
 
+        lib = pkgs.lib;
+
         crossHelpers = self.lib.crossHelpers system;
       in {
         packages = {
           default = self.packages."${system}".caligula;
+          scripts = {
+            lint = let path = lib.makeBinPath [ crossHelpers.baseToolchain ];
+            in pkgs.writeScriptBin "lint" ''
+              export PATH=${path}
+              ${./scripts/lint.sh}
+            '';
+          };
+
           caligula = self.packages."${system}"."caligula-${system}";
         } // crossHelpers.caligulaPackages;
 
