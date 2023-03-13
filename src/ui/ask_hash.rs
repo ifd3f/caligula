@@ -11,7 +11,7 @@ use inquire::{Select, Text};
 
 use crate::{
     compression::{decompress, CompressionFormat},
-    hash::{guess_hashalg_from_str, FileHashInfo, HashAlg, Hashing},
+    hash::{parse_hash_input, FileHashInfo, HashAlg, Hashing},
 };
 
 pub fn ask_hash(
@@ -39,6 +39,7 @@ pub fn ask_hash(
     let hash_result = do_hashing(input_file, &params)?;
 
     if hash_result.file_hash == params.expected_hash {
+        eprintln!("Disk image verified successfully!");
     } else {
         eprintln!("Hash did not match!");
         eprintln!(
@@ -49,6 +50,7 @@ pub fn ask_hash(
             "    Actual: {}",
             base16::encode_lower(&hash_result.file_hash)
         );
+        eprintln!("Your disk image may be corrupted!");
         exit(-1);
     }
 
@@ -60,21 +62,18 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
         .with_help_message("We will guess the hash algorithm from your input.")
         .prompt_skippable()?;
 
-    let hashalg = match input_hash.as_deref() {
+    let (algs, hash) = match input_hash.as_deref() {
         None | Some("skip") => Err(Recoverable::Skip)?,
-        Some(hash) => guess_hashalg_from_str(hash),
+        Some(hash) => match parse_hash_input(hash) {
+            Ok(hash) => hash,
+            Err(e) => {
+                eprintln!("{e}");
+                Err(Recoverable::AskAgain)?
+            }
+        },
     };
 
-    let (hash, algs) = if let Some(x) = hashalg {
-        x
-    } else {
-        eprintln!("Could not decode your hash! It doesn't seem to be base16 or base64.");
-        Err(Recoverable::AskAgain)?
-    };
-
-    eprintln!("{}", hash.len());
-
-    let alg = match algs {
+    let alg = match &algs[..] {
         &[] => {
             eprintln!("Could not detect the hash algorithm from your hash!");
             Err(Recoverable::AskAgain)?
