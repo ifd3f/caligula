@@ -4,12 +4,12 @@
 
 ![Screenshot of the Caligula TUI verifying a disk.](./images/verifying.png)
 
-**Caligula** is a safe, user-friendly, lightweight TUI for imaging disks.
+_Caligula_ is a safe, user-friendly, lightweight TUI for imaging disks.
 
-**!!! Warning !!!** This software is new and experimental. If you have problems, please file an issue and I will try to address it!
+**WARNING!** This software is somewhat experimental. If you have problems, please file an issue and I will try to address it!
 
 ```
-$ caligula burn
+$ caligula burn -h
 Burn an image to a disk
 
 Usage: caligula burn [OPTIONS] <INPUT>
@@ -18,12 +18,28 @@ Arguments:
   <INPUT>  Input file to burn
 
 Options:
-  -o <OUT>                         Where to write the output. If not supplied, we will search for possible disks and ask you for where you want to burn
-  -f, --force                      If supplied, we will not ask for confirmation before destroying your disk
-      --show-all-disks             If provided, we will not only show you removable disks, but all disks. If you use this option, please proceed with caution!
-  -z, --compression <COMPRESSION>  What compression format the input file is. If `auto`, then we will guess based on the extension [default: auto] [possible values: auto, none, bz2, gz, xz]
-  -h, --help                       Print help
-  -V, --version                    Print version
+  -o <OUT>
+          Where to write the output. If not supplied, we will search for
+          possible disks and ask you for where you want to burn
+  -z, --compression <COMPRESSION>
+          What compression format the input file is. If `auto`, then we will
+          guess based on the extension [default: auto] [possible values:
+          auto, none, bz2, gz, xz]
+  -s, --hash <HASH>
+          The hash of the input file. For more information, see long help
+          (--help) [default: ask]
+      --hash-of <HASH_OF>
+          Is the hash calculated from the raw file, or the compressed file? [possible
+          values: raw, compressed]
+      --show-all-disks
+          If provided, we will show all disks, removable or not
+  -f, --force
+          If supplied, we will not ask for confirmation before destroying
+          your disk
+  -h, --help
+          Print help (see more with '--help')
+  -V, --version
+          Print version
 ```
 
 ## Supported platforms
