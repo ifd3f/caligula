@@ -13,14 +13,13 @@ use super::burn::start::BeginParams;
 
 pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
     let cf = match args.compression {
-        CompressionArg::Auto => CompressionFormat::detect_from_path(&args.input),
+        CompressionArg::Auto | CompressionArg::Ask => {
+            CompressionFormat::detect_from_path(&args.input)
+        }
         other => other.associated_format(),
     };
 
     if let Some(cf) = cf {
-        if args.force {
-            return Ok(cf);
-        }
         eprintln!("Input file: {}", args.input.to_string_lossy());
         eprintln!("Detected compression format: {}", cf);
         if !cf.is_available() {
@@ -30,6 +29,11 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
             );
             Err(DecompressError::UnsupportedFormat(cf))?;
         }
+
+        if args.force || args.compression != CompressionArg::Ask {
+            return Ok(cf);
+        }
+
         if !Confirm::new("Is this okay?").prompt()? {
             Err(InquireError::OperationCanceled)?;
         }

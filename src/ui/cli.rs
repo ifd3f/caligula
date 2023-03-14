@@ -35,9 +35,16 @@ pub struct BurnArgs {
     #[arg(short, value_parser = parse_path_exists)]
     pub out: Option<PathBuf>,
 
-    /// What compression format the input file is. If `auto`, then we will guess
-    /// based on the extension.
-    #[arg(short = 'z', long, default_value = "auto")]
+    /// What compression format the input file is in.
+    ///
+    ///  - `auto` will guess based on the file extension.
+    ///
+    ///  - `ask` has the same behavior as `auto`, but with a confirmation.
+    ///
+    ///  - `none` means no compression.
+    ///
+    /// All other options are compression formats supported by this build of caligula.
+    #[arg(short = 'z', long, default_value = "ask")]
     pub compression: CompressionArg,
 
     /// The hash of the input file. This can be provided in one of several formats:

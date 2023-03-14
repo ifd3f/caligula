@@ -20,6 +20,7 @@ macro_rules! generate {
     } => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
         pub enum CompressionArg {
+            Ask,
             Auto,
             None,
             $(
@@ -32,6 +33,7 @@ macro_rules! generate {
             /// or None if this is not associated with any specific format.
             pub fn associated_format(&self) -> Option<CompressionFormat> {
                 match self {
+                    Self::Ask => None,
                     Self::Auto => None,
                     Self::None => Some(CompressionFormat::Identity),
                     $(
