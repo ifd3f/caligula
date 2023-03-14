@@ -146,7 +146,9 @@ fn do_hashing(path: &Path, params: &BeginHashParams) -> anyhow::Result<FileHashI
     file.seek(std::io::SeekFrom::Start(0))?;
 
     let progress_bar = ProgressBar::new(file_size);
-    progress_bar.set_style(ProgressStyle::with_template("{bytes} / {total_bytes}").unwrap());
+    progress_bar.set_style(
+        ProgressStyle::with_template("{bytes:>10} / {total_bytes:<10} {wide_bar}").unwrap(),
+    );
 
     let decompress = decompress(params.hasher_compression, BufReader::new(file))?;
 
