@@ -16,7 +16,7 @@ base16 = "0.2.1"
 base64 = "0.21.0"
 bytesize = "1.2.0"
 bzip2 = { version = "0.4.4", optional = true, features = ["static"] }
-clap = { version = "4.1.8", features = ["derive", "cargo"] }
+clap = { version = "4.1.8", features = ["derive", "cargo", "wrap_help"] }
 crossterm = { version = "0.26.1", features = ["event-stream"] }
 digest = "0.10.6"
 flate2 = { version = "1.0.25", optional = true }

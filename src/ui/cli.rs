@@ -38,39 +38,45 @@ pub struct BurnArgs {
     #[arg(short, value_parser = parse_path_exists)]
     pub out: Option<PathBuf>,
 
-    /// If supplied, we will not ask for confirmation before destroying your disk.
-    #[arg(short, long)]
-    pub force: bool,
-
-    /// If provided, we will not only show you removable disks, but all disks.
-    /// If you use this option, please proceed with caution!
-    #[arg(long)]
-    pub show_all_disks: bool,
-
     /// What compression format the input file is. If `auto`, then we will guess
     /// based on the extension.
     #[arg(short = 'z', long, default_value = "auto")]
     pub compression: CompressionArg,
 
-    /// The hash of the input file.
-    ///
-    /// This can be provided in one of several formats:
+    /// The hash of the input file. This can be provided in one of several formats:
     ///
     ///  - `ask` to ask the user for a hash
     ///
     ///  - `skip` or `none` to not do hash verification
     ///
-    ///  - an SRI-like string with either base16 or base64 in the format of `<alg>-<hash>` (i.e. `sha256-EVSTQN3/azprGF...`)
+    ///  - an SRI-like string with either base16 or base64 in the format of `<alg>-<hash>`
+    ///    (i.e. `sha256-EVSTQN3/azprGF...`)
     ///
     ///  - just a hash value, and we will guess the algorithm (i.e. `EVSTQN3/azprGF...`)
     ///
     /// The following algorithms are supported: md5, sha1, sha224, sha256, sha384, sha512
-    #[arg(short = 's', long, value_parser = parse_hash_arg, default_value = "ask")]
+    #[arg(
+        short = 's',
+        long,
+        value_parser = parse_hash_arg,
+        default_value = "ask",
+        help = "The hash of the input file. For more information, see long help (--help)"
+    )]
     pub hash: HashArg,
 
-    /// Is the hash of the raw file, or the compressed file?
+    /// Is the hash calculated from the raw file, or the compressed file?
     #[arg(long)]
     pub hash_of: Option<HashOf>,
+
+    /// If provided, we will show all disks, removable or not.
+    ///
+    /// If you use this option, please proceed with caution!
+    #[arg(long)]
+    pub show_all_disks: bool,
+
+    /// If supplied, we will not ask for confirmation before destroying your disk.
+    #[arg(short, long)]
+    pub force: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
