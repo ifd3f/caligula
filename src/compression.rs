@@ -1,6 +1,8 @@
+use clap::ValueEnum;
 use std::{
     fmt::Display,
     io::{BufRead, Read},
+    path::Path,
 };
 
 use serde::{Deserialize, Serialize};
@@ -16,6 +18,31 @@ macro_rules! generate {
             )*
         }
     } => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+        pub enum CompressionArg {
+            Ask,
+            Auto,
+            None,
+            $(
+                $enumarm,
+            )*
+        }
+
+        impl CompressionArg {
+            /// Returns the associated actual format of this CompressionArg,
+            /// or None if this is not associated with any specific format.
+            pub fn associated_format(&self) -> Option<CompressionFormat> {
+                match self {
+                    Self::Ask => None,
+                    Self::Auto => None,
+                    Self::None => Some(CompressionFormat::Identity),
+                    $(
+                        Self::$enumarm => Some(CompressionFormat::$enumarm),
+                    )*
+                }
+            }
+        }
+
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Valuable)]
         pub enum CompressionFormat {
             Identity,
@@ -133,10 +160,10 @@ macro_rules! generate {
 
 generate! {
     r: R {
-        [feature = "gz"] "gz" => Gzip("gzip", flate2::bufread::GzDecoder<R>) {
+        [feature = "gz"] "gz" => Gz("gzip", flate2::bufread::GzDecoder<R>) {
             flate2::bufread::GzDecoder::new(r)
         },
-        [feature = "bz2"] "bz2" => Bzip2("bzip2", bzip2::bufread::BzDecoder<R>) {
+        [feature = "bz2"] "bz2" => Bz2("bzip2", bzip2::bufread::BzDecoder<R>) {
             bzip2::bufread::BzDecoder::new(r)
         },
         [feature = "xz"] "xz" => Xz("xz/LZMA", xz2::bufread::XzDecoder<R>) {
@@ -150,4 +177,16 @@ pub enum DecompressError {
     #[allow(unused)]
     #[error("Unsupported compression format {0}!")]
     UnsupportedFormat(CompressionFormat),
+}
+
+impl CompressionFormat {
+    pub fn detect_from_path(path: impl AsRef<Path>) -> Option<CompressionFormat> {
+        if let Some(ext) = path.as_ref().extension() {
+            Some(CompressionFormat::detect_from_extension(
+                &ext.to_string_lossy(),
+            ))
+        } else {
+            None
+        }
+    }
 }
