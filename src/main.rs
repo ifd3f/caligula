@@ -3,6 +3,7 @@ use burn::child::is_in_burn_mode;
 mod burn;
 mod compression;
 mod device;
+mod hash;
 mod logging;
 mod native;
 mod ui;

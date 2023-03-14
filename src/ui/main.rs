@@ -2,6 +2,7 @@ use crate::{
     device::BurnTarget,
     logging::init_logging_parent,
     ui::{
+        ask_hash::ask_hash,
         ask_outfile,
         burn::start::{begin_writing, try_start_burn, BeginParams},
         cli::{Args, Command},
@@ -12,11 +13,12 @@ use clap::Parser;
 use inquire::InquireError;
 use tracing::debug;
 
-pub fn main() {
+#[tokio::main]
+pub async fn main() {
     init_logging_parent();
 
     debug!("Starting primary process");
-    match inner_main() {
+    match inner_main().await {
         Ok(_) => (),
         Err(e) => handle_toplevel_error(e),
     }
@@ -35,7 +37,6 @@ fn handle_toplevel_error(err: anyhow::Error) {
     }
 }
 
-#[tokio::main]
 async fn inner_main() -> anyhow::Result<()> {
     let args = Args::parse();
     let args = match args.command {
@@ -43,6 +44,8 @@ async fn inner_main() -> anyhow::Result<()> {
     };
 
     let compression = ask_compression(&args)?;
+
+    let _hash_info = ask_hash(&args, compression)?;
 
     let target = match &args.out {
         Some(f) => BurnTarget::try_from(f.as_ref())?,
