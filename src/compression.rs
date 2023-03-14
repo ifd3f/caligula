@@ -163,7 +163,7 @@ generate! {
         [feature = "gz"] "gz" => Gz("gzip", flate2::bufread::GzDecoder<R>) {
             flate2::bufread::GzDecoder::new(r)
         },
-        [feature = "bz2"] "bz2" => Bz("bzip2", bzip2::bufread::BzDecoder<R>) {
+        [feature = "bz2"] "bz2" => Bz2("bzip2", bzip2::bufread::BzDecoder<R>) {
             bzip2::bufread::BzDecoder::new(r)
         },
         [feature = "xz"] "xz" => Xz("xz/LZMA", xz2::bufread::XzDecoder<R>) {
