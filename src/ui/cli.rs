@@ -1,5 +1,8 @@
 use itertools::Itertools;
-use std::path::{Path, PathBuf};
+use std::{
+    fmt::Display,
+    path::{Path, PathBuf},
+};
 
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -64,6 +67,10 @@ pub struct BurnArgs {
     /// The following algorithms are supported: md5, sha1, sha224, sha256, sha384, sha512
     #[arg(short = 's', long, value_parser = parse_hash_arg, default_value = "ask")]
     pub hash: HashArg,
+
+    /// Is the hash of the raw file, or the compressed file?
+    #[arg(long)]
+    pub hash_of: Option<HashOf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
@@ -83,6 +90,12 @@ pub enum HashArg {
         alg: HashAlg,
         expected_hash: Vec<u8>,
     },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum HashOf {
+    Raw,
+    Compressed,
 }
 
 fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
@@ -113,6 +126,15 @@ fn parse_hash_arg(h: &str) -> Result<HashArg, String> {
             }
             Err(e) => Err(format!("{e}")),
         },
+    }
+}
+
+impl Display for HashOf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            HashOf::Raw => write!(f, "raw"),
+            HashOf::Compressed => write!(f, "compressed"),
+        }
     }
 }
 

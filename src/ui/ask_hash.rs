@@ -14,7 +14,7 @@ use crate::{
     hash::{parse_hash_input, FileHashInfo, HashAlg, Hashing},
 };
 
-use super::cli::{BurnArgs, HashArg};
+use super::cli::{BurnArgs, HashArg, HashOf};
 
 pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {
     let hash_params = match &args.hash {
@@ -23,7 +23,7 @@ pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option
         HashArg::Hash { alg, expected_hash } => Some(BeginHashParams {
             expected_hash: expected_hash.clone(),
             alg: alg.clone(),
-            hasher_compression: ask_hasher_compression(cf)?,
+            hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
         }),
     };
 
@@ -107,7 +107,7 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
         }
     };
 
-    let hasher_compression = ask_hasher_compression(cf)?;
+    let hasher_compression = ask_hasher_compression(cf, None)?;
 
     Ok(BeginHashParams {
         expected_hash: hash,
@@ -116,21 +116,25 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
     })
 }
 
-fn ask_hasher_compression(cf: CompressionFormat) -> anyhow::Result<CompressionFormat> {
+fn ask_hasher_compression(
+    cf: CompressionFormat,
+    hash_of: Option<HashOf>,
+) -> anyhow::Result<CompressionFormat> {
     if cf.is_identity() {
         return Ok(cf);
     }
 
-    let ans = Select::new(
-        "Is the hash calculated before or after compression?",
-        vec!["Before", "After"],
-    )
-    .prompt()?;
+    let ans = hash_of.map(Ok).unwrap_or_else(|| {
+        Select::new(
+            "Is the hash calculated from the raw file or the compressed file?",
+            vec![HashOf::Raw, HashOf::Compressed],
+        )
+        .prompt()
+    })?;
 
     Ok(match ans {
-        "After" => CompressionFormat::Identity,
-        "Before" => cf,
-        _ => panic!("Impossible state!"),
+        HashOf::Raw => cf,
+        HashOf::Compressed => CompressionFormat::Identity,
     })
 }
 
