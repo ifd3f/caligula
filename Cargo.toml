@@ -27,6 +27,7 @@ indicatif = "0.17.3"
 inquire = "0.5.3"
 interprocess = { version = "1.2.1", features = ["tokio", "tokio_support"] }
 is-terminal = "0.4.4"
+itertools = "0.10.5"
 libc = "0.2.139"
 md-5 = "0.10.5"
 process_path = "0.1.4"

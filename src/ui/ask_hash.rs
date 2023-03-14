@@ -14,29 +14,26 @@ use crate::{
     hash::{parse_hash_input, FileHashInfo, HashAlg, Hashing},
 };
 
-pub fn ask_hash(
-    input_file: impl AsRef<Path>,
-    cf: CompressionFormat,
-) -> anyhow::Result<Option<FileHashInfo>> {
-    let input_file = input_file.as_ref();
+use super::cli::{BurnArgs, HashArg};
 
-    let params = loop {
-        match ask_hash_once(cf) {
-            Ok(bhp) => {
-                break bhp;
-            }
-            Err(e) => match e.downcast::<Recoverable>()? {
-                Recoverable::AskAgain => {
-                    continue;
-                }
-                Recoverable::Skip => {
-                    return Ok(None);
-                }
-            },
-        }
+pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {
+    let hash_params = match &args.hash {
+        HashArg::Skip => None,
+        HashArg::Ask => ask_hash_loop(cf)?,
+        HashArg::Hash { alg, expected_hash } => Some(BeginHashParams {
+            expected_hash: expected_hash.clone(),
+            alg: alg.clone(),
+            hasher_compression: ask_hasher_compression(cf)?,
+        }),
     };
 
-    let hash_result = do_hashing(input_file, &params)?;
+    let params = if let Some(p) = hash_params {
+        p
+    } else {
+        return Ok(None);
+    };
+
+    let hash_result = do_hashing(&args.input, &params)?;
 
     if hash_result.file_hash == params.expected_hash {
         eprintln!("Disk image verified successfully!");
@@ -55,6 +52,24 @@ pub fn ask_hash(
     }
 
     Ok(Some(hash_result))
+}
+
+fn ask_hash_loop(cf: CompressionFormat) -> anyhow::Result<Option<BeginHashParams>> {
+    loop {
+        match ask_hash_once(cf) {
+            Ok(bhp) => {
+                return Ok(Some(bhp));
+            }
+            Err(e) => match e.downcast::<Recoverable>()? {
+                Recoverable::AskAgain => {
+                    continue;
+                }
+                Recoverable::Skip => {
+                    return Ok(None);
+                }
+            },
+        }
+    }
 }
 
 fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
@@ -92,25 +107,30 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
         }
     };
 
-    let hasher_compression = if !cf.is_identity() {
-        match Select::new(
-            "Is the hash calculated before or after compression?",
-            vec!["Before", "After"],
-        )
-        .prompt()?
-        {
-            "After" => CompressionFormat::Identity,
-            "Before" => cf,
-            _ => panic!("Impossible state!"),
-        }
-    } else {
-        cf
-    };
+    let hasher_compression = ask_hasher_compression(cf)?;
 
     Ok(BeginHashParams {
         expected_hash: hash,
         alg,
         hasher_compression,
+    })
+}
+
+fn ask_hasher_compression(cf: CompressionFormat) -> anyhow::Result<CompressionFormat> {
+    if cf.is_identity() {
+        return Ok(cf);
+    }
+
+    let ans = Select::new(
+        "Is the hash calculated before or after compression?",
+        vec!["Before", "After"],
+    )
+    .prompt()?;
+
+    Ok(match ans {
+        "After" => CompressionFormat::Identity,
+        "Before" => cf,
+        _ => panic!("Impossible state!"),
     })
 }
 

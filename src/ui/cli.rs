@@ -1,10 +1,11 @@
+use itertools::Itertools;
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
     compression::CompressionFormat,
-    hash::{parse_base16_or_base64, parse_hash_input, HashAlg},
+    hash::{parse_hash_input, HashAlg},
 };
 
 /// A safe, user-friendly disk imager.
@@ -79,7 +80,7 @@ pub enum HashArg {
     Ask,
     Skip,
     Hash {
-        alg: Vec<HashAlg>,
+        alg: HashAlg,
         expected_hash: Vec<u8>,
     },
 }
@@ -97,7 +98,19 @@ fn parse_hash_arg(h: &str) -> Result<HashArg, String> {
         "ask" => Ok(HashArg::Ask),
         "skip" | "none" => Ok(HashArg::Skip),
         _ => match parse_hash_input(h) {
-            Ok((alg, expected_hash)) => Ok(HashArg::Hash { alg, expected_hash }),
+            Ok((alg, expected_hash)) => {
+                if alg.len() > 1 {
+                    Err(format!(
+                        "Ambiguous hash algorithm! Could be one of: {}. Please specify by prepending [alg]- to your hash.",
+                        alg.iter().format(", ")
+                    ))
+                } else {
+                    Ok(HashArg::Hash {
+                        alg: alg[0],
+                        expected_hash,
+                    })
+                }
+            }
             Err(e) => Err(format!("{e}")),
         },
     }
@@ -144,7 +157,7 @@ mod tests {
         assert_eq!(
             result,
             HashArg::Hash {
-                alg: vec![HashAlg::Sha384],
+                alg: HashAlg::Sha384,
                 expected_hash: base64::engine::general_purpose::STANDARD
                     .decode("EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC")
                     .unwrap()
