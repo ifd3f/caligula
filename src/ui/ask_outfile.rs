@@ -4,7 +4,7 @@ use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
 
 use crate::{
-    compression::{CompressionFormat, DecompressError, AVAILABLE_FORMATS},
+    compression::{CompressionArg, CompressionFormat, DecompressError, AVAILABLE_FORMATS},
     device::{enumerate_devices, BurnTarget, Removable},
     ui::cli::BurnArgs,
 };
@@ -12,7 +12,12 @@ use crate::{
 use super::burn::start::BeginParams;
 
 pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
-    if let Some(cf) = args.compression.detect_format(&args.input) {
+    let cf = match args.compression {
+        CompressionArg::Auto => CompressionFormat::detect_from_path(&args.input),
+        other => other.associated_format(),
+    };
+
+    if let Some(cf) = cf {
         if args.force {
             return Ok(cf);
         }

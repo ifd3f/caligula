@@ -1,13 +1,10 @@
 use itertools::Itertools;
-use std::{
-    fmt::Display,
-    path::{Path, PathBuf},
-};
+use std::{fmt::Display, path::PathBuf};
 
 use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
-    compression::CompressionFormat,
+    compression::CompressionArg,
     hash::{parse_hash_input, HashAlg},
 };
 
@@ -73,15 +70,6 @@ pub struct BurnArgs {
     pub hash_of: Option<HashOf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, ValueEnum)]
-pub enum CompressionArg {
-    Auto,
-    None,
-    Bz2,
-    Gz,
-    Xz,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HashArg {
     Ask,
@@ -134,28 +122,6 @@ impl Display for HashOf {
         match self {
             HashOf::Raw => write!(f, "raw"),
             HashOf::Compressed => write!(f, "compressed"),
-        }
-    }
-}
-
-impl CompressionArg {
-    /// Detect what compression format to use. If we couldn't figure it out,
-    /// returns None.
-    pub fn detect_format(&self, path: impl AsRef<Path>) -> Option<CompressionFormat> {
-        match self {
-            CompressionArg::Auto => {
-                if let Some(ext) = path.as_ref().extension() {
-                    Some(CompressionFormat::detect_from_extension(
-                        &ext.to_string_lossy(),
-                    ))
-                } else {
-                    None
-                }
-            }
-            CompressionArg::None => Some(CompressionFormat::Identity),
-            CompressionArg::Bz2 => Some(CompressionFormat::Bzip2),
-            CompressionArg::Gz => Some(CompressionFormat::Gzip),
-            CompressionArg::Xz => Some(CompressionFormat::Xz),
         }
     }
 }
