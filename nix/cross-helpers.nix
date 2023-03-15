@@ -3,6 +3,24 @@ host:
 let
   lib = nixpkgs.lib;
   hostInfo = lib.systems.parse.mkSystemFromString host;
+
+  # There's lots of extraneous files that can cause a cache miss. Hide them.
+  src = builtins.path {
+    path = ../.;
+    name = "caligula-src";
+    filter = path: type:
+      # path is of the format /nix/store/hash-whatever/Cargo.toml
+      let rootDirName = builtins.elemAt (lib.splitString "/" path) 4;
+      in builtins.elem rootDirName [
+        ".cargo"
+        "native"
+        "src"
+
+        "build.rs"
+        "Cargo.lock"
+        "Cargo.toml"
+      ];
+  };
 in rec {
   pkgs = import nixpkgs {
     system = host;
@@ -83,7 +101,7 @@ in rec {
       # The actual package
       caligula = with pkgs;
         naersk'.buildPackage ({
-          src = ../.;
+          inherit src;
           doCheck = host == target;
           propagatedBuildInputs = [ crossParams.cc ];
           inherit buildInputs;
