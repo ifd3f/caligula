@@ -2,7 +2,6 @@ name: "CI"
 
 on:
   push:
-  pull_request:
 
 jobs:
   lint:
@@ -18,10 +17,10 @@ jobs:
             extra-platforms = ${{ inputs.target_triple }}
 
       - name: Prefetch lint script dependencies
-        run: nix build .#scripts.lint
+        run: nix build .#lint-script
 
       - name: Run lint script
-        run: nix run .#scripts.lint
+        run: nix run .#lint-script
 
   ci-x86_64-linux:
     uses: ./.github/workflows/ci-unix.yml
@@ -69,3 +68,27 @@ jobs:
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
       - name: Build dev shell
         run: nix build .#devShells.${{ matrix.platform }}.default --show-trace --log-lines 10000 --fallback
+
+  make-release-group:
+    runs-on: ubuntu-latest
+    needs:
+      - ci-aarch64-linux
+      - ci-x86_64-darwin
+      - ci-x86_64-linux
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+      
+      - name: Assemble release directory
+        run: |
+          mkdir release
+          for i in caligula-*; do
+            cp "$i/caligula" "release/$i"
+          done
+
+          tree
+
+      - uses: actions/upload-artifact@v3
+        with:
+          name: release
+          path: release
