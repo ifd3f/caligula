@@ -18,10 +18,10 @@ jobs:
             extra-platforms = ${{ inputs.target_triple }}
 
       - name: Prefetch lint script dependencies
-        run: nix build .#scripts.lint
+        run: nix build .#lint-script
 
       - name: Run lint script
-        run: nix run .#scripts.lint
+        run: nix run .#lint-script
 
   ci-x86_64-linux:
     uses: ./.github/workflows/ci-unix.yml

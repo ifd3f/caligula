@@ -47,9 +47,9 @@ jobs:
           name: ${{ env.artifact }}
           path: result/bin/caligula
 
-      - name: e2e test
+      - name: Run checks
         if: inputs.do_e2e_tests
-        run: nix run ${{ env.nix_target }} -- --help
+        run: nix flake check --keep-going
 
   e2e-test-fresh:
     name: e2e test on fresh ${{ inputs.e2e_test_runner }}
