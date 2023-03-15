@@ -1,0 +1,1 @@
+Included here are some scripts of questionable quality for making the AUR build go brrrr.
