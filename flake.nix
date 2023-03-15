@@ -9,6 +9,9 @@
   outputs = { self, nixpkgs, flake-utils, naersk, rust-overlay }@inputs:
     {
       lib = import ./nix inputs;
+      overlays.default = final: prev: {
+        caligula = self.packages.${prev.system}.caligula;
+      };
     } //
 
     (let
@@ -25,6 +28,8 @@
 
         crossHelpers = self.lib.crossHelpers system;
       in {
+        checks = import ./checks inputs system;
+
         packages = {
           default = self.packages."${system}".caligula;
           scripts = {
