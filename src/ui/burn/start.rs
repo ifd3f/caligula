@@ -88,7 +88,7 @@ pub async fn begin_writing(params: BeginParams, handle: burn::Handle) -> anyhow:
     let terminal = tui.terminal();
 
     // create app and run it
-    FancyUI::new(params, handle, terminal).show().await?;
+    FancyUI::new(&params, handle, terminal).show().await?;
 
     debug!("Closing TUI");
 

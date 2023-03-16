@@ -13,13 +13,12 @@ use tui::{
 
 use crate::{
     burn::{self, state_tracking::ChildState, Handle},
-    byteseries::ByteSeries,
     logging::get_bug_report_msg,
     ui::burn::{fancy::state::UIEvent, start::BeginParams},
 };
 
 use super::{
-    history::{History, UIState},
+    history::History,
     state::{Quit, State},
 };
 
@@ -37,27 +36,13 @@ impl<'a, B> FancyUI<'a, B>
 where
     B: Backend,
 {
-    pub fn new(params: BeginParams, handle: burn::Handle, terminal: &'a mut Terminal<B>) -> Self {
+    pub fn new(params: &BeginParams, handle: burn::Handle, terminal: &'a mut Terminal<B>) -> Self {
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,
             handle: Some(handle),
             events: EventStream::new(),
-            state: State {
-                input_filename: params.input_file.to_string_lossy().to_string(),
-                target_filename: params.target.devnode.to_string_lossy().to_string(),
-                ui_state: UIState::default(),
-                child: ChildState::Burning {
-                    write_hist: ByteSeries::new(Instant::now()),
-                    read_hist: ByteSeries::new(Instant::now()),
-                    max_bytes: if params.compression.is_identity() {
-                        Some(input_file_bytes)
-                    } else {
-                        None
-                    },
-                    input_file_bytes,
-                },
-            },
+            state: State::initial(&params, input_file_bytes),
         }
     }
 

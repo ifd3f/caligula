@@ -2,7 +2,7 @@ use std::time::Instant;
 
 use tracing::{debug, info};
 
-use crate::byteseries::ByteSeries;
+use crate::{byteseries::ByteSeries, ui::burn::start::BeginParams};
 
 use super::ipc::{ErrorType, StatusMessage};
 
@@ -29,6 +29,19 @@ pub enum ChildState {
 }
 
 impl ChildState {
+    pub fn initial(params: &BeginParams, input_file_bytes: u64) -> Self {
+        ChildState::Burning {
+            write_hist: ByteSeries::new(Instant::now()),
+            read_hist: ByteSeries::new(Instant::now()),
+            max_bytes: if params.compression.is_identity() {
+                Some(input_file_bytes)
+            } else {
+                None
+            },
+            input_file_bytes,
+        }
+    }
+
     pub fn on_status(mut self, now: Instant, msg: Option<StatusMessage>) -> Self {
         match msg {
             Some(StatusMessage::TotalBytes { src, dest }) => {

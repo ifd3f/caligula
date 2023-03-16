@@ -3,7 +3,10 @@ use std::time::Instant;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::{info, trace};
 
-use crate::burn::{ipc::StatusMessage, state_tracking::ChildState};
+use crate::{
+    burn::{ipc::StatusMessage, state_tracking::ChildState},
+    ui::burn::start::BeginParams,
+};
 
 use super::history::UIState;
 
@@ -23,6 +26,14 @@ pub struct State {
 }
 
 impl State {
+    pub fn initial(params: &BeginParams, input_file_bytes: u64) -> Self {
+        State {
+            input_filename: params.input_file.to_string_lossy().to_string(),
+            target_filename: params.target.devnode.to_string_lossy().to_string(),
+            ui_state: UIState::default(),
+            child: ChildState::initial(&params, input_file_bytes),
+        }
+    }
     pub fn on_event(self, ev: UIEvent) -> anyhow::Result<Self> {
         trace!("Handling {ev:?}");
 
