@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn init_without_compression() {
-        let s = ChildState::initial(
+        let _s = ChildState::initial(
             Instant::now(),
             &example_disk(100, CompressionFormat::Identity),
             10,

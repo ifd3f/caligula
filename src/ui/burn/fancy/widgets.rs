@@ -3,15 +3,16 @@ use std::time::Instant;
 use bytesize::ByteSize;
 use tui::{
     backend::Backend,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Constraint, Rect},
     style::{Color, Style},
     symbols,
     text::Span,
-    widgets::{Axis, Block, Borders, Chart, Dataset, Gauge, GraphType},
+    widgets::{Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Row, Table},
     Frame,
 };
 
 use crate::burn::state_tracking::ChildState;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct UIState {
     graph_max_speed: f64,
@@ -195,4 +196,59 @@ impl Default for UIState {
             graph_max_speed: 0.0,
         }
     }
+}
+
+pub fn make_info_table<'a>(
+    input_filename: &'a str,
+    target_filename: &'a str,
+    state: &'a ChildState,
+) -> Table<'a> {
+    let wdata = state.write_hist();
+
+    let mut rows = vec![
+        Row::new([Cell::from("Input"), Cell::from(input_filename)]),
+        Row::new([Cell::from("Output"), Cell::from(target_filename)]),
+        Row::new([
+            Cell::from("Avg. Write"),
+            Cell::from(format!("{}", wdata.total_avg_speed())),
+        ]),
+    ];
+
+    match &state {
+        ChildState::Burning(st) => {
+            rows.push(Row::new([
+                Cell::from("ETA Write"),
+                Cell::from(format!("{}", st.eta_write())),
+            ]));
+        }
+        ChildState::Verifying {
+            verify_hist: vdata,
+            total_write_bytes,
+            ..
+        } => {
+            rows.push(Row::new([
+                Cell::from("Avg. Verify"),
+                Cell::from(format!("{}", vdata.total_avg_speed())),
+            ]));
+            rows.push(Row::new([
+                Cell::from("ETA verify"),
+                Cell::from(format!("{}", vdata.estimated_time_left(*total_write_bytes))),
+            ]));
+        }
+        ChildState::Finished {
+            verify_hist: vdata, ..
+        } => {
+            if let Some(vdata) = vdata {
+                rows.push(Row::new([
+                    Cell::from("Avg. Verify"),
+                    Cell::from(format!("{}", vdata.total_avg_speed())),
+                ]));
+            }
+        }
+    }
+
+    Table::new(rows)
+        .style(Style::default())
+        .widths(&[Constraint::Length(16), Constraint::Percentage(100)])
+        .block(Block::default().title("Stats").borders(Borders::ALL))
 }

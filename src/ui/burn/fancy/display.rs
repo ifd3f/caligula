@@ -6,8 +6,7 @@ use tokio::{select, time};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Terminal,
 };
 
@@ -19,7 +18,7 @@ use crate::{
 
 use super::{
     state::{Quit, State},
-    widgets::make_progress_bar,
+    widgets::{make_info_table, make_progress_bar},
 };
 
 pub struct FancyUI<'a, B>
@@ -129,7 +128,6 @@ pub fn draw(
     terminal: &mut Terminal<impl tui::backend::Backend>,
 ) -> anyhow::Result<()> {
     let progress_bar = make_progress_bar(&state.child);
-    let wdata = state.child.write_hist();
 
     let final_time = match state.child {
         ChildState::Finished { finish_time, .. } => finish_time,
@@ -141,58 +139,7 @@ pub fn draw(
         _ => None,
     };
 
-    let mut rows = vec![
-        Row::new([
-            Cell::from("Input"),
-            Cell::from(state.input_filename.as_str()),
-        ]),
-        Row::new([
-            Cell::from("Output"),
-            Cell::from(state.target_filename.as_str()),
-        ]),
-        Row::new([
-            Cell::from("Avg. Write"),
-            Cell::from(format!("{}", wdata.total_avg_speed())),
-        ]),
-    ];
-
-    match &state.child {
-        ChildState::Burning(st) => {
-            rows.push(Row::new([
-                Cell::from("ETA Write"),
-                Cell::from(format!("{}", st.eta_write())),
-            ]));
-        }
-        ChildState::Verifying {
-            verify_hist: vdata,
-            total_write_bytes,
-            ..
-        } => {
-            rows.push(Row::new([
-                Cell::from("Avg. Verify"),
-                Cell::from(format!("{}", vdata.total_avg_speed())),
-            ]));
-            rows.push(Row::new([
-                Cell::from("ETA verify"),
-                Cell::from(format!("{}", vdata.estimated_time_left(*total_write_bytes))),
-            ]));
-        }
-        ChildState::Finished {
-            verify_hist: vdata, ..
-        } => {
-            if let Some(vdata) = vdata {
-                rows.push(Row::new([
-                    Cell::from("Avg. Verify"),
-                    Cell::from(format!("{}", vdata.total_avg_speed())),
-                ]));
-            }
-        }
-    }
-
-    let info_table = Table::new(rows)
-        .style(Style::default())
-        .widths(&[Constraint::Length(16), Constraint::Percentage(100)])
-        .block(Block::default().title("Stats").borders(Borders::ALL));
+    let info_table = make_info_table(&state.input_filename, &state.target_filename, &state.child);
 
     terminal.draw(|f| {
         let layout = ComputedLayout::from(f.size());
