@@ -1,5 +1,5 @@
 mod display;
-mod history;
 mod state;
+mod widgets;
 
 pub use display::FancyUI;
