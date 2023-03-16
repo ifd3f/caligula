@@ -32,7 +32,7 @@ pub struct BurnArgs {
 
     /// Where to write the output. If not supplied, we will search for possible
     /// disks and ask you for where you want to burn.
-    #[arg(short, value_parser = parse_path_exists)]
+    #[arg(short)]
     pub out: Option<PathBuf>,
 
     /// What compression format the input file is in.
