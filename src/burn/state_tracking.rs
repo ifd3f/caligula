@@ -2,15 +2,11 @@ use std::time::Instant;
 
 use tracing::{debug, info};
 
-use crate::{
-    byteseries::{ByteSeries, EstimatedTime},
-    compression::CompressionFormat,
-    ui::burn::start::BeginParams,
-};
+use crate::byteseries::{ByteSeries, EstimatedTime};
 
 use super::ipc::{ErrorType, StatusMessage};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ChildState {
     Burning(Burning),
     Verifying {
@@ -28,8 +24,8 @@ pub enum ChildState {
 }
 
 impl ChildState {
-    pub fn initial(now: Instant, params: &BeginParams, input_file_bytes: u64) -> Self {
-        ChildState::Burning(Burning::new(now, params.compression, input_file_bytes))
+    pub fn initial(now: Instant, is_input_compressed: bool, input_file_bytes: u64) -> Self {
+        ChildState::Burning(Burning::new(now, is_input_compressed, input_file_bytes))
     }
 
     pub fn on_status(mut self, now: Instant, msg: Option<StatusMessage>) -> Self {
@@ -120,7 +116,7 @@ impl ChildState {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Burning {
     pub write_hist: ByteSeries,
     pub total_raw_bytes: Option<u64>,
@@ -129,13 +125,13 @@ pub struct Burning {
 }
 
 impl Burning {
-    pub fn new(start: Instant, compression: CompressionFormat, input_file_bytes: u64) -> Self {
+    pub fn new(start: Instant, is_input_compressed: bool, input_file_bytes: u64) -> Self {
         Self {
             write_hist: ByteSeries::new(start),
-            total_raw_bytes: if compression.is_identity() {
-                Some(input_file_bytes)
-            } else {
+            total_raw_bytes: if is_input_compressed {
                 None
+            } else {
+                Some(input_file_bytes)
             },
             read_hist: ByteSeries::new(start),
             input_file_bytes,
@@ -182,18 +178,16 @@ impl Burning {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-
-    use bytesize::ByteSize;
+    use std::time::{Duration, Instant};
 
     use crate::{
-        compression::CompressionFormat,
-        device::{self, BurnTarget, Removable},
-        ui::burn::start::BeginParams,
+        burn::ipc::{ErrorType, StatusMessage},
+        byteseries::ByteSeries,
     };
 
     use super::ChildState;
 
+    /*
     fn example_disk(input_bytes: u64, compression: CompressionFormat) -> BeginParams {
         BeginParams {
             input_file: "test".into(),
@@ -209,13 +203,121 @@ mod tests {
             },
         }
     }
+    */
 
     #[test]
-    fn init_without_compression() {
-        let _s = ChildState::initial(
-            Instant::now(),
-            &example_disk(100, CompressionFormat::Identity),
-            10,
+    fn accept_total_bytes_messages() {
+        let t0 = Instant::now();
+        let s = ChildState::initial(t0, false, 80)
+            .on_status(
+                t0 + Duration::from_secs(1),
+                Some(StatusMessage::TotalBytes { src: 20, dest: 10 }),
+            )
+            .on_status(
+                t0 + Duration::from_secs(2),
+                Some(StatusMessage::TotalBytes { src: 30, dest: 30 }),
+            )
+            .on_status(
+                t0 + Duration::from_secs(3),
+                Some(StatusMessage::TotalBytes { src: 60, dest: 50 }),
+            );
+
+        let s = match s {
+            ChildState::Burning(s) => s,
+            s => panic!("unexpected {:#?}", s),
+        };
+        assert_eq!(s.read_hist.last_datapoint(), (3.0, 60));
+        assert_eq!(s.write_hist.last_datapoint(), (3.0, 50));
+    }
+
+    #[test]
+    fn burning_uncompressed_ratio() {
+        let t0 = Instant::now();
+        let s = ChildState::initial(t0, false, 400).on_status(
+            t0 + Duration::from_secs(1),
+            Some(StatusMessage::TotalBytes { src: 15, dest: 40 }),
         );
+
+        let s = match s {
+            ChildState::Burning(s) => s,
+            s => panic!("unexpected {:#?}", s),
+        };
+        assert_eq!(s.approximate_ratio(), 0.1);
+    }
+
+    #[test]
+    fn burning_compressed_ratio() {
+        let t0 = Instant::now();
+        let s = ChildState::initial(t0, true, 80).on_status(
+            t0 + Duration::from_secs(1),
+            Some(StatusMessage::TotalBytes {
+                src: 20,
+                dest: 100000, // very big number to make errors obvious
+            }),
+        );
+
+        let s = match s {
+            ChildState::Burning(s) => s,
+            s => panic!("unexpected {s:#?}"),
+        };
+        assert_eq!(s.approximate_ratio(), 0.25);
+    }
+
+    #[test]
+    fn sudden_terminate_in_burn_sets_error() {
+        let t0 = Instant::now();
+        let s = ChildState::initial(t0, true, 80)
+            .on_status(
+                t0 + Duration::from_secs(1),
+                Some(StatusMessage::TotalBytes { src: 20, dest: 20 }),
+            )
+            .on_status(t0 + Duration::from_secs(2), None);
+
+        match s {
+            ChildState::Finished {
+                finish_time, error, ..
+            } => {
+                assert_eq!(finish_time - t0, Duration::from_secs(2));
+                assert_eq!(error, Some(ErrorType::UnexpectedTermination));
+            }
+            s => panic!("Unexpected {s:#?}"),
+        }
+    }
+
+    #[test]
+    fn terminate_during_finished_is_idempotent() {
+        let t0 = Instant::now();
+        let finish_time = t0 + Duration::from_secs(10);
+        let s0 = ChildState::Finished {
+            finish_time,
+            error: None,
+            write_hist: ByteSeries::new(t0),
+            verify_hist: None,
+            total_write_bytes: 12345678,
+        };
+        let s1 = s0
+            .clone()
+            .on_status(finish_time + Duration::from_secs(2), None);
+
+        assert_eq!(s1, s0);
+    }
+
+    #[test]
+    fn finished_during_finished_is_idempotent() {
+        let t0 = Instant::now();
+        let finish_time = t0 + Duration::from_secs(10);
+        let s0 = ChildState::Finished {
+            finish_time,
+            error: None,
+            write_hist: ByteSeries::new(t0),
+            verify_hist: None,
+            total_write_bytes: 12345678,
+        };
+        let s1 = s0.clone().on_status(
+            finish_time + Duration::from_secs(2),
+            Some(StatusMessage::FinishedWriting { verifying: false }),
+        );
+
+        assert_eq!(s1, s0);
     }
 }

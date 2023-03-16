@@ -31,7 +31,7 @@ impl State {
             input_filename: params.input_file.to_string_lossy().to_string(),
             target_filename: params.target.devnode.to_string_lossy().to_string(),
             ui_state: UIState::default(),
-            child: ChildState::initial(now, &params, input_file_bytes),
+            child: ChildState::initial(now, !params.compression.is_identity(), input_file_bytes),
         }
     }
     pub fn on_event(self, ev: UIEvent) -> anyhow::Result<Self> {
