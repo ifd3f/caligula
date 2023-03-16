@@ -1,4 +1,3 @@
-mod byteseries;
 mod display;
 mod history;
 pub mod start;

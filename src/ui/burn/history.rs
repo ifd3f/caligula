@@ -11,7 +11,7 @@ use tui::{
     Frame,
 };
 
-use super::{byteseries::ByteSeries, state::ChildState};
+use crate::{burn::state_tracking::ChildState, byteseries::ByteSeries};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct UIState {

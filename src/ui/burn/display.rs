@@ -12,16 +12,16 @@ use tui::{
 };
 
 use crate::{
-    burn::{self, Handle},
+    burn::{self, state_tracking::ChildState, Handle},
+    byteseries::ByteSeries,
     logging::get_bug_report_msg,
     ui::burn::state::UIEvent,
 };
 
 use super::{
-    byteseries::ByteSeries,
     history::{History, UIState},
     start::BeginParams,
-    state::{ChildState, Quit, State},
+    state::{Quit, State},
 };
 
 pub struct UI<'a, B>
