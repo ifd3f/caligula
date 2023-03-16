@@ -6,58 +6,42 @@ use tokio::{select, time};
 use tui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
-    widgets::{Block, Borders, Cell, Paragraph, Row, Table, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Terminal,
 };
 
 use crate::{
-    burn::{self, Handle},
+    burn::{self, state_tracking::ChildState, Handle},
     logging::get_bug_report_msg,
-    ui::burn::state::UIEvent,
+    ui::burn::{fancy::state::UIEvent, start::BeginParams},
 };
 
 use super::{
-    byteseries::ByteSeries,
-    history::{History, UIState},
-    start::BeginParams,
-    state::{ChildState, Quit, State},
+    state::{Quit, State},
+    widgets::{make_info_table, make_progress_bar},
 };
 
-pub struct UI<'a, B>
+pub struct FancyUI<'a, B>
 where
     B: Backend,
 {
     terminal: &'a mut Terminal<B>,
     events: EventStream,
+    handle: Option<burn::Handle>,
     state: State,
 }
 
-impl<'a, B> UI<'a, B>
+impl<'a, B> FancyUI<'a, B>
 where
     B: Backend,
 {
-    pub fn new(params: BeginParams, handle: burn::Handle, terminal: &'a mut Terminal<B>) -> Self {
+    pub fn new(params: &BeginParams, handle: burn::Handle, terminal: &'a mut Terminal<B>) -> Self {
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,
+            handle: Some(handle),
             events: EventStream::new(),
-            state: State {
-                input_filename: params.input_file.to_string_lossy().to_string(),
-                target_filename: params.target.devnode.to_string_lossy().to_string(),
-                ui_state: UIState::default(),
-                child: ChildState::Burning {
-                    handle,
-                    write_hist: ByteSeries::new(Instant::now()),
-                    read_hist: ByteSeries::new(Instant::now()),
-                    max_bytes: if params.compression.is_identity() {
-                        Some(input_file_bytes)
-                    } else {
-                        None
-                    },
-                    input_file_bytes,
-                },
-            },
+            state: State::initial(Instant::now(), &params, input_file_bytes),
         }
     }
 
@@ -73,16 +57,21 @@ where
         Ok(())
     }
 
-    async fn get_and_handle_events(mut self) -> anyhow::Result<UI<'a, B>> {
+    async fn get_and_handle_events(mut self) -> anyhow::Result<FancyUI<'a, B>> {
         let msg = {
-            let handle = self.state.child.child_process();
-            if let Some(handle) = handle {
+            if let Some(handle) = &mut self.handle {
                 child_active(&mut self.events, handle).await
             } else {
                 child_dead(&mut self.events).await
             }?
         };
         self.state = self.state.on_event(msg)?;
+
+        // Drop handle/process if process died
+        if self.state.child.is_finished() {
+            self.handle = None;
+        }
+
         draw(&mut self.state, &mut self.terminal)?;
         Ok(self)
     }
@@ -138,8 +127,7 @@ pub fn draw(
     state: &mut State,
     terminal: &mut Terminal<impl tui::backend::Backend>,
 ) -> anyhow::Result<()> {
-    let history = History::from(&state.child);
-    let wdata = history.write_data();
+    let progress_bar = make_progress_bar(&state.child);
 
     let final_time = match state.child {
         ChildState::Finished { finish_time, .. } => finish_time,
@@ -151,77 +139,16 @@ pub fn draw(
         _ => None,
     };
 
-    let mut rows = vec![
-        Row::new([
-            Cell::from("Input"),
-            Cell::from(state.input_filename.as_str()),
-        ]),
-        Row::new([
-            Cell::from("Output"),
-            Cell::from(state.target_filename.as_str()),
-        ]),
-        Row::new([
-            Cell::from("Avg. Write"),
-            Cell::from(format!("{}", wdata.total_avg_speed())),
-        ]),
-    ];
-
-    match &state.child {
-        ChildState::Burning {
-            max_bytes,
-            read_hist,
-            input_file_bytes,
-            ..
-        } => {
-            rows.push(Row::new([
-                Cell::from("ETA Write"),
-                Cell::from(format!(
-                    "{}",
-                    match max_bytes {
-                        Some(m) => wdata.estimated_time_left(*m),
-                        None => read_hist.estimated_time_left(*input_file_bytes),
-                    }
-                )),
-            ]));
-        }
-        ChildState::Verifying {
-            verify_hist: vdata,
-            max_bytes,
-            ..
-        } => {
-            rows.push(Row::new([
-                Cell::from("Avg. Verify"),
-                Cell::from(format!("{}", vdata.total_avg_speed())),
-            ]));
-            rows.push(Row::new([
-                Cell::from("ETA verify"),
-                Cell::from(format!("{}", vdata.estimated_time_left(*max_bytes))),
-            ]));
-        }
-        ChildState::Finished {
-            verify_hist: vdata, ..
-        } => {
-            if let Some(vdata) = vdata {
-                rows.push(Row::new([
-                    Cell::from("Avg. Verify"),
-                    Cell::from(format!("{}", vdata.total_avg_speed())),
-                ]));
-            }
-        }
-    }
-
-    let info_table = Table::new(rows)
-        .style(Style::default())
-        .widths(&[Constraint::Length(16), Constraint::Percentage(100)])
-        .block(Block::default().title("Stats").borders(Borders::ALL));
+    let info_table = make_info_table(&state.input_filename, &state.target_filename, &state.child);
 
     terminal.draw(|f| {
         let layout = ComputedLayout::from(f.size());
 
-        history.draw_progress(f, layout.progress);
+        f.render_widget(progress_bar.render(), layout.progress);
+
         state
             .ui_state
-            .draw_speed_chart(&history, f, layout.graph, final_time);
+            .draw_speed_chart(&state.child, f, layout.graph, final_time);
 
         if let Some(error) = error {
             f.render_widget(
