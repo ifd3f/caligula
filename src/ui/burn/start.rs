@@ -13,7 +13,7 @@ use crate::{
     compression::CompressionFormat,
     device::BurnTarget,
     logging::get_log_paths,
-    ui::{burn::UI, utils::TUICapture},
+    ui::{burn::fancy::FancyUI, utils::TUICapture},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -88,7 +88,7 @@ pub async fn begin_writing(params: BeginParams, handle: burn::Handle) -> anyhow:
     let terminal = tui.terminal();
 
     // create app and run it
-    UI::new(params, handle, terminal).show().await?;
+    FancyUI::new(params, handle, terminal).show().await?;
 
     debug!("Closing TUI");
 

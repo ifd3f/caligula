@@ -15,16 +15,15 @@ use crate::{
     burn::{self, state_tracking::ChildState, Handle},
     byteseries::ByteSeries,
     logging::get_bug_report_msg,
-    ui::burn::state::UIEvent,
+    ui::burn::{fancy::state::UIEvent, start::BeginParams},
 };
 
 use super::{
     history::{History, UIState},
-    start::BeginParams,
     state::{Quit, State},
 };
 
-pub struct UI<'a, B>
+pub struct FancyUI<'a, B>
 where
     B: Backend,
 {
@@ -34,7 +33,7 @@ where
     state: State,
 }
 
-impl<'a, B> UI<'a, B>
+impl<'a, B> FancyUI<'a, B>
 where
     B: Backend,
 {
@@ -74,7 +73,7 @@ where
         Ok(())
     }
 
-    async fn get_and_handle_events(mut self) -> anyhow::Result<UI<'a, B>> {
+    async fn get_and_handle_events(mut self) -> anyhow::Result<FancyUI<'a, B>> {
         let msg = {
             if let Some(handle) = &mut self.handle {
                 child_active(&mut self.events, handle).await
