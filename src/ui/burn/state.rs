@@ -14,7 +14,7 @@ pub enum UIEvent {
     RecvTermEvent(Event),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct State {
     pub input_filename: String,
     pub target_filename: String,

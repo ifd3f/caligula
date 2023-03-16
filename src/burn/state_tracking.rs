@@ -4,22 +4,17 @@ use tracing::{debug, info};
 
 use crate::byteseries::ByteSeries;
 
-use super::{
-    ipc::{ErrorType, StatusMessage},
-    Handle,
-};
+use super::ipc::{ErrorType, StatusMessage};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ChildState {
     Burning {
-        handle: Handle,
         write_hist: ByteSeries,
         read_hist: ByteSeries,
         max_bytes: Option<u64>,
         input_file_bytes: u64,
     },
     Verifying {
-        handle: Handle,
         write_hist: ByteSeries,
         verify_hist: ByteSeries,
         max_bytes: u64,
@@ -43,16 +38,13 @@ impl ChildState {
             Some(StatusMessage::FinishedWriting { verifying }) => {
                 debug!(verifying, "Got FinishedWriting");
                 match self {
-                    ChildState::Burning {
-                        handle, write_hist, ..
-                    } => {
+                    ChildState::Burning { write_hist, .. } => {
                         let max_bytes = write_hist.bytes_encountered();
 
                         if verifying {
                             info!(verifying, "Transition to verifying");
 
                             ChildState::Verifying {
-                                handle,
                                 write_hist,
                                 verify_hist: ByteSeries::new(now),
                                 max_bytes,
@@ -78,14 +70,6 @@ impl ChildState {
                 "Recieved nexpected child status {:#?}\nCurrent state: {:#?}",
                 other, self
             ),
-        }
-    }
-
-    pub fn child_process(&mut self) -> Option<&mut Handle> {
-        match self {
-            Self::Burning { handle, .. } => Some(handle),
-            Self::Verifying { handle, .. } => Some(handle),
-            Self::Finished { .. } => None,
         }
     }
 
@@ -131,6 +115,13 @@ impl ChildState {
                 }
             }
             fin => fin,
+        }
+    }
+
+    pub fn is_finished(&self) -> bool {
+        match self {
+            ChildState::Finished { .. } => true,
+            _ => false,
         }
     }
 }

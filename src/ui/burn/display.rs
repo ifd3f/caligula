@@ -30,6 +30,7 @@ where
 {
     terminal: &'a mut Terminal<B>,
     events: EventStream,
+    handle: Option<burn::Handle>,
     state: State,
 }
 
@@ -41,13 +42,13 @@ where
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,
+            handle: Some(handle),
             events: EventStream::new(),
             state: State {
                 input_filename: params.input_file.to_string_lossy().to_string(),
                 target_filename: params.target.devnode.to_string_lossy().to_string(),
                 ui_state: UIState::default(),
                 child: ChildState::Burning {
-                    handle,
                     write_hist: ByteSeries::new(Instant::now()),
                     read_hist: ByteSeries::new(Instant::now()),
                     max_bytes: if params.compression.is_identity() {
@@ -75,14 +76,19 @@ where
 
     async fn get_and_handle_events(mut self) -> anyhow::Result<UI<'a, B>> {
         let msg = {
-            let handle = self.state.child.child_process();
-            if let Some(handle) = handle {
+            if let Some(handle) = &mut self.handle {
                 child_active(&mut self.events, handle).await
             } else {
                 child_dead(&mut self.events).await
             }?
         };
         self.state = self.state.on_event(msg)?;
+
+        // Drop handle/process if process died
+        if self.state.child.is_finished() {
+            self.handle = None;
+        }
+
         draw(&mut self.state, &mut self.terminal)?;
         Ok(self)
     }
