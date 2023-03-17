@@ -9,8 +9,9 @@ use std::{
 
 use bytesize::ByteSize;
 use interprocess::local_socket::LocalSocketStream;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, trace_span};
 use tracing_unwrap::ResultExt;
+use valuable::Valuable;
 
 use crate::compression::decompress;
 use crate::device;
@@ -157,9 +158,8 @@ impl StatusReporter {
     }
 
     fn send_msg(&mut self, msg: StatusMessage) {
-        trace!("Sending message {:?}", msg);
-        serde_json::to_writer(&mut self.0, &msg).expect("Failed to convert message to JSON");
-        self.0.write(b"\n").expect("Failed to write to socket");
+        let _span = trace_span!("Sending message {:?}", msg = msg.as_value());
+        write_msg(&mut self.0, &msg).expect("Failed to write message");
     }
 }
 

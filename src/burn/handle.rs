@@ -6,7 +6,6 @@ use rand::distributions::DistString;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::{env, pin::Pin};
-use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tokio_util::compat::FuturesAsyncWriteCompatExt;
@@ -19,6 +18,8 @@ use tokio::{
     io::{AsyncBufRead, AsyncWrite},
     process::{Child, Command},
 };
+
+use crate::burn::ipc::read_msg_async;
 
 use super::ipc::InitialInfo;
 use super::{
@@ -132,19 +133,8 @@ pub enum StartProcessError {
     Failed(Option<ErrorType>),
 }
 
-async fn read_next_message(
-    mut rx: impl AsyncBufRead + Unpin,
-) -> anyhow::Result<Option<StatusMessage>> {
-    let mut line = String::new();
-    let count = rx.read_line(&mut line).await?;
-    if count == 0 {
-        return Ok(None);
-    }
-    trace!(line, "Got line from child process");
-
-    let message = serde_json::from_str::<StatusMessage>(&line)?;
-    trace!(message = format!("{message:?}"), "Parsed message");
-
+async fn read_next_message(rx: impl AsyncBufRead + Unpin) -> anyhow::Result<Option<StatusMessage>> {
+    let message = read_msg_async(rx).await?;
     Ok(Some(message))
 }
 
