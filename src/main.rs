@@ -1,6 +1,7 @@
 use burn::child::is_in_burn_mode;
 
 mod burn;
+mod byteseries;
 mod compression;
 mod device;
 mod hash;

@@ -2,12 +2,13 @@ use std::{fmt::Display, time::Instant};
 
 use crate::ui::utils::ByteSpeed;
 
+#[derive(Debug, Clone, PartialEq)]
 pub enum EstimatedTime {
     Known(f64),
     Unknown,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ByteSeries {
     raw: Vec<(f64, u64)>,
     start: Instant,

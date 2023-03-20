@@ -1,11 +1,47 @@
+use std::io::Write;
 use std::{fmt::Display, path::PathBuf};
 
+use bincode::Options;
+use byteorder::{BigEndian, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tracing::{trace, trace_span, Instrument};
 use valuable::Valuable;
 
 use crate::compression::CompressionFormat;
 use crate::device::Type;
+
+#[inline]
+pub fn bincode_options() -> impl bincode::Options {
+    bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_native_endian()
+        .with_limit(1024)
+}
+
+pub fn write_msg(mut w: impl Write, msg: &StatusMessage) -> anyhow::Result<()> {
+    let _span = trace_span!("Writing", msg = msg.as_value());
+    let buf = bincode_options().serialize(msg)?;
+    w.write_u32::<BigEndian>(buf.len() as u32)?;
+    w.write_all(&buf)?;
+    Ok(())
+}
+
+pub async fn read_msg_async(mut r: impl AsyncRead + Unpin) -> anyhow::Result<StatusMessage> {
+    let span = trace_span!("Reading");
+    async move {
+        let size = r.read_u32().await?;
+        let mut buf = vec![0; size as usize];
+        r.read_exact(&mut buf).await?;
+
+        let msg: StatusMessage = bincode_options().deserialize(&buf)?;
+        trace!(msg = msg.as_value(), "Parsed message");
+        Ok(msg)
+    }
+    .instrument(span)
+    .await
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub struct BurnConfig {
@@ -60,12 +96,6 @@ impl From<std::io::Error> for ErrorType {
     }
 }
 
-impl From<serde_json::Error> for ErrorType {
-    fn from(value: serde_json::Error) -> Self {
-        Self::UnknownChildProcError(value.to_string())
-    }
-}
-
 impl Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -81,6 +111,40 @@ impl Display for ErrorType {
             ErrorType::UnknownChildProcError(err) => {
                 write!(f, "Unknown error occurred in child process: {err}")
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{read_msg_async, write_msg, InitialInfo, StatusMessage};
+
+    #[tokio::test]
+    async fn write_read_roundtrip() {
+        let messages = &[
+            StatusMessage::InitSuccess(InitialInfo {
+                input_file_bytes: 32,
+            }),
+            StatusMessage::TotalBytes {
+                src: 438,
+                dest: 483,
+            },
+            StatusMessage::TotalBytes {
+                src: 438,
+                dest: 483,
+            },
+            StatusMessage::FinishedWriting { verifying: false },
+        ];
+        let mut buf = Vec::new();
+
+        for msg in messages {
+            write_msg(&mut buf, &msg).unwrap();
+        }
+
+        let mut reader = &buf[..];
+        for msg in messages {
+            let out = read_msg_async(&mut reader).await.unwrap();
+            assert_eq!(&out, msg);
         }
     }
 }

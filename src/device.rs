@@ -240,7 +240,7 @@ pub enum DeviceParseError {
     IO(#[from] io::Error),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::From)]
 pub struct Model(Option<String>);
 
 impl Display for Model {
@@ -252,7 +252,7 @@ impl Display for Model {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::From)]
 pub struct TargetSize(Option<ByteSize>);
 
 impl Display for TargetSize {
