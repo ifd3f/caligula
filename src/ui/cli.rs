@@ -90,9 +90,9 @@ pub struct BurnArgs {
     #[arg(short, long)]
     pub force: bool,
 
-    /// If we don't have permissions on the output file, should we use sudo?
+    /// If we don't have permissions on the output file, should we try to become root?
     #[arg(long, default_value = "ask")]
-    pub use_sudo: UseSudo,
+    pub root: UseSudo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

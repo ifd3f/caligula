@@ -15,7 +15,7 @@ use crate::{
     logging::get_log_paths,
     ui::{
         burn::{fancy::FancyUI, simple},
-        cli::Interactive,
+        cli::{Interactive, UseSudo},
         utils::TUICapture,
     },
 };
@@ -55,7 +55,11 @@ impl BeginParams {
     }
 }
 
-pub async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
+pub async fn try_start_burn(
+    args: &BurnConfig,
+    root: UseSudo,
+    interactive: bool,
+) -> anyhow::Result<burn::Handle> {
     let err = match burn::Handle::start(args, false).await {
         Ok(p) => {
             return Ok(p);
@@ -65,22 +69,29 @@ pub async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
 
     let dc = err.downcast::<StartProcessError>()?;
 
-    match &dc {
-        StartProcessError::Failed(Some(ErrorType::PermissionDenied)) => {
-            debug!("Failure due to insufficient perms, asking user to escalate");
+    if let StartProcessError::Failed(Some(ErrorType::PermissionDenied)) = &dc {
+        match (root, interactive) {
+            (UseSudo::Ask, true) => {
+                debug!("Failure due to insufficient perms, asking user to escalate");
 
-            let response = Confirm::new(&format!(
-                "We don't have permissions on {}. Escalate using sudo?",
-                args.dest.to_string_lossy()
-            ))
-            .with_help_message("We will use the sudo command, which may prompt you for a password.")
-            .prompt()?;
+                let response = Confirm::new(&format!(
+                    "We don't have permissions on {}. Escalate using sudo?",
+                    args.dest.to_string_lossy()
+                ))
+                .with_help_message(
+                    "We will use the sudo command, which may prompt you for a password.",
+                )
+                .prompt()?;
 
-            if response {
+                if response {
+                    return burn::Handle::start(args, true).await;
+                }
+            }
+            (UseSudo::Always, _) => {
                 return burn::Handle::start(args, true).await;
             }
+            _ => {}
         }
-        _ => {}
     }
 
     Err(dc.into())

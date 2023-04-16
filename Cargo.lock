@@ -225,6 +225,7 @@ dependencies = [
  "tracing-unwrap",
  "tui",
  "valuable",
+ "which",
  "xz2",
 ]
 

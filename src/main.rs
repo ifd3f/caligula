@@ -4,6 +4,7 @@ mod burn;
 mod byteseries;
 mod compression;
 mod device;
+mod escalation;
 mod hash;
 mod logging;
 mod native;

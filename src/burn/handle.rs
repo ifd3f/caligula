@@ -5,6 +5,7 @@ use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
 use std::fs::remove_file;
 use std::path::PathBuf;
+use std::process::Command;
 use std::{env, pin::Pin};
 use tokio::io::BufReader;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
@@ -16,10 +17,13 @@ use valuable::Valuable;
 
 use tokio::{
     io::{AsyncBufRead, AsyncWrite},
-    process::{Child, Command},
+    process::Child,
 };
 
+use tokio::process::Command as AsyncCommand;
+
 use crate::burn::ipc::read_msg_async;
+use crate::escalation::run_escalate;
 
 use super::ipc::InitialInfo;
 use super::{
@@ -50,40 +54,15 @@ impl Handle {
 
         let mut socket = ChildSocket::new()?;
 
-        let mut cmd = if escalate {
-            #[cfg(target_os = "macos")]
-            loop {
-                // User-friendly thing that lets you use touch ID if you wanted.
-                // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
-                // We loop because your finger might not be recognized sometimes.
+        let mut cmd = Command::new(proc);
+        cmd.arg(args).arg(&socket.socket_name).env(BURN_ENV, "1");
 
-                let result = Command::new("osascript")
-                    .arg("-e")
-                    .arg("do shell script \"mkdir -p /var/db/sudo/$USER; touch /var/db/sudo/$USER\" with administrator privileges")
-                    .spawn()?
-                    .wait()
-                    .await?;
-
-                if result.success() {
-                    break;
-                }
-            }
-
-            let mut cmd = Command::new("sudo");
-            cmd.arg(format!("{BURN_ENV}=1")).arg(proc);
-            cmd
+        debug!("Starting child process with command: {:?}", cmd);
+        let child = if escalate {
+            run_escalate(cmd).await?
         } else {
-            let mut cmd = Command::new(&proc);
-            cmd.env(BURN_ENV, "1");
-            cmd
+            AsyncCommand::from(cmd).spawn()?
         };
-        cmd.arg(args)
-            .arg(&socket.socket_name)
-            .env("RUST_BACKTRACE", "full")
-            .kill_on_drop(true);
-
-        debug!("Starting child process with command: {:?}", cmd.as_std());
-        let child = cmd.spawn()?;
 
         debug!("Waiting for pipe to be opened...");
         let stream: LocalSocketStream = socket.accept().await?;
