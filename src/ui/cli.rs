@@ -1,3 +1,4 @@
+use is_terminal::IsTerminal;
 use itertools::Itertools;
 use std::{fmt::Display, path::PathBuf};
 
@@ -32,7 +33,7 @@ pub struct BurnArgs {
 
     /// Where to write the output. If not supplied, we will search for possible
     /// disks and ask you for where you want to burn.
-    #[arg(short, value_parser = parse_path_exists)]
+    #[arg(short)]
     pub out: Option<PathBuf>,
 
     /// What compression format the input file is in.
@@ -78,9 +79,20 @@ pub struct BurnArgs {
     #[arg(long)]
     pub show_all_disks: bool,
 
+    /// If we should run in interactive mode or not.
+    ///
+    /// Note that interactive mode will fail if all required arguments are not
+    /// fully specified.
+    #[arg(long, default_value = "auto")]
+    pub interactive: Interactive,
+
     /// If supplied, we will not ask for confirmation before destroying your disk.
     #[arg(short, long)]
     pub force: bool,
+
+    /// If we don't have permissions on the output file, should we use sudo?
+    #[arg(long, default_value = "ask")]
+    pub use_sudo: UseSudo,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -97,6 +109,20 @@ pub enum HashArg {
 pub enum HashOf {
     Raw,
     Compressed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Interactive {
+    Auto,
+    Always,
+    Never,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum UseSudo {
+    Ask,
+    Always,
+    Never,
 }
 
 fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
@@ -135,6 +161,16 @@ impl Display for HashOf {
         match self {
             HashOf::Raw => write!(f, "raw"),
             HashOf::Compressed => write!(f, "compressed"),
+        }
+    }
+}
+
+impl Interactive {
+    pub fn is_interactive(&self) -> bool {
+        match self {
+            Interactive::Auto => std::io::stdin().is_terminal(),
+            Interactive::Always => true,
+            Interactive::Never => false,
         }
     }
 }
