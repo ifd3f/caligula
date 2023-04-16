@@ -13,7 +13,11 @@ use crate::{
     compression::CompressionFormat,
     device::BurnTarget,
     logging::get_log_paths,
-    ui::{burn::fancy::FancyUI, utils::TUICapture},
+    ui::{
+        burn::{fancy::FancyUI, simple},
+        cli::Interactive,
+        utils::TUICapture,
+    },
 };
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -82,15 +86,24 @@ pub async fn try_start_burn(args: &BurnConfig) -> anyhow::Result<burn::Handle> {
     Err(dc.into())
 }
 
-pub async fn begin_writing(params: BeginParams, handle: burn::Handle) -> anyhow::Result<()> {
+pub async fn begin_writing(
+    interactive: Interactive,
+    params: BeginParams,
+    handle: burn::Handle,
+) -> anyhow::Result<()> {
     debug!("Opening TUI");
-    let mut tui = TUICapture::new()?;
-    let terminal = tui.terminal();
+    if interactive.is_interactive() {
+        debug!("Using fancy interactive TUI");
+        let mut tui = TUICapture::new()?;
+        let terminal = tui.terminal();
 
-    // create app and run it
-    FancyUI::new(&params, handle, terminal).show().await?;
-
-    debug!("Closing TUI");
+        // create app and run it
+        FancyUI::new(&params, handle, terminal).show().await?;
+        debug!("Closing TUI");
+    } else {
+        debug!("Using simple TUI");
+        simple::run_simple_ui(handle, params.compression).await?;
+    }
 
     Ok(())
 }
