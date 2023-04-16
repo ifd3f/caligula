@@ -6,12 +6,12 @@ runCommand "caligula-headless-test" {
 } ''
   caligula burn ${./input.iso.gz} \
     --force \
-    -o /build/out.iso \
+    -o ./out.iso \
     --hash $isoInnerHash \
     --hash-of raw \
     --compression auto 
 
-  diff ${./expected.iso} /build/out.iso
+  diff ${./expected.iso} ./out.iso
 
   echo 1 > $out
 ''
