@@ -33,6 +33,7 @@ jobs:
           nix_path: nixpkgs=channel:nixos-unstable
           extra_nix_config: |
             extra-platforms = ${{ inputs.target_triple }}
+            system-features = kvm benchmark big-parallel nixos-test uid-range
 
       - uses: cachix/cachix-action@v12
         with:
