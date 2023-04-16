@@ -55,9 +55,7 @@ impl Handle {
         let mut socket = ChildSocket::new()?;
 
         let mut cmd = Command::new(proc);
-        cmd.arg(args)
-            .arg(&socket.socket_name)
-            .env(BURN_ENV, "1");
+        cmd.arg(args).arg(&socket.socket_name).env(BURN_ENV, "1");
 
         debug!("Starting child process with command: {:?}", cmd);
         let child = if escalate {

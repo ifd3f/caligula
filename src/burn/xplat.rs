@@ -24,7 +24,7 @@ pub fn open_blockdev(path: impl AsRef<Path>, cf: CompressionFormat) -> std::io::
 }
 
 #[cfg(target_os = "macos")]
-pub fn open_blockdev(path: impl AsRef<Path>, cf: CompressionFormat) -> std::io::Result<File> {
+pub fn open_blockdev(path: impl AsRef<Path>, _cf: CompressionFormat) -> std::io::Result<File> {
     // For more info, see:
     // https://stackoverflow.com/questions/2299402/how-does-one-do-raw-io-on-mac-os-x-ie-equivalent-to-linuxs-o-direct-flag
 

@@ -1,3 +1,4 @@
+#![allow(unused)]
 #[cfg(target_os = "macos")]
 mod darwin;
 mod unix;
@@ -24,8 +25,8 @@ pub async fn run_escalate(cmd: Command) -> anyhow::Result<tokio::process::Child>
 }
 
 #[cfg(target_os = "macos")]
-pub fn run_escalate(cmd: Command) -> anyhow::Result<tokio::process::Child> {
+pub async fn run_escalate(cmd: Command) -> anyhow::Result<tokio::process::Child> {
     use self::darwin::wrap_osascript_escalation;
 
-    wrap_osascript_escalation(cmd)
+    wrap_osascript_escalation(cmd).await
 }
