@@ -57,6 +57,7 @@ tracing-subscriber = "0.3.16"
 tracing-unwrap = "0.10.0"
 tui = "0.19.0"
 valuable = { version = "0.1.0", features = ["derive"] }
+which = "4.4.0"
 xz2 = { version = "0.1.7", optional = true, features = ["static"] }
 
 [dev-dependencies]
