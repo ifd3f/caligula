@@ -4,7 +4,7 @@ description = "A lightweight, user-friendly disk imaging tool"
 homepage = "https://github.com/ifd3f/caligula"
 repository = "https://github.com/ifd3f/caligula.git"
 authors = ["Astrid Yu <astrid@astrid.tech>"]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "GPL-3.0"
 

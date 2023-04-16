@@ -8,7 +8,7 @@ _Caligula_ is a user-friendly, lightweight TUI for imaging disks.
 
 ```
 $ caligula burn -h
-Burn an image to a disk
+A lightweight, user-friendly disk imaging tool
 
 Usage: caligula burn [OPTIONS] <INPUT>
 
@@ -16,28 +16,16 @@ Arguments:
   <INPUT>  Input file to burn
 
 Options:
-  -o <OUT>
-          Where to write the output. If not supplied, we will search for
-          possible disks and ask you for where you want to burn
-  -z, --compression <COMPRESSION>
-          What compression format the input file is. If `auto`, then we will
-          guess based on the extension [default: auto] [possible values:
-          auto, none, bz2, gz, xz]
-  -s, --hash <HASH>
-          The hash of the input file. For more information, see long help
-          (--help) [default: ask]
-      --hash-of <HASH_OF>
-          Is the hash calculated from the raw file, or the compressed file? [possible
-          values: raw, compressed]
-      --show-all-disks
-          If provided, we will show all disks, removable or not
-  -f, --force
-          If supplied, we will not ask for confirmation before destroying
-          your disk
-  -h, --help
-          Print help (see more with '--help')
-  -V, --version
-          Print version
+  -o <OUT>                         Where to write the output. If not supplied, we will search for possible disks and ask you for where you want to burn
+  -z, --compression <COMPRESSION>  What compression format the input file is in [default: ask] [possible values: ask, auto, none, gz, bz2, xz]
+  -s, --hash <HASH>                The hash of the input file. For more information, see long help (--help) [default: ask]
+      --hash-of <HASH_OF>          Is the hash calculated from the raw file, or the compressed file? [possible values: raw, compressed]
+      --show-all-disks             If provided, we will show all disks, removable or not
+      --interactive <INTERACTIVE>  If we should run in interactive mode or not [default: auto] [possible values: auto, always, never]
+  -f, --force                      If supplied, we will not ask for confirmation before destroying your disk
+      --root <ROOT>                If we don't have permissions on the output file, should we try to become root? [default: ask] [possible values: ask, always, never]
+  -h, --help                       Print help (see more with '--help')
+  -V, --version                    Print version
 ```
 
 ## How to install
@@ -62,7 +50,7 @@ We plan on supporting Windows and FreeBSD eventually. If you would like support 
 - Rich confirmation dialogs so you don't accidentally nuke your filesystem
 - Automatically decompressing your input file for a variety of formats, including gz, bz2, and xz
 - Validating your input file against a hash before burning, with support for md5, sha1, sha256, and more!
-- Running sudo for you if you forgot to run sudo earlier (it happens)
+- Running sudo/doas/su for you if you forgot to run in `root` earlier (it happens)
 - Verifying your disk to make sure it was written correctly
 - Did I mention cool graphs?
 
