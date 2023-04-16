@@ -1,4 +1,5 @@
-use std::process::Command;
+use itertools::Itertools;
+use std::{ffi::OsString, process::Command};
 use which::which;
 
 use super::Error;
@@ -38,7 +39,20 @@ impl EscalationMethod {
     }
 
     pub fn wrap_command<'a>(&self, cmd: Command) -> Command {
-        let raw = format!("{cmd:?}");
+        // Yes this is jank. However, it's good enough for our purposes.
+        let envs: String = cmd
+            .get_envs()
+            .map(|(k, v)| {
+                format!(
+                    "{}={}",
+                    k.to_string_lossy(),
+                    v.unwrap_or(&OsString::from("")).to_string_lossy()
+                )
+            })
+            .join(" ");
+
+        let raw = format!("{envs} {cmd:?}");
+
         match self {
             Self::Sudo => {
                 let mut cmd = Command::new("sudo");
@@ -52,7 +66,7 @@ impl EscalationMethod {
             }
             Self::Su => {
                 let mut cmd = Command::new("su");
-                cmd.args(["root", "sh", "-c", &raw]);
+                cmd.args(["root", "-c", "sh", "-c", &raw]);
                 cmd
             }
         }
@@ -81,7 +95,7 @@ mod tests {
         let printed = format!("{result:?}");
         assert_eq!(
             printed,
-            r#""sudo" "sh" "-c" "\"some/proc\" \"two\" \"--three\" \"\\\"four\\\"\"""#
+            r#""sudo" "sh" "-c" "asdf=foo \"some/proc\" \"two\" \"--three\" \"\\\"four\\\"\"""#
         )
     }
 
@@ -92,7 +106,7 @@ mod tests {
         let printed = format!("{result:?}");
         assert_eq!(
             printed,
-            r#""doas" "sh" "-c" "\"some/proc\" \"two\" \"--three\" \"\\\"four\\\"\"""#
+            r#""doas" "sh" "-c" "asdf=foo \"some/proc\" \"two\" \"--three\" \"\\\"four\\\"\"""#
         )
     }
 
@@ -103,7 +117,7 @@ mod tests {
         let printed = format!("{result:?}");
         assert_eq!(
             printed,
-            r#""su" "root" "sh" "-c" "\"some/proc\" \"two\" \"--three\" \"\\\"four\\\"\"""#
+            r#""su" "root" "-c" "sh" "-c" "asdf=foo \"some/proc\" \"two\" \"--three\" \"\\\"four\\\"\"""#
         )
     }
 }

@@ -58,7 +58,12 @@ async fn inner_main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let handle = try_start_burn(&begin_params.make_child_config()).await?;
+    let handle = try_start_burn(
+        &begin_params.make_child_config(),
+        args.root,
+        args.interactive.is_interactive(),
+    )
+    .await?;
     begin_writing(args.interactive, begin_params, handle).await?;
 
     debug!("Done!");
