@@ -34,13 +34,20 @@ Options:
 - Nix Package Manager: If your system is flake-enabled, `nix run github:ifd3f/caligula`
 - MacOS and other Linux distros: download the [latest release](https://github.com/ifd3f/caligula/releases/latest)
 
-### Platform support
+### Platform support matrix
 
-- Automated builds and tests run for amd64 Linux and MacOS.
-- Automated builds (but *NOT* automated tests) run for arm64 Linux
-- No automated builds or tests for arm64 MacOS, but we usually distribute a pre-compiled binary in releases.
+| Platform         | Automated tests | Automated builds | Published binaries |
+|------------------|-----------------|------------------|--------------------|
+| `x86_64-linux`   | ✅               | ✅                | ✅                  |
+| `x86_64-darwin`  | ✅               | ✅                | ✅                  |
+| `aarch64-linux`  | ❌               | ✅                | ✅                  |
+| `aarch64-darwin` | ❌               | ❌                | ✅*                 |
 
-We plan on supporting Windows and FreeBSD eventually. If you would like support for other OSes and architectures, please file an issue!
+*This is not automated right now. We manually publish this once we remember to build it.
+
+Linux for other architectures theoretically works, but we are not making any guarantees.
+
+We plan on supporting Windows, FreeBSD, and OpenBSD eventually. If you would like support for other OSes and architectures, please file an issue!
 
 ## Features
 
