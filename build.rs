@@ -1,4 +1,4 @@
-use std::{env, path::PathBuf, process::Command};
+use std::{env, path::PathBuf};
 
 fn main() {
     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
@@ -12,7 +12,6 @@ fn main() {
 fn compile_macos() {
     println!("cargo:rerun-if-changed=native/darwin/enumdisk.h");
     println!("cargo:rerun-if-changed=native/darwin/enumdisk.mm");
-    println!("cargo:rerun-if-changed=native/darwin/Makefile");
     println!("cargo:rustc-link-search=native/darwin");
     println!("cargo:rustc-link-lib=caliguladarwin");
 
@@ -21,13 +20,11 @@ fn compile_macos() {
         println!("cargo:rustc-link-lib=framework={f}");
     }
 
-    let make_code = Command::new("make")
-        .current_dir("native/darwin")
-        .spawn()
-        .expect("Failed to start make on darwin code")
-        .wait()
-        .expect("Could not wait on make");
-    assert!(make_code.success(), "Make failed to run!");
+    cc::Build::new()
+        .file("native/darwin/REDiskList.m")
+        .file("native/darwin/enumdisk.mm")
+        .include("native/darwin")
+        .compile("libcaliguladarwin.a");
 
     let bindings = bindgen::Builder::default()
         .header("native/darwin/enumdisk.h")

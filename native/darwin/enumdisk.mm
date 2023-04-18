@@ -88,7 +88,7 @@ extern DiskList enumerate_disks() {
       continue;
     }
 
-    appendDiskInfo(&list, bsdname, DEV_TYPE_DISK, diskinfo);
+    appendDiskInfo(&list, bsdname, type, diskinfo);
 
     CFRelease(diskinfo);
     CFRelease(disk);

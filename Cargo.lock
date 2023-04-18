@@ -194,6 +194,7 @@ dependencies = [
  "byteorder",
  "bytesize",
  "bzip2",
+ "cc",
  "clap",
  "crossterm 0.26.1",
  "derive_more",
