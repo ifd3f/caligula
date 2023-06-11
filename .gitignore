@@ -1,5 +1,8 @@
 .direnv
-.vscode
+
+.vscode/*
+!.vscode/extensions.json
+
 /target
 *.log
 *.img
