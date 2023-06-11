@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "bbenoist.nix",
+        "ms-azuretools.vscode-docker",
+        "rubymaniac.vscode-direnv",
+        "rust-lang.rust-analyzer",
+    ]
+}
