@@ -9,10 +9,11 @@ edition = "2021"
 license = "GPL-3.0"
 
 [features]
-default = ["gz", "xz", "bz2"]
+default = ["gz", "xz", "bz2", "windows-media"]
 gz = ["dep:flate2"]
 xz = ["dep:xz2"]
 bz2 = ["dep:bzip2"]
+windows-media = []
 
 [dependencies]
 anyhow = "1.0.69"

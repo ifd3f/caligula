@@ -10,6 +10,9 @@ mod logging;
 mod native;
 mod ui;
 
+#[cfg(feature = "windows_media")]
+mod windows_media;
+
 fn main() {
     if is_in_burn_mode() {
         burn::child::main();
