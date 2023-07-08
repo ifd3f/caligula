@@ -5,13 +5,13 @@ use crate::{
         ask_hash::ask_hash,
         ask_outfile,
         burn::start::{begin_writing, try_start_burn, BeginParams},
-        cli::{Args, Command},
-    },
+        cli::{Args, Command, BurnArgs},
+    }, windows_media,
 };
 use ask_outfile::{ask_compression, confirm_write};
 use clap::Parser;
 use inquire::InquireError;
-use tracing::debug;
+use tracing::{debug, trace};
 
 #[tokio::main]
 pub async fn main() {
@@ -39,10 +39,14 @@ fn handle_toplevel_error(err: anyhow::Error) {
 
 async fn inner_main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let args = match args.command {
-        Command::Burn(a) => a,
-    };
+    debug!(args = format!("{args:#?}"), "Parsed arguments");
+    match args.command {
+        Command::Burn(a) => do_burn(a).await,
+        Command::WinMedia(a) => windows_media::make_windows_media(a).await,
+    }
+}
 
+async fn do_burn(args: BurnArgs) -> anyhow::Result<()> {
     let compression = ask_compression(&args)?;
 
     let _hash_info = ask_hash(&args, compression)?;

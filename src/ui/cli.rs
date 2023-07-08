@@ -21,11 +21,11 @@ pub struct Args {
 #[derive(Subcommand, Debug)]
 pub enum Command {
     Burn(BurnArgs),
+    WinMedia(WinMediaArgs),
 }
 
 /// Burn an image to a disk.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
 pub struct BurnArgs {
     /// Input file to burn.
     #[arg(value_parser = parse_path_exists)]
@@ -93,6 +93,16 @@ pub struct BurnArgs {
     /// If we don't have permissions on the output file, should we try to become root?
     #[arg(long, default_value = "ask")]
     pub root: UseSudo,
+}
+
+/// Make a Windows install media.
+/// 
+/// Download an ISO file here: https://www.microsoft.com/software-download/
+#[derive(Parser, Debug)]
+pub struct WinMediaArgs {
+    /// Input file.
+    #[arg(value_parser = parse_path_exists)]
+    pub input: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

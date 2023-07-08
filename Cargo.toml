@@ -13,7 +13,7 @@ default = ["gz", "xz", "bz2", "windows-media"]
 gz = ["dep:flate2"]
 xz = ["dep:xz2"]
 bz2 = ["dep:bzip2"]
-windows-media = []
+windows-media = ["dep:fat32", "dep:gpt", "dep:iso9660", "dep:xz2"]
 
 [dependencies]
 anyhow = "1.0.69"
@@ -27,14 +27,17 @@ clap = { version = "4.1.8", features = ["derive", "cargo", "wrap_help"] }
 crossterm = { version = "0.26.1", features = ["event-stream"] }
 derive_more = "0.99.17"
 digest = "0.10.6"
+fat32 = { version = "0.2.0", optional = true }
 flate2 = { version = "1.0.25", optional = true }
 format-bytes = "0.3.0"
 futures = "0.3.26"
 futures-io = "0.3.26"
+gpt = { version = "3.1.0", optional = true }
 indicatif = "0.17.3"
 inquire = "0.5.3"
 interprocess = { version = "1.2.1", features = ["tokio", "tokio_support"] }
 is-terminal = "0.4.4"
+iso9660 = { version = "0.1.1", optional = true }
 itertools = "0.10.5"
 libc = "0.2.139"
 md-5 = "0.10.5"

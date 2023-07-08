@@ -10,7 +10,7 @@ mod logging;
 mod native;
 mod ui;
 
-#[cfg(feature = "windows_media")]
+#[cfg(feature = "windows-media")]
 mod windows_media;
 
 fn main() {
