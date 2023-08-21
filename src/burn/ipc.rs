@@ -6,7 +6,7 @@ use byteorder::{BigEndian, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 
 use tokio::io::{AsyncRead, AsyncReadExt};
-use tracing::{trace, trace_span, Instrument};
+use tracing::{trace, trace_span};
 use valuable::Valuable;
 
 use crate::compression::CompressionFormat;
@@ -28,19 +28,17 @@ pub fn write_msg(mut w: impl Write, msg: &StatusMessage) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn read_msg_async(mut r: impl AsyncRead + Unpin) -> anyhow::Result<StatusMessage> {
-    let span = trace_span!("Reading");
-    async move {
-        let size = r.read_u32().await?;
-        let mut buf = vec![0; size as usize];
-        r.read_exact(&mut buf).await?;
+#[tracing::instrument(level = "trace", skip_all)]
+pub async fn read_msg_async(mut r: impl AsyncRead + Unpin) -> std::io::Result<StatusMessage> {
+    let size = r.read_u32().await?;
+    let mut buf = vec![0; size as usize];
+    r.read_exact(&mut buf).await?;
 
-        let msg: StatusMessage = bincode_options().deserialize(&buf)?;
-        trace!(msg = msg.as_value(), "Parsed message");
-        Ok(msg)
-    }
-    .instrument(span)
-    .await
+    let msg: StatusMessage = bincode_options()
+        .deserialize(&buf)
+        .expect("Failed to parse bincode from stream");
+    trace!(msg = msg.as_value(), "Parsed message");
+    Ok(msg)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
