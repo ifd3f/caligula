@@ -5,7 +5,6 @@ use rand::distributions::Alphanumeric;
 use rand::distributions::DistString;
 use std::fs::remove_file;
 use std::path::PathBuf;
-use std::process::Command;
 use std::{env, pin::Pin};
 use tokio::io::BufReader;
 use tokio_util::compat::FuturesAsyncReadCompatExt;
@@ -20,10 +19,9 @@ use tokio::{
     process::Child,
 };
 
-use tokio::process::Command as AsyncCommand;
-
 use crate::burn::ipc::read_msg_async;
 use crate::escalation::run_escalate;
+use crate::escalation::Command;
 
 use super::ipc::InitialInfo;
 use super::{
@@ -54,14 +52,17 @@ impl Handle {
 
         let mut socket = ChildSocket::new()?;
 
-        let mut cmd = Command::new(proc);
-        cmd.arg(args).arg(&socket.socket_name).env(BURN_ENV, "1");
+        let cmd = Command {
+            proc: proc.to_string_lossy(),
+            envs: vec![(BURN_ENV.into(), "1".into())],
+            args: vec![args.into(), socket.socket_name.to_string_lossy().into()],
+        };
 
         debug!("Starting child process with command: {:?}", cmd);
         let child = if escalate {
-            run_escalate(cmd).await?
+            run_escalate(&cmd).await?
         } else {
-            AsyncCommand::from(cmd).spawn()?
+            tokio::process::Command::from(cmd).spawn()?
         };
 
         debug!("Waiting for pipe to be opened...");
