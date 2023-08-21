@@ -4,12 +4,10 @@ use std::{
     env,
     fs::File,
     io::{self, Read, Seek, Write},
-    path::PathBuf,
 };
 
 use bytesize::ByteSize;
-use interprocess::local_socket::LocalSocketStream;
-use tracing::{debug, error, info, trace, trace_span};
+use tracing::{debug, error, trace};
 use tracing_unwrap::ResultExt;
 use valuable::Valuable;
 
@@ -38,79 +36,60 @@ pub fn main() {
 
     debug!("We are in child process mode with args {:#?}", args);
 
-    let sock = cli_args[2].as_str();
-    info!("Opening socket {sock}");
-    let reporter = StatusReporter::open(sock);
-
-    let mut ctx = Ctx { args, reporter };
-    let final_msg = match ctx.run() {
+    let final_msg = match run(&args) {
         Ok(_) => StatusMessage::Success,
         Err(e) => StatusMessage::Error(e),
     };
-    ctx.send_msg(final_msg);
+    send_msg(final_msg);
 }
 
-struct Ctx {
-    reporter: StatusReporter,
-    args: BurnConfig,
+fn run(args: &BurnConfig) -> Result<(), ErrorType> {
+    debug!("Opening file {}", args.src.to_string_lossy());
+    let mut src = File::open(&args.src).unwrap_or_log();
+    let size = src.seek(io::SeekFrom::End(0))?;
+    src.seek(io::SeekFrom::Start(0))?;
+
+    debug!(size, "Got input file size");
+
+    burn(args, &mut src, size)?;
+    send_msg(StatusMessage::FinishedWriting {
+        verifying: args.verify,
+    });
+
+    if !args.verify {
+        return Ok(());
+    }
+
+    src.seek(io::SeekFrom::Start(0))?;
+    verify(args, &mut src)?;
+
+    Ok(())
 }
 
-impl Ctx {
-    fn run(&mut self) -> Result<(), ErrorType> {
-        debug!("Opening file {}", self.args.src.to_string_lossy());
-        let mut src = File::open(&self.args.src).unwrap_or_log();
-        let size = src.seek(io::SeekFrom::End(0))?;
-        src.seek(io::SeekFrom::Start(0))?;
+fn burn(args: &BurnConfig, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
+    debug!("Opening {} for writing", args.dest.to_string_lossy());
 
-        debug!(size, "Got input file size");
-
-        self.burn(&mut src, size)?;
-        self.send_msg(StatusMessage::FinishedWriting {
-            verifying: self.args.verify,
-        });
-
-        if !self.args.verify {
-            return Ok(());
+    let file = match args.target_type {
+        device::Type::File => File::create(&args.dest)?,
+        device::Type::Disk | device::Type::Partition => {
+            open_blockdev(&args.dest, args.compression)?
         }
+    };
+    send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
 
-        src.seek(io::SeekFrom::Start(0))?;
-        self.verify(&mut src)?;
+    for_each_block(args, src, WriteSink { file })
+}
 
-        Ok(())
-    }
+fn verify(args: &BurnConfig, src: &mut File) -> Result<(), ErrorType> {
+    debug!("Opening {} for verification", args.dest.to_string_lossy());
 
-    fn burn(&mut self, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
-        debug!("Opening {} for writing", self.args.dest.to_string_lossy());
-
-        let file = match self.args.target_type {
-            device::Type::File => File::create(&self.args.dest)?,
-            device::Type::Disk | device::Type::Partition => {
-                open_blockdev(&self.args.dest, self.args.compression)?
-            }
-        };
-        self.send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
-
-        for_each_block(self, src, WriteSink { file })
-    }
-
-    fn verify(&mut self, src: &mut File) -> Result<(), ErrorType> {
-        debug!(
-            "Opening {} for verification",
-            self.args.dest.to_string_lossy()
-        );
-
-        let file = File::open(&self.args.dest)?;
-        for_each_block(self, src, VerifySink { file })
-    }
-
-    pub fn send_msg(&mut self, result: StatusMessage) {
-        self.reporter.send_msg(result);
-    }
+    let file = File::open(&args.dest)?;
+    for_each_block(args, src, VerifySink { file })
 }
 
 #[inline]
 fn for_each_block(
-    ctx: &mut Ctx,
+    args: &BurnConfig,
     src: impl Read + Seek,
     mut sink: impl BlockSink,
 ) -> Result<(), ErrorType> {
@@ -118,7 +97,7 @@ fn for_each_block(
     let mut read_block = vec![0u8; block_size];
     let mut scratch_block = vec![0u8; block_size]; // A block for the user to mutate
 
-    let mut decompress = decompress(ctx.args.compression, BufReader::new(src)).unwrap();
+    let mut decompress = decompress(args.compression, BufReader::new(src)).unwrap();
 
     let checkpoint_blocks: usize = 32;
     let mut offset: u64 = 0;
@@ -135,14 +114,14 @@ fn for_each_block(
         }
 
         sink.on_checkpoint()?;
-        ctx.send_msg(StatusMessage::TotalBytes {
+        send_msg(StatusMessage::TotalBytes {
             src: decompress.get_mut().stream_position()?,
             dest: offset,
         });
     }
 
     sink.on_checkpoint()?;
-    ctx.send_msg(StatusMessage::TotalBytes {
+    send_msg(StatusMessage::TotalBytes {
         src: decompress.get_mut().stream_position()?,
         dest: offset,
     });
@@ -150,17 +129,9 @@ fn for_each_block(
     Ok(())
 }
 
-struct StatusReporter(LocalSocketStream);
-
-impl StatusReporter {
-    fn open(path: &str) -> Self {
-        Self(LocalSocketStream::connect(PathBuf::from(path)).unwrap_or_log())
-    }
-
-    fn send_msg(&mut self, msg: StatusMessage) {
-        let _span = trace_span!("Sending message {:?}", msg = msg.as_value());
-        write_msg(&mut self.0, &msg).expect("Failed to write message");
-    }
+#[tracing::instrument(fields(msg = msg.as_value()))]
+pub fn send_msg(msg: StatusMessage) {
+    write_msg(std::io::stdout(), &msg).expect("Failed to write message");
 }
 
 trait BlockSink {
