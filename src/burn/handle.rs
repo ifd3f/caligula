@@ -54,6 +54,7 @@ impl Handle {
             tokio::process::Command::from(cmd)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
+                .kill_on_drop(true)
                 .spawn()?
         };
 
@@ -93,7 +94,7 @@ impl Handle {
         })
     }
 
-    pub async fn next_message(&mut self) -> anyhow::Result<Option<StatusMessage>> {
+    pub async fn next_message(&mut self) -> std::io::Result<Option<StatusMessage>> {
         read_next_message(&mut self.rx).await
     }
 
@@ -112,9 +113,10 @@ pub enum StartProcessError {
     Failed(Option<ErrorType>),
 }
 
-async fn read_next_message(rx: impl AsyncBufRead + Unpin) -> anyhow::Result<Option<StatusMessage>> {
-    let message = read_msg_async(rx).await?;
-    Ok(Some(message))
+async fn read_next_message(
+    rx: impl AsyncBufRead + Unpin,
+) -> std::io::Result<Option<StatusMessage>> {
+    Ok(Some(read_msg_async(rx).await?))
 }
 
 impl core::fmt::Debug for Handle {

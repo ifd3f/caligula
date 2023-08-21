@@ -7,7 +7,7 @@ use std::{
 };
 
 use bytesize::ByteSize;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, info, trace};
 use tracing_unwrap::ResultExt;
 use valuable::Valuable;
 
@@ -31,15 +31,17 @@ pub fn main() {
     init_logging_child(&args.logfile);
 
     set_hook(Box::new(|p| {
-        error!("{p}");
+        error!("{p:?}");
     }));
 
-    debug!("We are in child process mode with args {:#?}", args);
+    info!("We are in child process mode with args {:#?}", args);
 
     let final_msg = match run(&args) {
         Ok(_) => StatusMessage::Success,
         Err(e) => StatusMessage::Error(e),
     };
+
+    info!(?final_msg, "Completed");
     send_msg(final_msg);
 }
 
@@ -131,7 +133,9 @@ fn for_each_block(
 
 #[tracing::instrument(fields(msg = msg.as_value()))]
 pub fn send_msg(msg: StatusMessage) {
-    write_msg(std::io::stdout(), &msg).expect("Failed to write message");
+    let mut stdout = std::io::stdout();
+    write_msg(&mut stdout, &msg).expect("Failed to write message");
+    stdout.flush().expect("Failed to flush stdout");
 }
 
 trait BlockSink {
