@@ -33,7 +33,7 @@ in rec {
     "aarch64-linux"
     "x86_64-linux"
   ] else if host == "x86_64-darwin" then [
-    "aarch64-darwin"
+    # "aarch64-darwin" # Temporarily broken. TODO: fix
     "x86_64-darwin"
   ] else if host == "aarch64-darwin" then
     [ "aarch64-darwin" ]
