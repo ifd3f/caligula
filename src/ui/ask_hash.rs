@@ -74,7 +74,9 @@ fn ask_hash_loop(cf: CompressionFormat) -> anyhow::Result<Option<BeginHashParams
 
 fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
     let input_hash = Text::new("What is the file's hash?")
-        .with_help_message("We will guess the hash algorithm from your input.")
+        .with_help_message(
+            "We will guess the hash algorithm from your input. Press ESC or type \"skip\" to skip.",
+        )
         .prompt_skippable()?;
 
     let (algs, hash) = match input_hash.as_deref() {
