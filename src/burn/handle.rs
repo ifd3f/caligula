@@ -60,7 +60,7 @@ impl Handle {
 
         debug!("Starting child process with command: {:?}", cmd);
         let child = if escalate {
-            run_escalate(cmd).await?
+            run_escalate(&cmd).await?
         } else {
             tokio::process::Command::from(cmd).spawn()?
         };

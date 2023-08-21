@@ -1,6 +1,6 @@
 use super::unix::{Command, EscalationMethod};
 
-pub async fn wrap_osascript_escalation(raw: Command<'_>) -> anyhow::Result<tokio::process::Child> {
+pub async fn wrap_osascript_escalation(raw: &Command<'_>) -> anyhow::Result<tokio::process::Child> {
     for _ in 0..3 {
         // User-friendly thing that lets you use touch ID if you wanted.
         // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
@@ -19,6 +19,6 @@ pub async fn wrap_osascript_escalation(raw: Command<'_>) -> anyhow::Result<tokio
         }
     }
 
-    let cmd: tokio::process::Command = EscalationMethod::Sudo.wrap_command(raw).into();
+    let mut cmd: tokio::process::Command = EscalationMethod::Sudo.wrap_command(raw).into();
     Ok(cmd.kill_on_drop(true).spawn()?)
 }
