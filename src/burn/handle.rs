@@ -48,29 +48,32 @@ impl Handle {
         };
 
         debug!("Starting child process with command: {:?}", cmd);
-        let mut child = if escalate {
-            run_escalate(&cmd).await?
-        } else {
-            tokio::process::Command::from(cmd)
-                .stdin(Stdio::piped())
+
+        fn modify_cmd(cmd: &mut tokio::process::Command) {
+            cmd.stdin(Stdio::piped())
                 .stdout(Stdio::piped())
-                .kill_on_drop(true)
-                .spawn()?
+                .kill_on_drop(true);
+        }
+        let mut child = if escalate {
+            run_escalate(&cmd, modify_cmd)
+                .await
+                .expect("Failed to spawn child process")
+        } else {
+            let mut cmd = tokio::process::Command::from(cmd);
+            modify_cmd(&mut cmd);
+            cmd.spawn().expect("Failed to spawn child process")
         };
 
-        debug!("Waiting for pipe to be opened...");
-        let mut rx = Box::pin(BufReader::new(
+        let mut rx = BufReader::new(
             child
                 .stdout
                 .take()
                 .expect("Failed to get stdout of child process"),
-        ));
-        let tx = Box::pin(
-            child
-                .stdin
-                .take()
-                .expect("Failed to get stdin of child process"),
         );
+        let tx = child
+            .stdin
+            .take()
+            .expect("Failed to get stdin of child process");
 
         trace!("Reading results from child");
         let first_msg = read_next_message(&mut rx).await?;
@@ -89,8 +92,8 @@ impl Handle {
         Ok(Self {
             _child: child,
             initial_info,
-            rx,
-            _tx: tx,
+            rx: Box::pin(rx),
+            _tx: Box::pin(tx),
         })
     }
 
