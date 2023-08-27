@@ -131,7 +131,7 @@ fn for_each_block(
     Ok(())
 }
 
-#[tracing::instrument(fields(msg = msg.as_value()))]
+#[tracing::instrument(level = "debug", fields(msg = msg.as_value()))]
 pub fn send_msg(msg: StatusMessage) {
     let mut stdout = std::io::stdout();
     write_msg(&mut stdout, &msg).expect("Failed to write message");

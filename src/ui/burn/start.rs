@@ -55,6 +55,7 @@ impl BeginParams {
     }
 }
 
+#[tracing::instrument(skip_all, fields(root, interactive))]
 pub async fn try_start_burn(
     args: &BurnConfig,
     root: UseSudo,

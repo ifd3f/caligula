@@ -16,6 +16,7 @@ use crate::{
 
 use super::cli::{BurnArgs, HashArg, HashOf};
 
+#[tracing::instrument(skip_all, fields(cf))]
 pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {
     let hash_params = match &args.hash {
         HashArg::Skip => None,
@@ -54,6 +55,7 @@ pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option
     Ok(Some(hash_result))
 }
 
+#[tracing::instrument]
 fn ask_hash_loop(cf: CompressionFormat) -> anyhow::Result<Option<BeginHashParams>> {
     loop {
         match ask_hash_once(cf) {
@@ -72,6 +74,7 @@ fn ask_hash_loop(cf: CompressionFormat) -> anyhow::Result<Option<BeginHashParams
     }
 }
 
+#[tracing::instrument]
 fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
     let input_hash = Text::new("What is the file's hash?")
         .with_help_message(
@@ -118,6 +121,7 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
     })
 }
 
+#[tracing::instrument]
 fn ask_hasher_compression(
     cf: CompressionFormat,
     hash_of: Option<HashOf>,
@@ -140,6 +144,7 @@ fn ask_hasher_compression(
     })
 }
 
+#[tracing::instrument(skip_all, fields(path))]
 fn do_hashing(path: &Path, params: &BeginHashParams) -> anyhow::Result<FileHashInfo> {
     let mut file = File::open(path)?;
 
@@ -170,6 +175,7 @@ fn do_hashing(path: &Path, params: &BeginHashParams) -> anyhow::Result<FileHashI
     }
 }
 
+#[derive(Debug)]
 struct BeginHashParams {
     expected_hash: Vec<u8>,
     alg: HashAlg,

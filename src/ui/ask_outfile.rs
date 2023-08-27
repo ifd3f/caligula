@@ -11,6 +11,7 @@ use crate::{
 
 use super::burn::start::BeginParams;
 
+#[tracing::instrument(skip_all)]
 pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
     let cf = match args.compression {
         CompressionArg::Auto | CompressionArg::Ask => {
@@ -53,6 +54,7 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
     return Ok(format);
 }
 
+#[tracing::instrument(skip_all)]
 pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
     let mut show_all_disks = args.show_all_disks;
 
@@ -83,6 +85,7 @@ pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
     }
 }
 
+#[tracing::instrument(skip_all)]
 pub fn confirm_write(args: &BurnArgs, begin_params: &BeginParams) -> Result<bool, InquireError> {
     if args.force {
         debug!("Skipping confirm because of --force");
@@ -127,6 +130,7 @@ impl fmt::Display for ListOption {
     }
 }
 
+#[tracing::instrument]
 fn enumerate_options(show_all_disks: bool) -> anyhow::Result<Vec<ListOption>> {
     let mut burn_targets: Vec<BurnTarget> = enumerate_devices()
         .filter(|d| show_all_disks || d.removable == Removable::Yes)
