@@ -28,6 +28,18 @@ Options:
   -V, --version                    Print version
 ```
 
+## Features
+
+- Small, statically-linked binary on the Linux version
+- Cool graphs
+- Listing attached disks, and telling you their size and hardware model information
+- Rich confirmation dialogs so you don't accidentally nuke your filesystem
+- Automatically decompressing your input file for a variety of formats, including gz, bz2, and xz
+- Validating your input file against a hash before burning, with support for md5, sha1, sha256, and more!
+- Running sudo/doas/su for you if you forgot to run in `root` earlier (it happens)
+- Verifying your disk to make sure it was written correctly
+- Did I mention cool graphs?
+
 ## How to install
 
 - Arch Linux: [download it from the AUR](https://aur.archlinux.org/packages/caligula-bin)
@@ -48,18 +60,6 @@ Options:
 Linux for other architectures theoretically works, but we are not making any guarantees.
 
 We plan on supporting Windows, FreeBSD, and OpenBSD eventually. If you would like support for other OSes and architectures, please file an issue!
-
-## Features
-
-- Small, statically-linked binary on the Linux version
-- Cool graphs
-- Listing attached disks, and telling you their size and hardware model information
-- Rich confirmation dialogs so you don't accidentally nuke your filesystem
-- Automatically decompressing your input file for a variety of formats, including gz, bz2, and xz
-- Validating your input file against a hash before burning, with support for md5, sha1, sha256, and more!
-- Running sudo/doas/su for you if you forgot to run in `root` earlier (it happens)
-- Verifying your disk to make sure it was written correctly
-- Did I mention cool graphs?
 
 ## FAQ
 
@@ -121,4 +121,4 @@ To be fair, Rust doesn't have a very comprehensive standard library, and I only 
 
 ### Will the binary ever get bigger?
 
-I want to keep the binary very small. I want to keep the x86_64-linux version under 4MB, with 8MB as an absolute maximum. As of v0.3.0, it's only 2.66MB, which is pretty good!
+I want to keep the binary very small. I want to keep the x86_64-linux version under 4MB as an absolute maximum. As of v0.3.0, it's only 2.66MB, which is pretty good!
