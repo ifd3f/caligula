@@ -1,3 +1,5 @@
+#pragma once
+
 #include <inttypes.h>
 
 const uint8_t DEV_TYPE_FILE = 0;

@@ -11,7 +11,7 @@ fn main() {
 
 fn compile_macos() {
     println!("cargo:rerun-if-changed=native/darwin/enumdisk.h");
-    println!("cargo:rerun-if-changed=native/darwin/enumdisk.mm");
+    println!("cargo:rerun-if-changed=native/darwin/enumdisk.m");
     println!("cargo:rustc-link-search=native/darwin");
     println!("cargo:rustc-link-lib=caliguladarwin");
 
@@ -22,7 +22,7 @@ fn compile_macos() {
 
     cc::Build::new()
         .file("native/darwin/REDiskList.m")
-        .file("native/darwin/enumdisk.mm")
+        .file("native/darwin/enumdisk.m")
         .include("native/darwin")
         .compile("libcaliguladarwin.a");
 
