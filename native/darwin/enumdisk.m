@@ -1,14 +1,12 @@
 // A lot of it was borrowed from: https://github.com/balena-io-modules/drivelist/blob/master/src/darwin/list.mm
 
-extern "C" {
 #import "enumdisk.h"
-}
 
-#import "REDiskList.h"
-
+#import <inttypes.h>
 #import <Cocoa/Cocoa.h>
 #import <Foundation/Foundation.h>
 #import <DiskArbitration/DiskArbitration.h>
+#import "REDiskList.h"
 
 NSNumber *DictionaryGetNumber(CFDictionaryRef dict, const void *key) {
   return (NSNumber*)CFDictionaryGetValue(dict, key);
