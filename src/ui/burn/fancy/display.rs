@@ -2,13 +2,13 @@ use std::time::Instant;
 
 use crossterm::event::EventStream;
 use futures::StreamExt;
-use tokio::{select, time};
-use tui::{
+use ratatui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     widgets::{Block, Borders, Paragraph, Wrap},
     Terminal,
 };
+use tokio::{select, time};
 
 use crate::{
     burn::{self, state_tracking::ChildState, Handle},
@@ -125,7 +125,7 @@ impl From<Rect> for ComputedLayout {
 
 pub fn draw(
     state: &mut State,
-    terminal: &mut Terminal<impl tui::backend::Backend>,
+    terminal: &mut Terminal<impl ratatui::backend::Backend>,
 ) -> anyhow::Result<()> {
     let progress_bar = make_progress_bar(&state.child);
 

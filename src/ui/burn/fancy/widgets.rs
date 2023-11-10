@@ -1,8 +1,7 @@
 use std::time::Instant;
 
 use bytesize::ByteSize;
-use tui::{
-    backend::Backend,
+use ratatui::{
     layout::{Alignment, Constraint, Rect},
     style::{Color, Style},
     symbols,
@@ -59,7 +58,7 @@ impl UIState {
     pub fn draw_speed_chart(
         &mut self,
         state: &ChildState,
-        frame: &mut Frame<impl Backend>,
+        frame: &mut Frame<'_>,
         area: Rect,
         final_time: Instant,
     ) {
