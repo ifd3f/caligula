@@ -3,7 +3,7 @@ use std::time::Instant;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
-    burn::{state_tracking::ChildState, Handle},
+    writer_process::{state_tracking::WriterState, Handle},
     compression::CompressionFormat,
 };
 
@@ -22,19 +22,19 @@ pub async fn run_simple_ui(mut handle: Handle, cf: CompressionFormat) -> anyhow:
         .unwrap(),
     );
 
-    let mut child_state = ChildState::initial(Instant::now(), !cf.is_identity(), input_file_bytes);
+    let mut child_state = WriterState::initial(Instant::now(), !cf.is_identity(), input_file_bytes);
 
     loop {
         let x = handle.next_message().await?;
         child_state = child_state.on_status(Instant::now(), x);
         match &child_state {
-            ChildState::Burning(b) => {
+            WriterState::Writing(b) => {
                 write_progress.set_position((b.approximate_ratio() * 1000.0) as u64)
             }
-            ChildState::Verifying {
+            WriterState::Verifying {
                 total_write_bytes, ..
             } => verify_progress.set_position(total_write_bytes * 1000 / input_file_bytes),
-            ChildState::Finished { .. } => break,
+            WriterState::Finished { .. } => break,
         }
     }
     println!("Done!");

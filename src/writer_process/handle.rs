@@ -11,13 +11,13 @@ use tokio::{
     process::Child,
 };
 
-use crate::burn::ipc::read_msg_async;
+use crate::writer_process::ipc::read_msg_async;
 use crate::escalation::run_escalate;
 use crate::escalation::Command;
 
 use super::ipc::InitialInfo;
 use super::{
-    ipc::{BurnConfig, ErrorType, StatusMessage},
+    ipc::{WriterProcessConfig, ErrorType, StatusMessage},
     BURN_ENV,
 };
 
@@ -29,7 +29,7 @@ pub struct Handle {
 }
 
 impl Handle {
-    pub async fn start(args: &BurnConfig, escalate: bool) -> anyhow::Result<Self> {
+    pub async fn start(args: &WriterProcessConfig, escalate: bool) -> anyhow::Result<Self> {
         // Get path to this process
         let proc = get_executable_path().unwrap();
 
@@ -39,7 +39,7 @@ impl Handle {
         );
 
         let args = serde_json::to_string(args)?;
-        debug!("Converted BurnConfig to JSON: {args}");
+        debug!(?args, "Converted WriterProcessConfig to JSON");
 
         let cmd = Command {
             proc: proc.to_string_lossy(),

@@ -15,11 +15,11 @@ use crate::compression::decompress;
 use crate::device;
 use crate::logging::init_logging_child;
 
-use crate::burn::xplat::open_blockdev;
+use crate::writer_process::xplat::open_blockdev;
 
 use super::{ipc::*, BURN_ENV};
 
-pub fn is_in_burn_mode() -> bool {
+pub fn is_in_writer_mode() -> bool {
     env::var(BURN_ENV) == Ok("1".to_string())
 }
 
@@ -27,7 +27,7 @@ pub fn is_in_burn_mode() -> bool {
 /// escalated permissions.
 pub fn main() {
     let cli_args: Vec<String> = env::args().collect();
-    let args = serde_json::from_str::<BurnConfig>(&cli_args[1]).unwrap_or_log();
+    let args = serde_json::from_str::<WriterProcessConfig>(&cli_args[1]).unwrap_or_log();
     init_logging_child(&args.logfile);
 
     set_hook(Box::new(|p| {
@@ -45,7 +45,7 @@ pub fn main() {
     send_msg(final_msg);
 }
 
-fn run(args: &BurnConfig) -> Result<(), ErrorType> {
+fn run(args: &WriterProcessConfig) -> Result<(), ErrorType> {
     debug!("Opening file {}", args.src.to_string_lossy());
     let mut src = File::open(&args.src).unwrap_or_log();
     let size = src.seek(io::SeekFrom::End(0))?;
@@ -53,7 +53,7 @@ fn run(args: &BurnConfig) -> Result<(), ErrorType> {
 
     debug!(size, "Got input file size");
 
-    burn(args, &mut src, size)?;
+    write(args, &mut src, size)?;
     send_msg(StatusMessage::FinishedWriting {
         verifying: args.verify,
     });
@@ -68,7 +68,7 @@ fn run(args: &BurnConfig) -> Result<(), ErrorType> {
     Ok(())
 }
 
-fn burn(args: &BurnConfig, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
+fn write(args: &WriterProcessConfig, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
     debug!("Opening {} for writing", args.dest.to_string_lossy());
 
     let file = match args.target_type {
@@ -82,7 +82,7 @@ fn burn(args: &BurnConfig, src: &mut File, input_file_bytes: u64) -> Result<(), 
     for_each_block(args, src, WriteSink { file })
 }
 
-fn verify(args: &BurnConfig, src: &mut File) -> Result<(), ErrorType> {
+fn verify(args: &WriterProcessConfig, src: &mut File) -> Result<(), ErrorType> {
     debug!("Opening {} for verification", args.dest.to_string_lossy());
 
     let file = File::open(&args.dest)?;
@@ -91,7 +91,7 @@ fn verify(args: &BurnConfig, src: &mut File) -> Result<(), ErrorType> {
 
 #[inline]
 fn for_each_block(
-    args: &BurnConfig,
+    args: &WriterProcessConfig,
     src: impl Read + Seek,
     mut sink: impl BlockSink,
 ) -> Result<(), ErrorType> {
@@ -215,7 +215,7 @@ mod tests {
 
     use rand::{thread_rng, RngCore};
 
-    use crate::burn::{child::VerifySink, ipc::ErrorType};
+    use crate::writer_process::{child::VerifySink, ipc::ErrorType};
 
     use super::{BlockSink, WriteSink};
 

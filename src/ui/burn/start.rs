@@ -5,13 +5,13 @@ use inquire::Confirm;
 use tracing::debug;
 
 use crate::{
-    burn::{
+    writer_process::{
         self,
         handle::StartProcessError,
-        ipc::{BurnConfig, ErrorType},
+        ipc::{WriterProcessConfig, ErrorType},
     },
     compression::CompressionFormat,
-    device::BurnTarget,
+    device::WriteTarget,
     logging::get_log_paths,
     ui::{
         burn::{fancy::FancyUI, simple},
@@ -25,14 +25,14 @@ pub struct BeginParams {
     pub input_file: PathBuf,
     pub input_file_size: ByteSize,
     pub compression: CompressionFormat,
-    pub target: BurnTarget,
+    pub target: WriteTarget,
 }
 
 impl BeginParams {
     pub fn new(
         input_file: PathBuf,
         compression: CompressionFormat,
-        target: BurnTarget,
+        target: WriteTarget,
     ) -> std::io::Result<Self> {
         let input_file_size = ByteSize::b(File::open(&input_file)?.metadata()?.len());
         Ok(Self {
@@ -43,8 +43,8 @@ impl BeginParams {
         })
     }
 
-    pub fn make_child_config(&self) -> BurnConfig {
-        BurnConfig {
+    pub fn make_child_config(&self) -> WriterProcessConfig {
+        WriterProcessConfig {
             dest: self.target.devnode.clone(),
             src: self.input_file.clone(),
             logfile: get_log_paths().child.clone(),
@@ -57,11 +57,11 @@ impl BeginParams {
 
 #[tracing::instrument(skip_all, fields(root, interactive))]
 pub async fn try_start_burn(
-    args: &BurnConfig,
+    args: &WriterProcessConfig,
     root: UseSudo,
     interactive: bool,
-) -> anyhow::Result<burn::Handle> {
-    let err = match burn::Handle::start(args, false).await {
+) -> anyhow::Result<writer_process::Handle> {
+    let err = match writer_process::Handle::start(args, false).await {
         Ok(p) => {
             return Ok(p);
         }
@@ -85,11 +85,11 @@ pub async fn try_start_burn(
                 .prompt()?;
 
                 if response {
-                    return burn::Handle::start(args, true).await;
+                    return writer_process::Handle::start(args, true).await;
                 }
             }
             (UseSudo::Always, _) => {
-                return burn::Handle::start(args, true).await;
+                return writer_process::Handle::start(args, true).await;
             }
             _ => {}
         }
@@ -101,7 +101,7 @@ pub async fn try_start_burn(
 pub async fn begin_writing(
     interactive: Interactive,
     params: BeginParams,
-    handle: burn::Handle,
+    handle: writer_process::Handle,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
     if interactive.is_interactive() {

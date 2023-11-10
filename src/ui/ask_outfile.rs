@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::{
     compression::{CompressionArg, CompressionFormat, DecompressError, AVAILABLE_FORMATS},
-    device::{enumerate_devices, BurnTarget, Removable},
+    device::{enumerate_devices, WriteTarget, Removable},
     ui::cli::BurnArgs,
 };
 
@@ -55,7 +55,7 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
 }
 
 #[tracing::instrument(skip_all)]
-pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<BurnTarget> {
+pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<WriteTarget> {
     let mut show_all_disks = args.show_all_disks;
 
     loop {
@@ -101,7 +101,7 @@ pub fn confirm_write(args: &BurnArgs, begin_params: &BeginParams) -> Result<bool
 }
 
 enum ListOption {
-    Device(BurnTarget),
+    Device(WriteTarget),
     Refresh,
     RetryWithShowAll(bool),
 }
@@ -132,7 +132,7 @@ impl fmt::Display for ListOption {
 
 #[tracing::instrument]
 fn enumerate_options(show_all_disks: bool) -> anyhow::Result<Vec<ListOption>> {
-    let mut burn_targets: Vec<BurnTarget> = enumerate_devices()
+    let mut burn_targets: Vec<WriteTarget> = enumerate_devices()
         .filter(|d| show_all_disks || d.removable == Removable::Yes)
         .collect();
 

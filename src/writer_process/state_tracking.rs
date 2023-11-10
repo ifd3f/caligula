@@ -7,8 +7,8 @@ use crate::byteseries::{ByteSeries, EstimatedTime};
 use super::ipc::{ErrorType, StatusMessage};
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ChildState {
-    Burning(Burning),
+pub enum WriterState {
+    Writing(Writing),
     Verifying {
         write_hist: ByteSeries,
         verify_hist: ByteSeries,
@@ -23,11 +23,10 @@ pub enum ChildState {
     },
 }
 
-impl ChildState {
+impl WriterState {
     #[tracing::instrument]
     pub fn initial(now: Instant, is_input_compressed: bool, input_file_bytes: u64) -> Self {
-        info!("Entering initial state");
-        ChildState::Burning(Burning::new(now, is_input_compressed, input_file_bytes))
+        WriterState::Writing(Writing::new(now, is_input_compressed, input_file_bytes))
     }
 
     #[tracing::instrument(skip_all, fields(msg), level = "debug")]
@@ -41,7 +40,7 @@ impl ChildState {
             Some(StatusMessage::FinishedWriting { verifying }) => {
                 info!("Received finished writing notification");
                 match self {
-                    ChildState::Burning(st) => st.into_finished(now, verifying),
+                    WriterState::Writing(st) => st.into_finished(now, verifying),
                     c => c,
                 }
             }
@@ -66,7 +65,7 @@ impl ChildState {
 
     pub fn write_hist(&self) -> &ByteSeries {
         match self {
-            Self::Burning(Burning { write_hist, .. }) => write_hist,
+            Self::Writing(Writing { write_hist, .. }) => write_hist,
             Self::Verifying { write_hist, .. } => write_hist,
             Self::Finished { write_hist, .. } => write_hist,
         }
@@ -74,7 +73,7 @@ impl ChildState {
 
     pub fn verify_hist(&self) -> Option<&ByteSeries> {
         match self {
-            Self::Burning { .. } => None,
+            Self::Writing { .. } => None,
             Self::Verifying { verify_hist, .. } => Some(verify_hist),
             Self::Finished { verify_hist, .. } => verify_hist.as_ref(),
         }
@@ -82,20 +81,20 @@ impl ChildState {
 
     fn on_total_bytes(&mut self, now: Instant, src: u64, dest: u64) {
         match self {
-            ChildState::Burning(st) => {
+            WriterState::Writing(st) => {
                 st.read_hist.push(now, src);
                 st.write_hist.push(now, dest);
             }
-            ChildState::Verifying { verify_hist, .. } => verify_hist.push(now, dest),
-            ChildState::Finished { .. } => {}
+            WriterState::Verifying { verify_hist, .. } => verify_hist.push(now, dest),
+            WriterState::Finished { .. } => {}
         };
     }
 
-    fn into_finished(self, now: Instant, error: Option<ErrorType>) -> ChildState {
+    fn into_finished(self, now: Instant, error: Option<ErrorType>) -> WriterState {
         match self {
-            ChildState::Burning(st) => {
+            WriterState::Writing(st) => {
                 let total_write_bytes = st.write_hist.bytes_encountered();
-                ChildState::Finished {
+                WriterState::Finished {
                     finish_time: now,
                     error,
                     write_hist: st.write_hist,
@@ -103,13 +102,13 @@ impl ChildState {
                     total_write_bytes,
                 }
             }
-            ChildState::Verifying {
+            WriterState::Verifying {
                 write_hist,
                 verify_hist,
                 ..
             } => {
                 let total_write_bytes = write_hist.bytes_encountered();
-                ChildState::Finished {
+                WriterState::Finished {
                     finish_time: now,
                     error,
                     write_hist,
@@ -123,21 +122,21 @@ impl ChildState {
 
     pub fn is_finished(&self) -> bool {
         match self {
-            ChildState::Finished { .. } => true,
+            WriterState::Finished { .. } => true,
             _ => false,
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Burning {
+pub struct Writing {
     pub write_hist: ByteSeries,
     pub total_raw_bytes: Option<u64>,
     pub read_hist: ByteSeries,
     pub input_file_bytes: u64,
 }
 
-impl Burning {
+impl Writing {
     pub fn new(start: Instant, is_input_compressed: bool, input_file_bytes: u64) -> Self {
         Self {
             write_hist: ByteSeries::new(start),
@@ -165,20 +164,20 @@ impl Burning {
         }
     }
 
-    fn into_finished(self, time: Instant, verifying: bool) -> ChildState {
+    fn into_finished(self, time: Instant, verifying: bool) -> WriterState {
         let total_write_bytes = self.write_hist.bytes_encountered();
 
         if verifying {
             info!(verifying, "Transition to verifying");
 
-            ChildState::Verifying {
+            WriterState::Verifying {
                 write_hist: self.write_hist,
                 verify_hist: ByteSeries::new(time),
                 total_write_bytes,
             }
         } else {
             info!(verifying, "Transition to finished");
-            ChildState::Finished {
+            WriterState::Finished {
                 finish_time: time,
                 error: None,
                 write_hist: self.write_hist,
@@ -194,34 +193,16 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use crate::{
-        burn::ipc::{ErrorType, StatusMessage},
         byteseries::ByteSeries,
+        writer_process::ipc::{ErrorType, StatusMessage},
     };
 
-    use super::ChildState;
-
-    /*
-    fn example_disk(input_bytes: u64, compression: CompressionFormat) -> BeginParams {
-        BeginParams {
-            input_file: "test".into(),
-            input_file_size: ByteSize::b(input_bytes),
-            compression,
-            target: BurnTarget {
-                name: "sda1".into(),
-                devnode: "/dev/sda1".into(),
-                size: Some(ByteSize::b(100)).into(),
-                model: Some("foobar".to_string()).into(),
-                removable: Removable::Yes,
-                target_type: device::Type::Partition,
-            },
-        }
-    }
-    */
+    use super::WriterState;
 
     #[test]
     fn accept_total_bytes_messages() {
         let t0 = Instant::now();
-        let s = ChildState::initial(t0, false, 80)
+        let s = WriterState::initial(t0, false, 80)
             .on_status(
                 t0 + Duration::from_secs(1),
                 Some(StatusMessage::TotalBytes { src: 20, dest: 10 }),
@@ -236,7 +217,7 @@ mod tests {
             );
 
         let s = match s {
-            ChildState::Burning(s) => s,
+            WriterState::Writing(s) => s,
             s => panic!("unexpected {:#?}", s),
         };
         assert_eq!(s.read_hist.last_datapoint(), (3.0, 60));
@@ -244,24 +225,24 @@ mod tests {
     }
 
     #[test]
-    fn burning_uncompressed_ratio() {
+    fn writing_value_for_uncompressed_ratio() {
         let t0 = Instant::now();
-        let s = ChildState::initial(t0, false, 400).on_status(
+        let s = WriterState::initial(t0, false, 400).on_status(
             t0 + Duration::from_secs(1),
             Some(StatusMessage::TotalBytes { src: 15, dest: 40 }),
         );
 
         let s = match s {
-            ChildState::Burning(s) => s,
+            WriterState::Writing(s) => s,
             s => panic!("unexpected {:#?}", s),
         };
         assert_eq!(s.approximate_ratio(), 0.1);
     }
 
     #[test]
-    fn burning_compressed_ratio() {
+    fn writing_value_for_compressed_ratio() {
         let t0 = Instant::now();
-        let s = ChildState::initial(t0, true, 80).on_status(
+        let s = WriterState::initial(t0, true, 80).on_status(
             t0 + Duration::from_secs(1),
             Some(StatusMessage::TotalBytes {
                 src: 20,
@@ -270,16 +251,16 @@ mod tests {
         );
 
         let s = match s {
-            ChildState::Burning(s) => s,
+            WriterState::Writing(s) => s,
             s => panic!("unexpected {s:#?}"),
         };
         assert_eq!(s.approximate_ratio(), 0.25);
     }
 
     #[test]
-    fn sudden_terminate_in_burn_sets_error() {
+    fn sudden_terminate_in_writing_state_sets_error() {
         let t0 = Instant::now();
-        let s = ChildState::initial(t0, true, 80)
+        let s = WriterState::initial(t0, true, 80)
             .on_status(
                 t0 + Duration::from_secs(1),
                 Some(StatusMessage::TotalBytes { src: 20, dest: 20 }),
@@ -287,7 +268,7 @@ mod tests {
             .on_status(t0 + Duration::from_secs(2), None);
 
         match s {
-            ChildState::Finished {
+            WriterState::Finished {
                 finish_time, error, ..
             } => {
                 assert_eq!(finish_time - t0, Duration::from_secs(2));
@@ -301,7 +282,7 @@ mod tests {
     fn terminate_during_finished_is_idempotent() {
         let t0 = Instant::now();
         let finish_time = t0 + Duration::from_secs(10);
-        let s0 = ChildState::Finished {
+        let s0 = WriterState::Finished {
             finish_time,
             error: None,
             write_hist: ByteSeries::new(t0),
@@ -319,7 +300,7 @@ mod tests {
     fn finished_during_finished_is_idempotent() {
         let t0 = Instant::now();
         let finish_time = t0 + Duration::from_secs(10);
-        let s0 = ChildState::Finished {
+        let s0 = WriterState::Finished {
             finish_time,
             error: None,
             write_hist: ByteSeries::new(t0),

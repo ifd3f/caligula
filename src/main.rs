@@ -1,6 +1,5 @@
-use burn::child::is_in_burn_mode;
+use writer_process::child::is_in_writer_mode;
 
-mod burn;
 mod byteseries;
 mod compression;
 mod device;
@@ -9,10 +8,11 @@ mod hash;
 mod logging;
 mod native;
 mod ui;
+mod writer_process;
 
 fn main() {
-    if is_in_burn_mode() {
-        burn::child::main();
+    if is_in_writer_mode() {
+        writer_process::child::main();
     } else {
         ui::main::main();
     }

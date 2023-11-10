@@ -11,7 +11,7 @@ use ratatui::{
 use tokio::{select, time};
 
 use crate::{
-    burn::{self, state_tracking::ChildState, Handle},
+    writer_process::{self, state_tracking::WriterState, Handle},
     logging::get_bug_report_msg,
     ui::burn::{fancy::state::UIEvent, start::BeginParams},
 };
@@ -27,7 +27,7 @@ where
 {
     terminal: &'a mut Terminal<B>,
     events: EventStream,
-    handle: Option<burn::Handle>,
+    handle: Option<writer_process::Handle>,
     state: State,
 }
 
@@ -36,7 +36,7 @@ where
     B: Backend,
 {
     #[tracing::instrument(skip_all)]
-    pub fn new(params: &BeginParams, handle: burn::Handle, terminal: &'a mut Terminal<B>) -> Self {
+    pub fn new(params: &BeginParams, handle: writer_process::Handle, terminal: &'a mut Terminal<B>) -> Self {
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,
@@ -137,12 +137,12 @@ pub fn draw(
     let progress_bar = make_progress_bar(&state.child);
 
     let final_time = match state.child {
-        ChildState::Finished { finish_time, .. } => finish_time,
+        WriterState::Finished { finish_time, .. } => finish_time,
         _ => Instant::now(),
     };
 
     let error = match &state.child {
-        ChildState::Finished { error, .. } => error.as_ref(),
+        WriterState::Finished { error, .. } => error.as_ref(),
         _ => None,
     };
 
