@@ -10,23 +10,23 @@ use ratatui::{
     Frame,
 };
 
-use crate::burn::state_tracking::ChildState;
+use crate::writer_process::state_tracking::WriterState;
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct UIState {
     graph_max_speed: f64,
 }
 
-pub fn make_progress_bar(state: &ChildState) -> StateProgressBar {
+pub fn make_progress_bar(state: &WriterState) -> StateProgressBar {
     match state {
-        ChildState::Burning(st) => StateProgressBar {
+        WriterState::Writing(st) => StateProgressBar {
             bytes_written: st.write_hist.bytes_encountered(),
             label_state: "Burning...",
             style: Style::default().fg(Color::Yellow),
             ratio: st.approximate_ratio(),
             display_total_bytes: st.total_raw_bytes,
         },
-        ChildState::Verifying {
+        WriterState::Verifying {
             verify_hist,
             total_write_bytes,
             ..
@@ -36,7 +36,7 @@ pub fn make_progress_bar(state: &ChildState) -> StateProgressBar {
             "Verifying...",
             Style::default().fg(Color::Blue).bg(Color::Yellow),
         ),
-        ChildState::Finished {
+        WriterState::Finished {
             write_hist,
             error,
             total_write_bytes,
@@ -57,7 +57,7 @@ pub fn make_progress_bar(state: &ChildState) -> StateProgressBar {
 impl UIState {
     pub fn draw_speed_chart(
         &mut self,
-        state: &ChildState,
+        state: &WriterState,
         frame: &mut Frame<'_>,
         area: Rect,
         final_time: Instant,
@@ -200,7 +200,7 @@ impl Default for UIState {
 pub fn make_info_table<'a>(
     input_filename: &'a str,
     target_filename: &'a str,
-    state: &'a ChildState,
+    state: &'a WriterState,
 ) -> Table<'a> {
     let wdata = state.write_hist();
 
@@ -214,13 +214,13 @@ pub fn make_info_table<'a>(
     ];
 
     match &state {
-        ChildState::Burning(st) => {
+        WriterState::Writing(st) => {
             rows.push(Row::new([
                 Cell::from("ETA Write"),
                 Cell::from(format!("{}", st.eta_write())),
             ]));
         }
-        ChildState::Verifying {
+        WriterState::Verifying {
             verify_hist: vdata,
             total_write_bytes,
             ..
@@ -234,7 +234,7 @@ pub fn make_info_table<'a>(
                 Cell::from(format!("{}", vdata.estimated_time_left(*total_write_bytes))),
             ]));
         }
-        ChildState::Finished {
+        WriterState::Finished {
             verify_hist: vdata, ..
         } => {
             if let Some(vdata) = vdata {

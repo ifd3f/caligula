@@ -1,5 +1,5 @@
 use crate::{
-    device::BurnTarget,
+    device::WriteTarget,
     logging::init_logging_parent,
     ui::{
         ask_hash::ask_hash,
@@ -48,7 +48,7 @@ async fn inner_main() -> anyhow::Result<()> {
     let _hash_info = ask_hash(&args, compression)?;
 
     let target = match &args.out {
-        Some(f) => BurnTarget::try_from(f.as_ref())?,
+        Some(f) => WriteTarget::try_from(f.as_ref())?,
         None => ask_outfile(&args)?,
     };
 

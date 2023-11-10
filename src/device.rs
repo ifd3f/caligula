@@ -10,18 +10,18 @@ use serde::{Deserialize, Serialize};
 use valuable::Valuable;
 
 #[cfg(target_os = "linux")]
-pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
+pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
     use std::fs::read_dir;
 
     let paths = read_dir("/sys/class/block").unwrap();
 
     paths
         .filter_map(|r| r.ok())
-        .filter_map(|d| BurnTarget::try_from(d.path().as_ref()).ok())
+        .filter_map(|d| WriteTarget::try_from(d.path().as_ref()).ok())
 }
 
 #[cfg(target_os = "macos")]
-pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
+pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
     use std::{
         ffi::{CStr, OsString},
         os::unix::prelude::OsStrExt,
@@ -75,7 +75,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
                 _ => Type::File,
             };
 
-            out.push(BurnTarget {
+            out.push(WriteTarget {
                 name: bsdname,
                 devnode,
                 size,
@@ -94,7 +94,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = BurnTarget> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BurnTarget {
+pub struct WriteTarget {
     /// A user-friendly name for the disk (i.e. sda, nvme0n1, disk1s4)
     pub name: String,
     pub devnode: PathBuf,
@@ -104,7 +104,7 @@ pub struct BurnTarget {
     pub target_type: Type,
 }
 
-impl BurnTarget {
+impl WriteTarget {
     #[cfg(target_os = "macos")]
     fn from_dev_name(name: &OsStr) -> Result<Self, DeviceParseError> {
         use std::os::unix::prelude::OsStrExt;
@@ -112,7 +112,7 @@ impl BurnTarget {
         use format_bytes::format_bytes;
 
         // I don't want to write more Objective C. Oh god. Please no.
-        let devices: Vec<BurnTarget> = enumerate_devices().collect();
+        let devices: Vec<WriteTarget> = enumerate_devices().collect();
         let expected_if_direct_node = format_bytes!(b"/dev/{}", name.as_bytes());
         let expected_if_raw_node = format_bytes!(b"/dev/r{}", name.as_bytes());
 
@@ -186,7 +186,7 @@ impl BurnTarget {
     }
 
     fn from_normal_file(path: PathBuf) -> Result<Self, DeviceParseError> {
-        Ok(BurnTarget {
+        Ok(WriteTarget {
             name: path.to_string_lossy().into(),
             devnode: path,
             size: TargetSize(None),
@@ -197,19 +197,19 @@ impl BurnTarget {
     }
 }
 
-impl PartialOrd for BurnTarget {
+impl PartialOrd for WriteTarget {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.devnode.partial_cmp(&other.devnode)
     }
 }
 
-impl Ord for BurnTarget {
+impl Ord for WriteTarget {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.devnode.cmp(&other.devnode)
     }
 }
 
-impl TryFrom<&Path> for BurnTarget {
+impl TryFrom<&Path> for WriteTarget {
     type Error = DeviceParseError;
 
     fn try_from(value: &Path) -> Result<Self, Self::Error> {

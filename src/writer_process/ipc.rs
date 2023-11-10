@@ -42,7 +42,7 @@ pub async fn read_msg_async(mut r: impl AsyncRead + Unpin) -> std::io::Result<St
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
-pub struct BurnConfig {
+pub struct WriterProcessConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
     pub logfile: PathBuf,
