@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use tracing::{debug, info};
+use tracing::{info, trace};
 
 use crate::byteseries::{ByteSeries, EstimatedTime};
 
@@ -24,26 +24,39 @@ pub enum ChildState {
 }
 
 impl ChildState {
+    #[tracing::instrument]
     pub fn initial(now: Instant, is_input_compressed: bool, input_file_bytes: u64) -> Self {
+        info!("Entering initial state");
         ChildState::Burning(Burning::new(now, is_input_compressed, input_file_bytes))
     }
 
+    #[tracing::instrument(skip_all, fields(msg), level = "debug")]
     pub fn on_status(mut self, now: Instant, msg: Option<StatusMessage>) -> Self {
         match msg {
             Some(StatusMessage::TotalBytes { src, dest }) => {
+                trace!("Received total bytes notification");
                 self.on_total_bytes(now, src, dest);
                 self
             }
             Some(StatusMessage::FinishedWriting { verifying }) => {
-                debug!(verifying, "Got FinishedWriting");
+                info!("Received finished writing notification");
                 match self {
                     ChildState::Burning(st) => st.into_finished(now, verifying),
                     c => c,
                 }
             }
-            Some(StatusMessage::Error(reason)) => self.into_finished(now, Some(reason)),
-            Some(StatusMessage::Success) => self.into_finished(now, None),
-            None => self.into_finished(now, Some(ErrorType::UnexpectedTermination)),
+            Some(StatusMessage::Error(reason)) => {
+                info!("Received error notification");
+                self.into_finished(now, Some(reason))
+            }
+            Some(StatusMessage::Success) => {
+                info!("Received success notification");
+                self.into_finished(now, None)
+            }
+            None => {
+                info!("Messages terminated unexpectedly");
+                self.into_finished(now, Some(ErrorType::UnexpectedTermination))
+            }
             other => panic!(
                 "Recieved nexpected child status {:#?}\nCurrent state: {:#?}",
                 other, self

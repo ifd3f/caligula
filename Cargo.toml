@@ -53,7 +53,7 @@ tracing = { version = "0.1.37", features = [
     "release_max_level_debug",
     "valuable",
 ] }
-tracing-subscriber = "0.3.16"
+tracing-subscriber = { version = "0.3.16", features = ["env-filter", "fmt"] }
 tracing-unwrap = "0.10.0"
 valuable = { version = "0.1.0", features = ["derive"] }
 which = "4.4.0"

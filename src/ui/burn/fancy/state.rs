@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use tracing::{info, trace};
+use tracing::info;
 
 use crate::{
     burn::{ipc::StatusMessage, state_tracking::ChildState},
@@ -34,9 +34,9 @@ impl State {
             child: ChildState::initial(now, !params.compression.is_identity(), input_file_bytes),
         }
     }
-    pub fn on_event(self, ev: UIEvent) -> anyhow::Result<Self> {
-        trace!("Handling {ev:?}");
 
+    #[tracing::instrument(skip_all, level = "debug", fields(ev))]
+    pub fn on_event(self, ev: UIEvent) -> anyhow::Result<Self> {
         Ok(match ev {
             UIEvent::SleepTimeout => self,
             UIEvent::RecvChildStatus(t, m) => Self {
@@ -47,6 +47,7 @@ impl State {
         })
     }
 
+    #[tracing::instrument(skip_all, level = "debug", fields(ev))]
     fn on_term_event(self, ev: Event) -> anyhow::Result<Self> {
         match ev {
             Event::Key(KeyEvent {

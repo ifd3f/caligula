@@ -35,6 +35,7 @@ impl<'a, B> FancyUI<'a, B>
 where
     B: Backend,
 {
+    #[tracing::instrument(skip_all)]
     pub fn new(params: &BeginParams, handle: burn::Handle, terminal: &'a mut Terminal<B>) -> Self {
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
@@ -45,6 +46,7 @@ where
         }
     }
 
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn show(mut self) -> anyhow::Result<()> {
         loop {
             match self.get_and_handle_events().await {
@@ -57,12 +59,13 @@ where
         Ok(())
     }
 
+    #[tracing::instrument(skip_all, level = "trace")]
     async fn get_and_handle_events(mut self) -> anyhow::Result<FancyUI<'a, B>> {
         let msg = {
             if let Some(handle) = &mut self.handle {
-                child_active(&mut self.events, handle).await
+                get_event_child_active(&mut self.events, handle).await
             } else {
-                child_dead(&mut self.events).await
+                get_event_child_dead(&mut self.events).await
             }?
         };
         self.state = self.state.on_event(msg)?;
@@ -77,20 +80,24 @@ where
     }
 }
 
-async fn child_dead(events: &mut EventStream) -> anyhow::Result<UIEvent> {
-    Ok(UIEvent::RecvTermEvent(events.next().await.unwrap()?))
+async fn get_event_child_dead(ui_events: &mut EventStream) -> anyhow::Result<UIEvent> {
+    Ok(UIEvent::RecvTermEvent(ui_events.next().await.unwrap()?))
 }
 
-async fn child_active(events: &mut EventStream, handle: &mut Handle) -> anyhow::Result<UIEvent> {
+#[tracing::instrument(skip_all, level = "trace")]
+async fn get_event_child_active(
+    ui_events: &mut EventStream,
+    child_events: &mut Handle,
+) -> anyhow::Result<UIEvent> {
     let sleep = tokio::time::sleep(time::Duration::from_millis(250));
     select! {
         _ = sleep => {
             return Ok(UIEvent::SleepTimeout);
         }
-        msg = handle.next_message() => {
+        msg = child_events.next_message() => {
             return Ok(UIEvent::RecvChildStatus(Instant::now(), msg?));
         }
-        event = events.next() => {
+        event = ui_events.next() => {
             return Ok(UIEvent::RecvTermEvent(event.unwrap()?));
         }
     }

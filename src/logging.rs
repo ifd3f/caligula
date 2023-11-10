@@ -7,6 +7,7 @@ use std::{path::PathBuf, sync::Mutex};
 use crossterm::terminal::disable_raw_mode;
 use static_cell::StaticCell;
 use tracing::{error, Level};
+use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone)]
 pub struct LogPaths {
@@ -37,20 +38,25 @@ pub fn init_logging_parent() {
 
     let write_path = get_log_paths().main.clone();
 
-    let writer = File::create(write_path).unwrap();
-
-    tracing_subscriber::fmt()
-        .with_writer(Mutex::new(writer))
-        .with_max_level(FILE_LOG_LEVEL)
-        .init();
+    init_tracing_subscriber(write_path);
 }
 
 pub fn init_logging_child(write_path: impl AsRef<Path>) {
+    init_tracing_subscriber(write_path);
+}
+
+fn init_tracing_subscriber(write_path: impl AsRef<Path>) {
     let writer = File::create(write_path).unwrap();
 
     tracing_subscriber::fmt()
+        .compact()
+        .with_ansi(false)
         .with_writer(Mutex::new(writer))
-        .with_max_level(FILE_LOG_LEVEL)
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(FILE_LOG_LEVEL.into())
+                .from_env_lossy(),
+        )
         .init();
 }
 
