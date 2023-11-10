@@ -1,4 +1,4 @@
-use writer_process::child::is_in_writer_mode;
+use run_mode::RunMode;
 
 mod byteseries;
 mod compression;
@@ -7,13 +7,13 @@ mod escalation;
 mod hash;
 mod logging;
 mod native;
+mod run_mode;
 mod ui;
 mod writer_process;
 
 fn main() {
-    if is_in_writer_mode() {
-        writer_process::child::main();
-    } else {
-        ui::main::main();
+    match RunMode::detect() {
+        RunMode::Main => ui::main::main(),
+        RunMode::Writer => writer_process::child::main(),
     }
 }

@@ -11,15 +11,14 @@ use tokio::{
     process::Child,
 };
 
-use crate::writer_process::ipc::read_msg_async;
 use crate::escalation::run_escalate;
 use crate::escalation::Command;
+use crate::run_mode::RunMode;
+use crate::run_mode::RUN_MODE_ENV_NAME;
+use crate::writer_process::ipc::read_msg_async;
 
 use super::ipc::InitialInfo;
-use super::{
-    ipc::{WriterProcessConfig, ErrorType, StatusMessage},
-    BURN_ENV,
-};
+use super::ipc::{ErrorType, StatusMessage, WriterProcessConfig};
 
 pub struct Handle {
     _child: Child,
@@ -43,7 +42,7 @@ impl Handle {
 
         let cmd = Command {
             proc: proc.to_string_lossy(),
-            envs: vec![(BURN_ENV.into(), "1".into())],
+            envs: vec![(RUN_MODE_ENV_NAME.into(), RunMode::Writer.as_str().into())],
             args: vec![args.into()],
         };
 

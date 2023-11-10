@@ -17,11 +17,7 @@ use crate::logging::init_logging_child;
 
 use crate::writer_process::xplat::open_blockdev;
 
-use super::{ipc::*, BURN_ENV};
-
-pub fn is_in_writer_mode() -> bool {
-    env::var(BURN_ENV) == Ok("1".to_string())
-}
+use super::ipc::*;
 
 /// This is intended to be run in a forked child process, possibly with
 /// escalated permissions.
@@ -68,7 +64,11 @@ fn run(args: &WriterProcessConfig) -> Result<(), ErrorType> {
     Ok(())
 }
 
-fn write(args: &WriterProcessConfig, src: &mut File, input_file_bytes: u64) -> Result<(), ErrorType> {
+fn write(
+    args: &WriterProcessConfig,
+    src: &mut File,
+    input_file_bytes: u64,
+) -> Result<(), ErrorType> {
     debug!("Opening {} for writing", args.dest.to_string_lossy());
 
     let file = match args.target_type {
