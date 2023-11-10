@@ -1,12 +1,14 @@
 FROM archlinux
 
 RUN pacman -Syu --noconfirm \
+        python3 \
         base-devel \
         rust \
         sudo
 
-RUN useradd -m user
+RUN useradd -m -G wheel user
+RUN echo '%wheel ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
-COPY entrypoint.sh /entrypoint.sh
+COPY tools /tools
 
-ENTRYPOINT [ "/entrypoint.sh" ]
+ENTRYPOINT [ "/tools/entrypoint.py" ]
