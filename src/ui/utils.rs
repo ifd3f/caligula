@@ -5,8 +5,8 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use ratatui::{backend::CrosstermBackend, Terminal};
 use tracing_unwrap::ResultExt;
-use tui::{backend::CrosstermBackend, Terminal};
 
 pub struct TUICapture {
     terminal: Terminal<CrosstermBackend<Stdout>>,
