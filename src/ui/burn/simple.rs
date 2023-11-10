@@ -3,8 +3,8 @@ use std::time::Instant;
 use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
-    writer_process::{state_tracking::WriterState, Handle},
     compression::CompressionFormat,
+    writer_process::{state_tracking::WriterState, Handle},
 };
 
 pub async fn run_simple_ui(mut handle: Handle, cf: CompressionFormat) -> anyhow::Result<()> {

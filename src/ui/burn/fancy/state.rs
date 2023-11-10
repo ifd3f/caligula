@@ -4,8 +4,8 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::info;
 
 use crate::{
-    writer_process::{ipc::StatusMessage, state_tracking::WriterState},
     ui::burn::start::BeginParams,
+    writer_process::{ipc::StatusMessage, state_tracking::WriterState},
 };
 
 use super::widgets::UIState;

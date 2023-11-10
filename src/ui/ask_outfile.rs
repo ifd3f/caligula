@@ -5,7 +5,7 @@ use tracing::debug;
 
 use crate::{
     compression::{CompressionArg, CompressionFormat, DecompressError, AVAILABLE_FORMATS},
-    device::{enumerate_devices, WriteTarget, Removable},
+    device::{enumerate_devices, Removable, WriteTarget},
     ui::cli::BurnArgs,
 };
 

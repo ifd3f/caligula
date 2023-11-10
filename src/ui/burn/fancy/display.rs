@@ -11,9 +11,9 @@ use ratatui::{
 use tokio::{select, time};
 
 use crate::{
-    writer_process::{self, state_tracking::WriterState, Handle},
     logging::get_bug_report_msg,
     ui::burn::{fancy::state::UIEvent, start::BeginParams},
+    writer_process::{self, state_tracking::WriterState, Handle},
 };
 
 use super::{
@@ -36,7 +36,11 @@ where
     B: Backend,
 {
     #[tracing::instrument(skip_all)]
-    pub fn new(params: &BeginParams, handle: writer_process::Handle, terminal: &'a mut Terminal<B>) -> Self {
+    pub fn new(
+        params: &BeginParams,
+        handle: writer_process::Handle,
+        terminal: &'a mut Terminal<B>,
+    ) -> Self {
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,

@@ -5,11 +5,6 @@ use inquire::Confirm;
 use tracing::debug;
 
 use crate::{
-    writer_process::{
-        self,
-        handle::StartProcessError,
-        ipc::{WriterProcessConfig, ErrorType},
-    },
     compression::CompressionFormat,
     device::WriteTarget,
     logging::get_log_paths,
@@ -17,6 +12,11 @@ use crate::{
         burn::{fancy::FancyUI, simple},
         cli::{Interactive, UseSudo},
         utils::TUICapture,
+    },
+    writer_process::{
+        self,
+        handle::StartProcessError,
+        ipc::{ErrorType, WriterProcessConfig},
     },
 };
 
