@@ -1,5 +1,5 @@
 pkgname=caligula-bin
-pkgver=0.4.2
+pkgver=0.4.3
 pkgrel=2
 pkgdesc="A lightweight, user-friendly disk imaging tool"
 url="https://github.com/ifd3f/caligula"
@@ -8,7 +8,7 @@ arch=("x86_64")
 provides=("caligula")
 conflicts=("caligula")
 source=("https://github.com/ifd3f/caligula/releases/download/v$pkgver/caligula-$CARCH-linux")
-sha256sums=("5ba2a5c43d8f9e72bc9123c70d28428cef1daebce5a01727c5f96503f8da9d1d")
+sha256sums=("d3f6753312ac8283c9c0b4e1821a40500209f0b0fcb95f8dd23be0e44f9c95dc")
 
 package() {
     mv caligula-x86_64-linux caligula
