@@ -78,7 +78,7 @@ jobs:
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v3
-      
+
       - name: Assemble release directory
         run: |
           mkdir release
@@ -92,47 +92,3 @@ jobs:
         with:
           name: release
           path: release
-
-  package-for-aur:
-    name: Make AUR packaging files
-    runs-on: ubuntu-latest
-    needs:
-      - ci-x86_64-linux
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/download-artifact@v3
-        with:
-          name: caligula-x86_64-linux
-      
-      - name: Build docker image
-        uses: docker/build-push-action@v5
-        with:
-          push: false
-          tags: caligula-aur-packager:latest
-          context: packaging/aur/dockerenv
-      
-      - name: Install dasel
-        run: |
-          sudo wget -qO /usr/local/bin/dasel https://github.com/TomWright/dasel/releases/latest/download/dasel_linux_amd64
-          sudo chmod a+x /usr/local/bin/dasel
-      
-      - name: Generate files, build package, and test
-        run: |
-          version=$(dasel select 'package.version' -f Cargo.toml)
-          sha256=$(sha256sum caligula-x86_64-linux | awk '{print $1}')
-
-          docker run -v $(readlink -f ./out):/out caligula-packaging \
-            --sha256sum=$sha256 \
-            --pkgver=$version \
-            --pkgrel=1 \
-            /out
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: PKGBUILD
-          path: ./out/caligula-bin/PKGBUILD
-
-      - uses: actions/upload-artifact@v3
-        with:
-          name: .SRCINFO
-          path: ./out/caligula-bin/.SRCINFO
