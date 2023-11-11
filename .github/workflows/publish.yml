@@ -1,0 +1,28 @@
+name: "Publish package"
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  aur-publish:
+    name: Publish to AUR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Generate PKGBUILD
+        run: nix build .#caligula-bin-aur
+
+      - name: Publish AUR package
+        uses: KSXGitHub/github-actions-deploy-aur@v2
+        with:
+          pkgname: caligula-bin
+          pkgbuild: ./result/PKGBUILD
+          test: true
+          commit_username: ifd3f
+          commit_email: astrid@astrid.tech
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+          commit_message: Update AUR package
+          ssh_keyscan_types: rsa,dsa,ecdsa,ed25519

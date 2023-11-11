@@ -78,7 +78,7 @@ jobs:
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v3
-      
+
       - name: Assemble release directory
         run: |
           mkdir release
