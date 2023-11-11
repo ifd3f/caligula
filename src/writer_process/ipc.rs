@@ -11,14 +11,7 @@ use valuable::Valuable;
 
 use crate::compression::CompressionFormat;
 use crate::device::Type;
-
-#[inline]
-pub fn bincode_options() -> impl bincode::Options {
-    bincode::DefaultOptions::new()
-        .with_fixint_encoding()
-        .with_native_endian()
-        .with_limit(1024)
-}
+use crate::ipc_common::bincode_options;
 
 pub fn write_msg(mut w: impl Write, msg: &StatusMessage) -> anyhow::Result<()> {
     let _span = trace_span!("Writing", msg = msg.as_value());

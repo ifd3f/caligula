@@ -21,10 +21,10 @@ use super::ipc::InitialInfo;
 use super::ipc::{ErrorType, StatusMessage, WriterProcessConfig};
 
 pub struct Handle {
-    _child: Child,
+    child: Child,
     initial_info: InitialInfo,
-    rx: Pin<Box<dyn AsyncBufRead>>,
-    _tx: Pin<Box<dyn AsyncWrite>>,
+    rx: Pin<Box<dyn AsyncBufRead + Send>>,
+    _tx: Pin<Box<dyn AsyncWrite + Send>>,
 }
 
 impl Handle {
@@ -89,11 +89,16 @@ impl Handle {
         }?;
 
         Ok(Self {
-            _child: child,
+            child,
             initial_info,
             rx: Box::pin(rx),
             _tx: Box::pin(tx),
         })
+    }
+
+    /// Wait until the child process exits
+    pub async fn wait(&mut self) -> Result<std::process::ExitStatus, futures_io::Error> {
+        self.child.wait().await
     }
 
     pub async fn next_message(&mut self) -> std::io::Result<Option<StatusMessage>> {
@@ -124,7 +129,7 @@ async fn read_next_message(
 impl core::fmt::Debug for Handle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Handle")
-            .field("_child", &self._child)
+            .field("_child", &self.child)
             .field("initial_info", &self.initial_info)
             .finish()
     }
