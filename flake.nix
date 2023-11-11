@@ -41,7 +41,16 @@
             '';
 
           caligula = self.packages."${system}"."caligula-${system}";
-        } // crossHelpers.caligulaPackages;
+        }
+
+          // crossHelpers.caligulaPackages
+
+          // (if system == "x86_64-linux" then {
+            caligula-bin-aur = pkgs.callPackage ./nix/aur.nix {
+              caligula = self.packages.x86_64-linux.caligula;
+            };
+          } else
+            { });
 
         devShells.default = crossHelpers.crossCompileDevShell.overrideAttrs
           (final: prev: {
