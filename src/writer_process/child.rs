@@ -6,24 +6,42 @@ use std::{
     io::{self, Read, Seek, Write},
 };
 
+use anyhow::Context;
 use bytesize::ByteSize;
+use process_path::get_executable_path;
 use tracing::{debug, error, info, trace};
 use tracing_unwrap::ResultExt;
 use valuable::Valuable;
 
 use crate::compression::decompress;
 use crate::device;
+use crate::ipc_common::write_msg;
 use crate::logging::init_logging_child;
 
+use crate::run_mode::{RunMode, RUN_MODE_ENV_NAME};
 use crate::writer_process::xplat::open_blockdev;
 
 use super::ipc::*;
 
-/// This is intended to be run in a forked child process, possibly with
-/// escalated permissions.
+const ARGS_ENV: &str = "__CALIGULA_WRITER_ARGS";
+
+fn get_args() -> anyhow::Result<WriterProcessConfig> {
+    let args_env = std::env::var(ARGS_ENV)
+        .with_context(|| format!("Could not get environment variable {ARGS_ENV}"))?;
+    let args = serde_json::from_str::<WriterProcessConfig>(&args_env).context("Failed to parse")?;
+    Ok(args)
+}
+
+pub fn spawn(args: WriterProcessConfig) -> Result<tokio::process::Child, io::Error> {
+    let proc = get_executable_path().context("Failed to get this process's path")?;
+    tokio::process::Command::new(proc)
+        .env(RUN_MODE_ENV_NAME, RunMode::Writer.as_str())
+        .env(ARGS_ENV, serde_json::to_string(&args))
+        .spawn()
+}
+
 pub fn main() {
-    let cli_args: Vec<String> = env::args().collect();
-    let args = serde_json::from_str::<WriterProcessConfig>(&cli_args[1]).unwrap_or_log();
+    let args = get_args().unwrap();
     init_logging_child(&args.logfile);
 
     set_hook(Box::new(|p| {
@@ -129,13 +147,6 @@ fn for_each_block(
     });
 
     Ok(())
-}
-
-#[tracing::instrument(level = "debug", fields(msg = msg.as_value()))]
-pub fn send_msg(msg: StatusMessage) {
-    let mut stdout = std::io::stdout();
-    write_msg(&mut stdout, &msg).expect("Failed to write message");
-    stdout.flush().expect("Failed to flush stdout");
 }
 
 trait BlockSink {

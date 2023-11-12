@@ -1,38 +1,11 @@
-use std::io::Write;
 use std::{fmt::Display, path::PathBuf};
 
-use bincode::Options;
-use byteorder::{BigEndian, WriteBytesExt};
 use serde::{Deserialize, Serialize};
 
-use tokio::io::{AsyncRead, AsyncReadExt};
-use tracing::{trace, trace_span};
 use valuable::Valuable;
 
 use crate::compression::CompressionFormat;
 use crate::device::Type;
-use crate::ipc_common::bincode_options;
-
-pub fn write_msg(mut w: impl Write, msg: &StatusMessage) -> anyhow::Result<()> {
-    let _span = trace_span!("Writing", msg = msg.as_value());
-    let buf = bincode_options().serialize(msg)?;
-    w.write_u32::<BigEndian>(buf.len() as u32)?;
-    w.write_all(&buf)?;
-    Ok(())
-}
-
-#[tracing::instrument(level = "trace", skip_all)]
-pub async fn read_msg_async(mut r: impl AsyncRead + Unpin) -> std::io::Result<StatusMessage> {
-    let size = r.read_u32().await?;
-    let mut buf = vec![0; size as usize];
-    r.read_exact(&mut buf).await?;
-
-    let msg: StatusMessage = bincode_options()
-        .deserialize(&buf)
-        .expect("Failed to parse bincode from stream");
-    trace!(msg = msg.as_value(), "Parsed message");
-    Ok(msg)
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
 pub struct WriterProcessConfig {
@@ -102,40 +75,6 @@ impl Display for ErrorType {
             ErrorType::UnknownChildProcError(err) => {
                 write!(f, "Unknown error occurred in child process: {err}")
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{read_msg_async, write_msg, InitialInfo, StatusMessage};
-
-    #[tokio::test]
-    async fn write_read_roundtrip() {
-        let messages = &[
-            StatusMessage::InitSuccess(InitialInfo {
-                input_file_bytes: 32,
-            }),
-            StatusMessage::TotalBytes {
-                src: 438,
-                dest: 483,
-            },
-            StatusMessage::TotalBytes {
-                src: 438,
-                dest: 483,
-            },
-            StatusMessage::FinishedWriting { verifying: false },
-        ];
-        let mut buf = Vec::new();
-
-        for msg in messages {
-            write_msg(&mut buf, &msg).unwrap();
-        }
-
-        let mut reader = &buf[..];
-        for msg in messages {
-            let out = read_msg_async(&mut reader).await.unwrap();
-            assert_eq!(&out, msg);
         }
     }
 }
