@@ -20,7 +20,7 @@ use crate::{
             state::UIEvent,
             widgets::{DiskList, DiskListEntry},
         },
-        start::BeginParams,
+        start::InputFileParams,
     },
     writer_process::{self, state_tracking::WriterState, Handle},
 };
@@ -45,17 +45,12 @@ where
     B: Backend,
 {
     #[tracing::instrument(skip_all)]
-    pub fn new(
-        params: &BeginParams,
-        handle: writer_process::Handle,
-        terminal: &'a mut Terminal<B>,
-    ) -> Self {
-        let input_file_bytes = handle.initial_info().input_file_bytes;
+    pub fn new(params: &InputFileParams, terminal: &'a mut Terminal<B>) -> Self {
         Self {
             terminal,
-            handle: Some(handle),
             events: EventStream::new(),
-            state: State::initial(Instant::now(), &params, input_file_bytes),
+            state: State::initial(Instant::now(), &params),
+            handle: todo!(),
         }
     }
 
@@ -83,10 +78,11 @@ where
         };
         self.state = self.state.on_event(msg)?;
 
-        // Drop handle/process if process died
-        if self.state.child.is_finished() {
-            self.handle = None;
-        }
+        // // Drop handle/process if process died
+        // if self.state.child.is_finished() {
+        //     self.handle = None;
+        // }
+        todo!();
 
         draw(&mut self.state, &mut self.terminal)?;
         Ok(self)
@@ -159,33 +155,33 @@ pub fn draw(
     state: &mut State,
     terminal: &mut Terminal<impl ratatui::backend::Backend>,
 ) -> anyhow::Result<()> {
-    let progress_bar = WriterProgressBar::from_writer(&state.child);
+    let progress_bar = WriterProgressBar::from_writer(todo!());
 
-    let final_time = match state.child {
+    let final_time = match todo!() {
         WriterState::Finished { finish_time, .. } => finish_time,
         _ => Instant::now(),
     };
 
-    let error = match &state.child {
+    let error = match todo!() {
         WriterState::Finished { error, .. } => error.as_ref(),
         _ => None,
     };
 
     let info_table = WritingInfoTable {
         input_filename: &state.input_filename,
-        target_filename: &state.target_filename,
-        state: &state.child,
+        target_filename: todo!(),
+        state: todo!(),
     };
 
     let speed_chart = SpeedChart {
-        state: &state.child,
+        state: todo!(),
         final_time,
     };
 
     terminal.draw(|f| {
         let layout = ComputedLayout::from(f.size());
 
-        f.render_stateful_widget(speed_chart, layout.graph, &mut state.graph_state);
+        f.render_stateful_widget(speed_chart, layout.graph, todo!());
         f.render_widget(
             progress_bar.as_gauge().label(progress_bar.label()),
             layout.progress,
@@ -220,7 +216,7 @@ pub fn draw(
             DiskList {
                 disks: &[DiskListEntry {
                     name: "/dev/whatever",
-                    state: &state.child,
+                    state: todo!(),
                 }],
             },
             actual_disks,

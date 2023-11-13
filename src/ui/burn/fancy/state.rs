@@ -4,7 +4,8 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::info;
 
 use crate::{
-    ui::burn::start::BeginParams,
+    device::WriteTarget,
+    ui::burn::start::InputFileParams,
     writer_process::{ipc::StatusMessage, state_tracking::WriterState},
 };
 
@@ -20,18 +21,14 @@ pub enum UIEvent {
 #[derive(Debug, Clone)]
 pub struct State {
     pub input_filename: String,
-    pub target_filename: String,
-    pub child: WriterState,
-    pub graph_state: SpeedChartState,
+    pub writer: Option<ActiveWriter>,
 }
 
 impl State {
-    pub fn initial(now: Instant, params: &BeginParams, input_file_bytes: u64) -> Self {
+    pub fn initial(now: Instant, params: &InputFileParams) -> Self {
         State {
-            input_filename: params.input_file.to_string_lossy().to_string(),
-            target_filename: params.target.devnode.to_string_lossy().to_string(),
-            child: WriterState::initial(now, !params.compression.is_identity(), input_file_bytes),
-            graph_state: SpeedChartState::default(),
+            input_filename: params.file.to_string_lossy().to_string(),
+            writer: None,
         }
     }
 
@@ -39,10 +36,7 @@ impl State {
     pub fn on_event(self, ev: UIEvent) -> anyhow::Result<Self> {
         Ok(match ev {
             UIEvent::SleepTimeout => self,
-            UIEvent::RecvChildStatus(t, m) => Self {
-                child: self.child.on_status(t, m),
-                ..self
-            },
+            UIEvent::RecvChildStatus(t, m) => todo!(),
             UIEvent::RecvTermEvent(e) => self.on_term_event(e)?,
         })
     }
@@ -60,6 +54,27 @@ impl State {
                 Err(Quit)?
             }
             _ => Ok(self),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ActiveWriter {
+    pub target_filename: String,
+    pub child: WriterState,
+    pub graph_state: SpeedChartState,
+}
+
+impl ActiveWriter {
+    pub fn new(now: Instant, params: &InputFileParams, target: WriteTarget) -> Self {
+        Self {
+            target_filename: target.devnode.to_string_lossy().to_string(),
+            child: WriterState::initial(
+                Instant::now(),
+                !params.compression.is_identity(),
+                params.size.as_u64(),
+            ),
+            graph_state: SpeedChartState::default(),
         }
     }
 }

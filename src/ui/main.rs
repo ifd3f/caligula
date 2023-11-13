@@ -1,14 +1,11 @@
 use crate::{
-    device::WriteTarget,
     logging::init_logging_parent,
     ui::{
-        ask_hash::ask_hash,
-        ask_outfile,
-        burn::start::{begin_writing, try_start_burn, BeginParams},
+        ask_input::{ask_compression, ask_hash},
+        burn::start::{begin_writing, InputFileParams},
         cli::{Args, Command},
     },
 };
-use ask_outfile::{ask_compression, confirm_write};
 use clap::Parser;
 use inquire::InquireError;
 use tracing::debug;
@@ -44,27 +41,11 @@ async fn inner_main() -> anyhow::Result<()> {
     };
 
     let compression = ask_compression(&args)?;
-
     let _hash_info = ask_hash(&args, compression)?;
 
-    let target = match &args.out {
-        Some(f) => WriteTarget::try_from(f.as_ref())?,
-        None => ask_outfile(&args)?,
-    };
+    let begin_params = InputFileParams::new(args.input.clone(), compression)?;
 
-    let begin_params = BeginParams::new(args.input.clone(), compression, target)?;
-    if !confirm_write(&args, &begin_params)? {
-        eprintln!("Aborting.");
-        return Ok(());
-    }
-
-    let handle = try_start_burn(
-        &begin_params.make_child_config(),
-        args.root,
-        args.interactive.is_interactive(),
-    )
-    .await?;
-    begin_writing(args.interactive, begin_params, handle).await?;
+    begin_writing(&args, begin_params).await?;
 
     debug!("Done!");
     Ok(())

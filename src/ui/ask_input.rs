@@ -7,10 +7,12 @@ use std::{
 
 use bytesize::ByteSize;
 use indicatif::{ProgressBar, ProgressStyle};
-use inquire::{Select, Text};
+use inquire::{Confirm, InquireError, Select, Text};
 
 use crate::{
-    compression::{decompress, CompressionFormat},
+    compression::{
+        self, decompress, CompressionArg, CompressionFormat, DecompressError, AVAILABLE_FORMATS,
+    },
     hash::{parse_hash_input, FileHashInfo, HashAlg, Hashing},
 };
 
@@ -188,4 +190,51 @@ struct BeginHashParams {
 enum Recoverable {
     AskAgain,
     Skip,
+}
+
+#[tracing::instrument(skip_all)]
+pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
+    let cf = match args.compression {
+        CompressionArg::Auto | CompressionArg::Ask => {
+            CompressionFormat::detect_from_path(&args.input)
+        }
+        other => other.associated_format(),
+    };
+
+    if let Some(cf) = cf {
+        eprintln!("Input file: {}", args.input.to_string_lossy());
+        eprintln!("Detected compression format: {}", cf);
+        if !cf.is_available() {
+            eprintln!(
+                "Compression format {} is not supported on your platform!",
+                cf
+            );
+            Err(DecompressError::UnsupportedFormat(cf))?;
+        }
+
+        if args.force || args.compression != CompressionArg::Ask {
+            return Ok(cf);
+        }
+
+        if !Confirm::new("Is this okay?").prompt()? {
+            Err(InquireError::OperationCanceled)?;
+        }
+        return Ok(cf);
+    }
+
+    eprintln!(
+        "Couldn't detect compression format for {}",
+        args.input.to_string_lossy()
+    );
+    if args.force {
+        eprintln!("Since --force was provided, assuming it's uncompressed!");
+        return Ok(CompressionFormat::Identity);
+    }
+    let format = Select::new(
+        "What format to use?",
+        compression::AVAILABLE_FORMATS.to_vec(),
+    )
+    .prompt()?;
+
+    return Ok(format);
 }
