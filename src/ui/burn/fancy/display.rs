@@ -13,7 +13,7 @@ use tokio::{select, time};
 use crate::{
     logging::get_bug_report_msg,
     ui::burn::{fancy::state::UIEvent, start::BeginParams},
-    writer_process::{self, state_tracking::WriterState, Handle},
+    writer_process::{self, state_tracking::WriterState},
 };
 
 use super::{

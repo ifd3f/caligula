@@ -15,7 +15,6 @@ use crate::{
     },
     writer_process::{
         self,
-        handle::StartProcessError,
         ipc::{ErrorType, WriterProcessConfig},
     },
 };

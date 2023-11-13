@@ -6,7 +6,7 @@ use crate::{
         ask_outfile,
         burn::start::{begin_writing, try_start_burn, BeginParams},
         cli::{Args, Command},
-    },
+    }, children::Children, procmgr::MultiWriterManager,
 };
 use ask_outfile::{ask_compression, confirm_write};
 use clap::Parser;
@@ -57,6 +57,8 @@ async fn inner_main() -> anyhow::Result<()> {
         eprintln!("Aborting.");
         return Ok(());
     }
+
+    let children = MultiWriterManager::new();
 
     let handle = try_start_burn(
         &begin_params.make_child_config(),
