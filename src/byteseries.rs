@@ -78,6 +78,7 @@ impl ByteSeries {
         (b1 - b0) / window
     }
 
+    /// Returns a series of points representing a timeseries, aggregated by the given window size.
     pub fn speeds(&self, window: f64) -> impl Iterator<Item = (f64, f64)> + '_ {
         let bins = (self.last_datapoint().0 / window).ceil() as usize;
         (0..bins).map(move |i| {
