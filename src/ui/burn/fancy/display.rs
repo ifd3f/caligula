@@ -18,7 +18,7 @@ use crate::{
 
 use super::{
     state::{Quit, State},
-    widgets::{make_info_table, make_progress_bar},
+    widgets::{SpeedChart, WriterProgressBar, WritingInfoTable},
 };
 
 pub struct FancyUI<'a, B>
@@ -138,7 +138,7 @@ pub fn draw(
     state: &mut State,
     terminal: &mut Terminal<impl ratatui::backend::Backend>,
 ) -> anyhow::Result<()> {
-    let progress_bar = make_progress_bar(&state.child);
+    let progress_bar = WriterProgressBar::from_writer(&state.child);
 
     let final_time = match state.child {
         WriterState::Finished { finish_time, .. } => finish_time,
@@ -150,16 +150,22 @@ pub fn draw(
         _ => None,
     };
 
-    let info_table = make_info_table(&state.input_filename, &state.target_filename, &state.child);
+    let info_table = WritingInfoTable {
+        input_filename: &state.input_filename,
+        target_filename: &state.target_filename,
+        state: &state.child,
+    };
+
+    let speed_chart = SpeedChart {
+        state: &state.child,
+        final_time,
+    };
 
     terminal.draw(|f| {
         let layout = ComputedLayout::from(f.size());
 
         f.render_widget(progress_bar.render(), layout.progress);
-
-        state
-            .ui_state
-            .draw_speed_chart(&state.child, f, layout.graph, final_time);
+        f.render_stateful_widget(speed_chart, layout.graph, &mut state.graph_state);
 
         if let Some(error) = error {
             f.render_widget(
