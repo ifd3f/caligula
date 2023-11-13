@@ -19,6 +19,7 @@ pub fn write_msg<T: Serialize>(mut w: impl Write, msg: &T) -> anyhow::Result<()>
     let buf = bincode_options().serialize(msg)?;
     w.write_u32::<BigEndian>(buf.len() as u32)?;
     w.write_all(&buf)?;
+    w.flush()?;
     Ok(())
 }
 
