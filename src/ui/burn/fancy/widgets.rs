@@ -7,8 +7,8 @@ use ratatui::{
     symbols,
     text::Span,
     widgets::{
-        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Row, StatefulWidget, Table,
-        Widget,
+        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, LineGauge, Paragraph, Row,
+        StatefulWidget, Table, Widget,
     },
 };
 
@@ -180,27 +180,31 @@ impl WriterProgressBar {
         }
     }
 
-    pub fn render(&self) -> Gauge {
+    pub fn label(&self) -> String {
         if let Some(max) = self.display_total_bytes {
-            Gauge::default()
-                .label(format!(
-                    "{} {} / {}",
-                    self.label_state,
-                    ByteSize::b(self.bytes_written),
-                    ByteSize::b(max)
-                ))
-                .ratio(self.ratio)
-                .gauge_style(self.style)
+            format!(
+                "{} {} / {}",
+                self.label_state,
+                ByteSize::b(self.bytes_written),
+                ByteSize::b(max)
+            )
         } else {
-            Gauge::default()
-                .label(format!(
-                    "{} {} / ???",
-                    self.label_state,
-                    ByteSize::b(self.bytes_written),
-                ))
-                .ratio(self.ratio)
-                .gauge_style(self.style)
+            format!(
+                "{} {} / ???",
+                self.label_state,
+                ByteSize::b(self.bytes_written),
+            )
         }
+    }
+
+    pub fn as_gauge(&self) -> Gauge<'_> {
+        Gauge::default().ratio(self.ratio).gauge_style(self.style)
+    }
+
+    pub fn as_line_gauge(&self) -> LineGauge<'_> {
+        LineGauge::default()
+            .ratio(self.ratio)
+            .gauge_style(self.style)
     }
 }
 
@@ -266,5 +270,40 @@ impl WritingInfoTable<'_> {
 impl Widget for WritingInfoTable<'_> {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer) {
         Widget::render(self.make_info_table(), area, buf)
+    }
+}
+
+pub struct DiskListEntry<'a> {
+    pub name: &'a str,
+    pub state: &'a WriterState,
+}
+
+pub struct DiskList<'a> {
+    pub disks: &'a [DiskListEntry<'a>],
+}
+
+impl Widget for DiskList<'_> {
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer) {
+        // TODO use list selection state to offset correctly
+
+        let selected_index = 0;
+
+        for (i, e) in self.disks.iter().enumerate() {
+            let pb = WriterProgressBar::from_writer(e.state);
+            let status = pb
+                .as_line_gauge()
+                .label(e.name) // TODO truncate name to max chars
+                .line_set(symbols::line::THICK);
+
+            let bar_area = Rect::new(area.x + 2, area.y + i as u16, area.width - 2, 1);
+            status.render(bar_area, buf);
+
+            // TODO implement marker selection
+            if i == selected_index {
+                let marker = Paragraph::new("> ");
+                let marker_area = Rect::new(area.x, area.y + i as u16, 2, 1);
+                marker.render(marker_area, buf);
+            }
+        }
     }
 }

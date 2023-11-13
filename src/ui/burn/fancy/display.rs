@@ -5,14 +5,23 @@ use futures::StreamExt;
 use ratatui::{
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style},
+    text::Text,
     widgets::{Block, Borders, Paragraph, Wrap},
     Terminal,
 };
 use tokio::{select, time};
+use tracing::debug;
 
 use crate::{
     logging::get_bug_report_msg,
-    ui::burn::{fancy::state::UIEvent, start::BeginParams},
+    ui::burn::{
+        fancy::{
+            state::UIEvent,
+            widgets::{DiskList, DiskListEntry},
+        },
+        start::BeginParams,
+    },
     writer_process::{self, state_tracking::WriterState, Handle},
 };
 
@@ -108,28 +117,40 @@ async fn get_event_child_active(
 }
 
 struct ComputedLayout {
+    disks: Rect,
+    toplevel_status: Rect,
     progress: Rect,
     graph: Rect,
     args_display: Rect,
 }
 
 impl From<Rect> for ComputedLayout {
-    fn from(value: Rect) -> Self {
+    fn from(root: Rect) -> Self {
         let root = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(10), Constraint::Length(1)])
+            .split(root);
+
+        let infopane_and_rightpane = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(16), Constraint::Percentage(75)])
+            .split(root[0]);
+
+        let within_rightpane = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(1),
-                Constraint::Min(10),
-                Constraint::Length(10),
+                Constraint::Min(7),
+                Constraint::Length(7),
             ])
-            .split(value);
-
-        let info_pane = root[2];
+            .split(infopane_and_rightpane[1]);
 
         Self {
-            graph: root[1],
-            progress: root[0],
-            args_display: info_pane,
+            toplevel_status: root[1],
+            disks: infopane_and_rightpane[0],
+            graph: within_rightpane[1],
+            progress: within_rightpane[0],
+            args_display: within_rightpane[2],
         }
     }
 }
@@ -164,8 +185,11 @@ pub fn draw(
     terminal.draw(|f| {
         let layout = ComputedLayout::from(f.size());
 
-        f.render_widget(progress_bar.render(), layout.progress);
         f.render_stateful_widget(speed_chart, layout.graph, &mut state.graph_state);
+        f.render_widget(
+            progress_bar.as_gauge().label(progress_bar.label()),
+            layout.progress,
+        );
 
         if let Some(error) = error {
             f.render_widget(
@@ -181,6 +205,27 @@ pub fn draw(
         } else {
             f.render_widget(info_table, layout.args_display);
         }
+
+        f.render_widget(
+            Paragraph::new(Text::raw("↑/↓ (select disk)   n (new disk)"))
+                .style(Style::new().bg(Color::LightBlue)),
+            layout.toplevel_status,
+        );
+
+        debug!(?layout.disks, "test");
+        let disks_block = Block::default().borders(Borders::RIGHT);
+        let actual_disks = disks_block.inner(layout.disks);
+        f.render_widget(disks_block, layout.disks);
+        f.render_widget(
+            DiskList {
+                disks: &[DiskListEntry {
+                    name: "/dev/whatever",
+                    state: &state.child,
+                }],
+            },
+            actual_disks,
+        );
     })?;
+
     Ok(())
 }
