@@ -5,6 +5,7 @@ mod compression;
 mod device;
 mod escalation;
 mod hash;
+mod ipc_common;
 mod logging;
 mod native;
 mod run_mode;

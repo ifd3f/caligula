@@ -1,5 +1,6 @@
 use std::io::BufReader;
 use std::panic::set_hook;
+use std::path::PathBuf;
 use std::{
     env,
     fs::File,
@@ -7,12 +8,13 @@ use std::{
 };
 
 use bytesize::ByteSize;
+use interprocess::local_socket::LocalSocketStream;
 use tracing::{debug, error, info, trace};
 use tracing_unwrap::ResultExt;
-use valuable::Valuable;
 
 use crate::compression::decompress;
 use crate::device;
+use crate::ipc_common::write_msg;
 use crate::logging::init_logging_child;
 
 use crate::writer_process::xplat::open_blockdev;
@@ -21,7 +23,8 @@ use super::ipc::*;
 
 /// This is intended to be run in a forked child process, possibly with
 /// escalated permissions.
-pub fn main() {
+#[tokio::main]
+pub async fn main() {
     let cli_args: Vec<String> = env::args().collect();
     let args = serde_json::from_str::<WriterProcessConfig>(&cli_args[1]).unwrap_or_log();
     init_logging_child(&args.logfile);
@@ -32,16 +35,20 @@ pub fn main() {
 
     info!("We are in child process mode with args {:#?}", args);
 
-    let final_msg = match run(&args) {
+    let sock = cli_args[2].as_str();
+    info!("Opening socket {sock}");
+    let mut stream = LocalSocketStream::connect(PathBuf::from(sock)).unwrap_or_log();
+
+    let final_msg = match run(&mut stream, &args) {
         Ok(_) => StatusMessage::Success,
         Err(e) => StatusMessage::Error(e),
     };
 
     info!(?final_msg, "Completed");
-    send_msg(final_msg);
+    send_msg(stream, final_msg);
 }
 
-fn run(args: &WriterProcessConfig) -> Result<(), ErrorType> {
+fn run(mut tx: impl Write, args: &WriterProcessConfig) -> Result<(), ErrorType> {
     debug!("Opening file {}", args.src.to_string_lossy());
     let mut src = File::open(&args.src).unwrap_or_log();
     let size = src.seek(io::SeekFrom::End(0))?;
@@ -49,22 +56,26 @@ fn run(args: &WriterProcessConfig) -> Result<(), ErrorType> {
 
     debug!(size, "Got input file size");
 
-    write(args, &mut src, size)?;
-    send_msg(StatusMessage::FinishedWriting {
-        verifying: args.verify,
-    });
+    write(&mut tx, args, &mut src, size)?;
+    send_msg(
+        &mut tx,
+        StatusMessage::FinishedWriting {
+            verifying: args.verify,
+        },
+    );
 
     if !args.verify {
         return Ok(());
     }
 
     src.seek(io::SeekFrom::Start(0))?;
-    verify(args, &mut src)?;
+    verify(tx, args, &mut src)?;
 
     Ok(())
 }
 
 fn write(
+    mut tx: impl Write,
     args: &WriterProcessConfig,
     src: &mut File,
     input_file_bytes: u64,
@@ -77,20 +88,24 @@ fn write(
             open_blockdev(&args.dest, args.compression)?
         }
     };
-    send_msg(StatusMessage::InitSuccess(InitialInfo { input_file_bytes }));
+    send_msg(
+        &mut tx,
+        StatusMessage::InitSuccess(InitialInfo { input_file_bytes }),
+    );
 
-    for_each_block(args, src, WriteSink { file })
+    for_each_block(&mut tx, args, src, WriteSink { file })
 }
 
-fn verify(args: &WriterProcessConfig, src: &mut File) -> Result<(), ErrorType> {
+fn verify(tx: impl Write, args: &WriterProcessConfig, src: &mut File) -> Result<(), ErrorType> {
     debug!("Opening {} for verification", args.dest.to_string_lossy());
 
     let file = File::open(&args.dest)?;
-    for_each_block(args, src, VerifySink { file })
+    for_each_block(tx, args, src, VerifySink { file })
 }
 
 #[inline]
 fn for_each_block(
+    mut tx: impl Write,
     args: &WriterProcessConfig,
     src: impl Read + Seek,
     mut sink: impl BlockSink,
@@ -116,26 +131,31 @@ fn for_each_block(
         }
 
         sink.on_checkpoint()?;
-        send_msg(StatusMessage::TotalBytes {
-            src: decompress.get_mut().stream_position()?,
-            dest: offset,
-        });
+        send_msg(
+            &mut tx,
+            StatusMessage::TotalBytes {
+                src: decompress.get_mut().stream_position()?,
+                dest: offset,
+            },
+        );
     }
 
     sink.on_checkpoint()?;
-    send_msg(StatusMessage::TotalBytes {
-        src: decompress.get_mut().stream_position()?,
-        dest: offset,
-    });
+    send_msg(
+        tx,
+        StatusMessage::TotalBytes {
+            src: decompress.get_mut().stream_position()?,
+            dest: offset,
+        },
+    );
 
     Ok(())
 }
 
-#[tracing::instrument(level = "debug", fields(msg = msg.as_value()))]
-pub fn send_msg(msg: StatusMessage) {
-    let mut stdout = std::io::stdout();
-    write_msg(&mut stdout, &msg).expect("Failed to write message");
-    stdout.flush().expect("Failed to flush stdout");
+#[inline]
+pub fn send_msg(mut tx: impl Write, msg: StatusMessage) {
+    write_msg(&mut tx, &msg).expect("Failed to write message");
+    tx.flush().expect("Failed to flush stream");
 }
 
 trait BlockSink {
