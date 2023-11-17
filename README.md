@@ -91,6 +91,9 @@ $ dd bs=4M if=some-image-file.iso of=/dev/
 ```
 $ dd bs=4M if=some-image-file.iso of=/dev/sdb
 dd: failed to open '/dev/sdb': Permission denied
+```
+> I forgot to type sudo.
+```
 $ sudo dd bs=4M if=some-image-file.iso of=/dev/sdb
 ```
 > There is no output, but I'd like to see the progress.
@@ -121,4 +124,4 @@ To be fair, Rust doesn't have a very comprehensive standard library, and I only 
 
 ### Will the binary ever get bigger?
 
-I want to keep the binary very small. I want to keep the x86_64-linux version under 4MB as an absolute maximum. As of v0.3.0, it's only 2.66MB, which is pretty good!
+I want to keep the binary very small, or at least as small as I can make it. My current soft limit is to keep the x86_64-linux version under 4MB. This value may change with time or as features are added, but I don't want the binary to be anywhere near what an average Electron app is at. As of v0.4.3, it's only 2.77MB, which is not too bad!
