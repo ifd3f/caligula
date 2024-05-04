@@ -256,9 +256,8 @@ impl WritingInfoTable<'_> {
             }
         }
 
-        Table::new(rows)
+        Table::new(rows, [Constraint::Length(16), Constraint::Percentage(100)])
             .style(Style::default())
-            .widths(&[Constraint::Length(16), Constraint::Percentage(100)])
             .block(Block::default().title("Stats").borders(Borders::ALL))
     }
 }

@@ -1,6 +1,5 @@
 use std::io::BufReader;
 use std::panic::set_hook;
-use std::path::PathBuf;
 use std::{
     env,
     fs::File,
@@ -8,7 +7,7 @@ use std::{
 };
 
 use bytesize::ByteSize;
-use interprocess::local_socket::LocalSocketStream;
+use interprocess::local_socket::{prelude::*, GenericFilePath};
 use tracing::{debug, error, info, trace};
 use tracing_unwrap::ResultExt;
 
@@ -37,7 +36,9 @@ pub async fn main() {
 
     let sock = cli_args[2].as_str();
     info!("Opening socket {sock}");
-    let mut stream = LocalSocketStream::connect(PathBuf::from(sock)).unwrap_or_log();
+    let mut stream =
+        LocalSocketStream::connect(sock.to_fs_name::<GenericFilePath>().unwrap_or_log())
+            .unwrap_or_log();
 
     let final_msg = match run(&mut stream, &args) {
         Ok(_) => StatusMessage::Success,
