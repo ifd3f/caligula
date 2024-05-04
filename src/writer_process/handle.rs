@@ -1,14 +1,12 @@
 use crate::ipc_common::read_msg_async;
 use anyhow::Context;
-use interprocess::local_socket::tokio::LocalSocketListener;
-use interprocess::local_socket::tokio::LocalSocketStream;
+use interprocess::local_socket::tokio::prelude::*;
+use interprocess::local_socket::{GenericFilePath, ListenerOptions};
 use process_path::get_executable_path;
 use std::fs::remove_file;
 use std::path::PathBuf;
 use std::{env, pin::Pin};
 use tokio::io::BufReader;
-use tokio_util::compat::FuturesAsyncReadCompatExt;
-use tokio_util::compat::FuturesAsyncWriteCompatExt;
 use tracing::debug;
 use tracing::trace;
 use tracing_unwrap::ResultExt;
@@ -48,7 +46,7 @@ impl Handle {
         let args = serde_json::to_string(args)?;
         debug!(?args, "Converted WriterProcessConfig to JSON");
 
-        let mut socket = ChildSocket::new()?;
+        let mut socket = ChildSocket::new().await?;
 
         let cmd = Command {
             proc: proc.to_string_lossy(),
@@ -72,9 +70,9 @@ impl Handle {
 
         debug!("Waiting for pipe to be opened...");
         let stream: LocalSocketStream = socket.accept().await?;
-        let (rx, tx) = stream.into_split();
-        let mut rx = Box::pin(BufReader::new(rx.compat()));
-        let tx = Box::pin(tx.compat_write());
+        let (rx, tx) = stream.split();
+        let mut rx = Box::pin(BufReader::new(rx));
+        let tx = Box::pin(tx);
 
         trace!("Reading results from child");
         let first_msg = read_next_message(&mut rx).await?;
@@ -131,14 +129,16 @@ struct ChildSocket {
 }
 
 impl ChildSocket {
-    fn new() -> anyhow::Result<Self> {
+    async fn new() -> anyhow::Result<Self> {
         let socket_name: PathBuf =
             env::temp_dir().join(format!(".caligula-{}.sock", std::process::id()));
         debug!(
             socket_name = format!("{}", socket_name.to_string_lossy()),
             "Creating socket"
         );
-        let socket = LocalSocketListener::bind(socket_name.clone())?;
+        let socket = ListenerOptions::new()
+            .name(socket_name.clone().to_fs_name::<GenericFilePath>()?)
+            .create_tokio()?;
 
         Ok(Self {
             socket,
