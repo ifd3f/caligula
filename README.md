@@ -53,13 +53,11 @@ Options:
 | `x86_64-linux`   | ✅               | ✅                | ✅                  |
 | `x86_64-darwin`  | ✅               | ✅                | ✅                  |
 | `aarch64-linux`  | ❌               | ✅                | ✅                  |
-| `aarch64-darwin` | ❌               | ❌                | ✅*                 |
-
-*This is not automated right now. We manually publish this once we remember to build it.
+| `aarch64-darwin` | ✅               | ✅                | ✅                  |
 
 Linux for other architectures theoretically works, but we are not making any guarantees.
 
-We plan on supporting Windows, FreeBSD, and OpenBSD eventually. If you would like support for other OSes and architectures, please file an issue!
+We plan on supporting Windows, FreeBSD, and OpenBSD Eventually™. If you would like support for other OSes and architectures, please file an issue!
 
 ## FAQ
 
