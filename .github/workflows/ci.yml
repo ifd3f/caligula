@@ -81,6 +81,7 @@ jobs:
   make-release-group:
     runs-on: ubuntu-latest
     needs:
+      - ci-aarch64-darwin
       - ci-aarch64-linux
       - ci-x86_64-darwin
       - ci-x86_64-linux
