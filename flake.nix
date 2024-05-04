@@ -33,12 +33,11 @@
         packages = {
           default = self.packages."${system}".caligula;
 
-          lint-script =
-            let path = lib.makeBinPath [ crossHelpers.baseToolchain ];
-            in pkgs.writeScriptBin "lint" ''
-              export PATH=${path}
-              ${./scripts/lint.sh}
-            '';
+          lint-script = pkgs.writeScriptBin "lint.sh" ''
+            #!/bin/sh
+            export PATH=${lib.makeBinPath [ crossHelpers.baseToolchain ]}
+            ${./scripts/lint.sh}
+          '';
 
           caligula = self.packages."${system}"."caligula-${system}";
         }
