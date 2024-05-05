@@ -1,6 +1,7 @@
 use crate::{
     ipc_common::read_msg_async,
     logging::get_log_paths,
+    run_mode::make_writer_spawn_command,
     ui::herder::{
         socket::HerderSocket,
         writer::handle::{StartProcessError, WriterHandle},
@@ -14,9 +15,6 @@ use tracing::{debug, trace};
 use valuable::Valuable;
 
 use crate::escalation::run_escalate;
-use crate::escalation::Command;
-use crate::run_mode::RunMode;
-use crate::run_mode::RUN_MODE_ENV_NAME;
 use crate::writer_process::ipc::{StatusMessage, WriterProcessConfig};
 
 /// Handles the herding of all child processes. This includes lifecycle management
@@ -45,19 +43,11 @@ impl Herder {
             "Read absolute path to this program"
         );
 
-        let args = serde_json::to_string(args)?;
-        debug!(?args, "Converted WriterProcessConfig to JSON");
-
-        let cmd = Command {
-            proc: proc.to_string_lossy(),
-            envs: vec![(RUN_MODE_ENV_NAME.into(), RunMode::Writer.as_str().into())],
-            // Arg order is documented in childproc_common.
-            args: vec![
-                get_log_paths().child.to_string_lossy().into(),
-                self.socket.socket_name().to_string_lossy().into(),
-                args.into(),
-            ],
-        };
+        let cmd = make_writer_spawn_command(
+            self.socket.socket_name().to_string_lossy(),
+            get_log_paths().child.to_string_lossy(),
+            args,
+        );
 
         debug!("Starting child process with command: {:?}", cmd);
         fn modify_cmd(cmd: &mut tokio::process::Command) {
