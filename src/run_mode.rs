@@ -34,12 +34,14 @@ pub const RUN_MODE_ENV_NAME: &str = "__CALIGULA_RUN_MODE";
 pub enum RunMode {
     Main,
     Writer,
+    EscalatedDaemon,
 }
 
 impl RunMode {
     pub fn detect() -> Self {
         match std::env::var(RUN_MODE_ENV_NAME).as_deref() {
             Ok("writer") => Self::Writer,
+            Ok("escalated_daemon") => Self::EscalatedDaemon,
             _ => Self::Main,
         }
     }
@@ -48,6 +50,7 @@ impl RunMode {
         match self {
             RunMode::Main => "main",
             RunMode::Writer => "writer",
+            RunMode::EscalatedDaemon => "escalated_daemon",
         }
     }
 }
