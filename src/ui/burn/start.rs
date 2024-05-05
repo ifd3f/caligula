@@ -9,8 +9,9 @@ use crate::{
     device::WriteTarget,
     logging::LogPaths,
     ui::{
-        burn::{fancy::FancyUI, simple},
+        burn::simple,
         cli::{Interactive, UseSudo},
+        fancy_ui::FancyUI,
         herder::{Herder, StartWriterError, WriterHandle},
         utils::TUICapture,
     },

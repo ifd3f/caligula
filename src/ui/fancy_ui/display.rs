@@ -12,15 +12,11 @@ use tokio::{select, time};
 
 use crate::{
     logging::LogPaths,
-    ui::{
-        burn::{fancy::state::UIEvent, start::BeginParams},
-        herder::WriterHandle,
-        writer_tracking::WriterState,
-    },
+    ui::{burn::start::BeginParams, herder::WriterHandle, writer_tracking::WriterState},
 };
 
 use super::{
-    state::{Quit, State},
+    state::{Quit, State, UIEvent},
     widgets::{SpeedChart, WriterProgressBar, WritingInfoTable},
 };
 
