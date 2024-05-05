@@ -11,7 +11,10 @@ use crate::{
     ui::{
         burn::{fancy::FancyUI, simple},
         cli::{Interactive, UseSudo},
-        herder::writer::handle::{StartProcessError, WriterHandle},
+        herder::{
+            writer::handle::{StartProcessError, WriterHandle},
+            Herder,
+        },
         utils::TUICapture,
     },
     writer_process::ipc::{ErrorType, WriterProcessConfig},
@@ -54,11 +57,12 @@ impl BeginParams {
 
 #[tracing::instrument(skip_all, fields(root, interactive))]
 pub async fn try_start_burn(
+    herder: &mut Herder,
     args: &WriterProcessConfig,
     root: UseSudo,
     interactive: bool,
 ) -> anyhow::Result<WriterHandle> {
-    let err = match WriterHandle::start(args, false).await {
+    let err = match herder.start_writer(args, false).await {
         Ok(p) => {
             return Ok(p);
         }
@@ -82,11 +86,11 @@ pub async fn try_start_burn(
                 .prompt()?;
 
                 if response {
-                    return WriterHandle::start(args, true).await;
+                    return herder.start_writer(args, true).await;
                 }
             }
             (UseSudo::Always, _) => {
-                return WriterHandle::start(args, true).await;
+                return herder.start_writer(args, true).await;
             }
             _ => {}
         }
