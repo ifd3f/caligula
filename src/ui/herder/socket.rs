@@ -12,9 +12,8 @@ pub struct HerderSocket {
 }
 
 impl HerderSocket {
-    pub async fn new() -> anyhow::Result<Self> {
-        let socket_name: PathBuf =
-            std::env::temp_dir().join(format!(".caligula-{}.sock", std::process::id()));
+    pub async fn new(state_dir: impl AsRef<Path>) -> anyhow::Result<Self> {
+        let socket_name: PathBuf = state_dir.as_ref().join("caligula.sock");
         debug!(
             socket_name = format!("{}", socket_name.to_string_lossy()),
             "Creating socket"

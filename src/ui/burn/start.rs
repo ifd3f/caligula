@@ -1,4 +1,4 @@
-use std::{fmt::Display, fs::File, path::PathBuf};
+use std::{fmt::Display, fs::File, path::PathBuf, sync::Arc};
 
 use bytesize::ByteSize;
 use inquire::Confirm;
@@ -7,6 +7,7 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::WriteTarget,
+    logging::LogPaths,
     ui::{
         burn::{fancy::FancyUI, simple},
         cli::{Interactive, UseSudo},
@@ -98,6 +99,7 @@ pub async fn begin_writing(
     interactive: Interactive,
     params: BeginParams,
     handle: WriterHandle,
+    log_paths: Arc<LogPaths>,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
     if interactive.is_interactive() {
@@ -106,7 +108,9 @@ pub async fn begin_writing(
         let terminal = tui.terminal();
 
         // create app and run it
-        FancyUI::new(&params, handle, terminal).show().await?;
+        FancyUI::new(&params, handle, terminal, log_paths)
+            .show()
+            .await?;
         debug!("Closing TUI");
     } else {
         debug!("Using simple TUI");
