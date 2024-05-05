@@ -43,9 +43,10 @@ impl Herder {
             "Read absolute path to this program"
         );
 
+        let log_path = get_log_paths().writer(0);
         let cmd = make_writer_spawn_command(
             self.socket.socket_name().to_string_lossy(),
-            get_log_paths().child.to_string_lossy(),
+            log_path.to_string_lossy(),
             args,
         );
 

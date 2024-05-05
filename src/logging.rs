@@ -11,8 +11,21 @@ use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone)]
 pub struct LogPaths {
-    pub main: PathBuf,
-    pub child: PathBuf,
+    log_dir: PathBuf,
+}
+
+impl LogPaths {
+    pub fn main(&self) -> PathBuf {
+        self.log_dir.join("main.log")
+    }
+
+    pub fn writer(&self, id: u64) -> PathBuf {
+        self.log_dir.join(format!("writer-{id}.log"))
+    }
+
+    pub fn log_dir(&self) -> &PathBuf {
+        &self.log_dir
+    }
 }
 
 static LOG_PATHS: StaticCell<LogPaths> = StaticCell::new();
@@ -36,7 +49,7 @@ pub fn init_logging_parent() {
         eprintln!("{}", get_bug_report_msg());
     }));
 
-    let write_path = get_log_paths().main.clone();
+    let write_path = get_log_paths().main().clone();
 
     init_tracing_subscriber(write_path);
 }
@@ -65,7 +78,7 @@ pub fn get_log_paths() -> &'static LogPaths {
 }
 
 fn init_log_paths() {
-    let log_prefix = if cfg!(debug_assertions) {
+    let log_dir = if cfg!(debug_assertions) {
         PathBuf::from("dev")
     } else {
         env::temp_dir().join(format!(
@@ -77,12 +90,9 @@ fn init_log_paths() {
         ))
     };
 
-    create_dir_all(log_prefix.parent().unwrap()).unwrap();
+    create_dir_all(&log_dir).unwrap();
 
-    let pref = LOG_PATHS.init(LogPaths {
-        main: log_prefix.with_extension("main.log").into(),
-        child: log_prefix.with_extension("child.log").into(),
-    });
+    let pref = LOG_PATHS.init(LogPaths { log_dir });
 
     unsafe {
         // This is safe because we are the only writer, and we
@@ -95,10 +105,8 @@ pub fn get_bug_report_msg() -> String {
     let paths = get_log_paths();
 
     format!(
-        "Please report bugs to https://github.com/ifd3f/caligula/issues and attach the following log files, if they exist:\n\
-          - {}\n\
-          - {}",
-        paths.main.to_string_lossy(),
-        paths.child.to_string_lossy()
+        "Please report bugs to https://github.com/ifd3f/caligula/issues and attach the \
+        log files in {}",
+        paths.log_dir().to_string_lossy()
     )
 }
