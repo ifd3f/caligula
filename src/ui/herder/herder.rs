@@ -1,5 +1,6 @@
 use crate::{
     ipc_common::read_msg_async,
+    logging::get_log_paths,
     ui::herder::{
         socket::HerderSocket,
         writer::handle::{StartProcessError, WriterHandle},
@@ -50,9 +51,11 @@ impl Herder {
         let cmd = Command {
             proc: proc.to_string_lossy(),
             envs: vec![(RUN_MODE_ENV_NAME.into(), RunMode::Writer.as_str().into())],
+            // Arg order is documented in childproc_common.
             args: vec![
-                args.into(),
+                get_log_paths().child.to_string_lossy().into(),
                 self.socket.socket_name().to_string_lossy().into(),
+                args.into(),
             ],
         };
 

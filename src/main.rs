@@ -1,6 +1,7 @@
 use run_mode::RunMode;
 
 mod byteseries;
+mod childproc_common;
 mod compression;
 mod device;
 mod escalated_daemon;

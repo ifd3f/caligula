@@ -7,7 +7,6 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::WriteTarget,
-    logging::get_log_paths,
     ui::{
         burn::{fancy::FancyUI, simple},
         cli::{Interactive, UseSudo},
@@ -47,7 +46,6 @@ impl BeginParams {
         WriterProcessConfig {
             dest: self.target.devnode.clone(),
             src: self.input_file.clone(),
-            logfile: get_log_paths().child.clone(),
             verify: true,
             compression: self.compression,
             target_type: self.target.target_type,

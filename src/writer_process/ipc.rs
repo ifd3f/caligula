@@ -11,7 +11,6 @@ use crate::device::Type;
 pub struct WriterProcessConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
-    pub logfile: PathBuf,
     pub verify: bool,
     pub compression: CompressionFormat,
     pub target_type: Type,
