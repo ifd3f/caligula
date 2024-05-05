@@ -12,7 +12,7 @@ use tokio::{select, time};
 
 use crate::{
     logging::LogPaths,
-    ui::{burn::start::BeginParams, herder::WriterHandle, writer_tracking::WriterState},
+    ui::{herder::WriterHandle, start::BeginParams, writer_tracking::WriterState},
 };
 
 use super::{

@@ -1,18 +1,15 @@
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-    device::WriteTarget,
     logging::{init_logging_parent, LogPaths},
     ui::{
-        ask_hash::ask_hash,
-        ask_outfile,
-        burn::start::{begin_writing, try_start_burn, BeginParams},
         cli::{Args, Command},
         herder::{Herder, HerderSocket},
+        simple_ui::do_setup_wizard,
+        start::{begin_writing, try_start_burn},
     },
     util::ensure_state_dir,
 };
-use ask_outfile::{ask_compression, confirm_write};
 use clap::Parser;
 use inquire::InquireError;
 use tracing::debug;
@@ -51,20 +48,9 @@ async fn inner_main(state_dir: PathBuf, log_paths: LogPaths) -> anyhow::Result<(
 
     let log_paths = Arc::new(log_paths);
 
-    let compression = ask_compression(&args)?;
-
-    let _hash_info = ask_hash(&args, compression)?;
-
-    let target = match &args.out {
-        Some(f) => WriteTarget::try_from(f.as_ref())?,
-        None => ask_outfile(&args)?,
-    };
-
-    let begin_params = BeginParams::new(args.input.clone(), compression, target)?;
-    if !confirm_write(&args, &begin_params)? {
-        eprintln!("Aborting.");
+    let Some(begin_params) = do_setup_wizard(&args)? else {
         return Ok(());
-    }
+    };
 
     let socket = HerderSocket::new(state_dir).await?;
     let mut herder = Herder::new(socket, log_paths.clone());
