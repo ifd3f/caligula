@@ -11,13 +11,10 @@ use crate::{
     ui::{
         burn::{fancy::FancyUI, simple},
         cli::{Interactive, UseSudo},
+        herder::writer::handle::{StartProcessError, WriterHandle},
         utils::TUICapture,
     },
-    writer_process::{
-        self,
-        handle::StartProcessError,
-        ipc::{ErrorType, WriterProcessConfig},
-    },
+    writer_process::ipc::{ErrorType, WriterProcessConfig},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -60,8 +57,8 @@ pub async fn try_start_burn(
     args: &WriterProcessConfig,
     root: UseSudo,
     interactive: bool,
-) -> anyhow::Result<writer_process::Handle> {
-    let err = match writer_process::Handle::start(args, false).await {
+) -> anyhow::Result<WriterHandle> {
+    let err = match WriterHandle::start(args, false).await {
         Ok(p) => {
             return Ok(p);
         }
@@ -85,11 +82,11 @@ pub async fn try_start_burn(
                 .prompt()?;
 
                 if response {
-                    return writer_process::Handle::start(args, true).await;
+                    return WriterHandle::start(args, true).await;
                 }
             }
             (UseSudo::Always, _) => {
-                return writer_process::Handle::start(args, true).await;
+                return WriterHandle::start(args, true).await;
             }
             _ => {}
         }
@@ -101,7 +98,7 @@ pub async fn try_start_burn(
 pub async fn begin_writing(
     interactive: Interactive,
     params: BeginParams,
-    handle: writer_process::Handle,
+    handle: WriterHandle,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
     if interactive.is_interactive() {

@@ -3,6 +3,7 @@ use run_mode::RunMode;
 mod byteseries;
 mod compression;
 mod device;
+mod escalated_daemon;
 mod escalation;
 mod hash;
 mod ipc_common;
@@ -11,7 +12,6 @@ mod native;
 mod run_mode;
 mod ui;
 mod writer_process;
-mod escalated_daemon;
 
 fn main() {
     match RunMode::detect() {

@@ -1,15 +1,10 @@
-use crate::ipc_common::read_msg_async;
+use crate::{ipc_common::read_msg_async, ui::herder::socket::HerderSocket};
 use anyhow::Context;
 use interprocess::local_socket::tokio::prelude::*;
-use interprocess::local_socket::{GenericFilePath, ListenerOptions};
 use process_path::get_executable_path;
-use std::fs::remove_file;
-use std::path::PathBuf;
-use std::{env, pin::Pin};
+use std::pin::Pin;
 use tokio::io::BufReader;
-use tracing::debug;
-use tracing::trace;
-use tracing_unwrap::ResultExt;
+use tracing::{debug, trace};
 use valuable::Valuable;
 
 use tokio::{
@@ -21,19 +16,17 @@ use crate::escalation::run_escalate;
 use crate::escalation::Command;
 use crate::run_mode::RunMode;
 use crate::run_mode::RUN_MODE_ENV_NAME;
+use crate::writer_process::ipc::{ErrorType, InitialInfo, StatusMessage, WriterProcessConfig};
 
-use super::ipc::InitialInfo;
-use super::ipc::{ErrorType, StatusMessage, WriterProcessConfig};
-
-pub struct Handle {
+pub struct WriterHandle {
     _child: Child,
-    _socket: ChildSocket,
+    _socket: HerderSocket,
     initial_info: InitialInfo,
     rx: Pin<Box<dyn AsyncBufRead>>,
     _tx: Pin<Box<dyn AsyncWrite>>,
 }
 
-impl Handle {
+impl WriterHandle {
     pub async fn start(args: &WriterProcessConfig, escalate: bool) -> anyhow::Result<Self> {
         // Get path to this process
         let proc = get_executable_path().unwrap();
@@ -46,12 +39,12 @@ impl Handle {
         let args = serde_json::to_string(args)?;
         debug!(?args, "Converted WriterProcessConfig to JSON");
 
-        let mut socket = ChildSocket::new().await?;
+        let mut socket = HerderSocket::new().await?;
 
         let cmd = Command {
             proc: proc.to_string_lossy(),
             envs: vec![(RUN_MODE_ENV_NAME.into(), RunMode::Writer.as_str().into())],
-            args: vec![args.into(), socket.socket_name.to_string_lossy().into()],
+            args: vec![args.into(), socket.socket_name().to_string_lossy().into()],
         };
 
         debug!("Starting child process with command: {:?}", cmd);
@@ -121,43 +114,7 @@ async fn read_next_message(rx: impl AsyncBufRead + Unpin) -> anyhow::Result<Opti
     Ok(Some(message))
 }
 
-/// A managed named socket. It gets auto-deleted on drop.
-#[derive(Debug)]
-struct ChildSocket {
-    socket_name: PathBuf,
-    socket: LocalSocketListener,
-}
-
-impl ChildSocket {
-    async fn new() -> anyhow::Result<Self> {
-        let socket_name: PathBuf =
-            env::temp_dir().join(format!(".caligula-{}.sock", std::process::id()));
-        debug!(
-            socket_name = format!("{}", socket_name.to_string_lossy()),
-            "Creating socket"
-        );
-        let socket = ListenerOptions::new()
-            .name(socket_name.clone().to_fs_name::<GenericFilePath>()?)
-            .create_tokio()?;
-
-        Ok(Self {
-            socket,
-            socket_name,
-        })
-    }
-
-    async fn accept(&mut self) -> anyhow::Result<LocalSocketStream> {
-        Ok(self.socket.accept().await?)
-    }
-}
-
-impl Drop for ChildSocket {
-    fn drop(&mut self) {
-        remove_file(&self.socket_name).unwrap_or_log();
-    }
-}
-
-impl core::fmt::Debug for Handle {
+impl core::fmt::Debug for WriterHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Handle")
             .field("_child", &self._child)
