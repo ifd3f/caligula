@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use crate::escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter};
 use crate::ipc_common::write_msg_async;
+use crate::logging::LogPaths;
 use crate::run_mode::make_escalated_daemon_spawn_command;
 use crate::ui::herder::handle::ChildHandle;
 use crate::{
-    ipc_common::read_msg_async, logging::get_log_paths, run_mode::make_writer_spawn_command,
+    ipc_common::read_msg_async, run_mode::make_writer_spawn_command,
     ui::herder::socket::HerderSocket, writer_process::ipc::ErrorType,
 };
 use anyhow::Context;
@@ -23,14 +26,16 @@ use super::handle::WriterHandle;
 /// a farmer.
 pub struct Herder {
     socket: HerderSocket,
+    log_paths: Arc<LogPaths>,
     escalated_daemon: Option<ChildHandle>,
 }
 
 impl Herder {
-    pub fn new(socket: HerderSocket) -> Self {
+    pub fn new(socket: HerderSocket, log_paths: Arc<LogPaths>) -> Self {
         Self {
             socket,
             escalated_daemon: None,
+            log_paths,
         }
     }
 
@@ -38,7 +43,7 @@ impl Herder {
     async fn ensure_escalated_daemon(&mut self) -> anyhow::Result<&mut ChildHandle> {
         // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
         if self.escalated_daemon.is_none() {
-            let log_path = get_log_paths().escalated_daemon();
+            let log_path = self.log_paths.escalated_daemon();
             let cmd = make_escalated_daemon_spawn_command(
                 self.socket.socket_name().to_string_lossy(),
                 log_path.to_string_lossy(),
@@ -69,7 +74,7 @@ impl Herder {
         args: &WriterProcessConfig,
         escalate: bool,
     ) -> anyhow::Result<WriterHandle> {
-        let log_path = get_log_paths().writer(0);
+        let log_path = self.log_paths.writer(0);
 
         let child = if escalate {
             let daemon = self.ensure_escalated_daemon().await?;

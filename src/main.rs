@@ -12,6 +12,7 @@ mod logging;
 mod native;
 mod run_mode;
 mod ui;
+mod util;
 mod writer_process;
 
 fn main() {

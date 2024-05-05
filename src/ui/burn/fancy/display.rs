@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 
 use crossterm::event::EventStream;
 use futures::StreamExt;
@@ -11,7 +11,7 @@ use ratatui::{
 use tokio::{select, time};
 
 use crate::{
-    logging::get_bug_report_msg,
+    logging::LogPaths,
     ui::{
         burn::{fancy::state::UIEvent, start::BeginParams},
         herder::WriterHandle,
@@ -32,6 +32,7 @@ where
     events: EventStream,
     handle: Option<WriterHandle>,
     state: State,
+    log_paths: Arc<LogPaths>,
 }
 
 impl<'a, B> FancyUI<'a, B>
@@ -39,13 +40,19 @@ where
     B: Backend,
 {
     #[tracing::instrument(skip_all)]
-    pub fn new(params: &BeginParams, handle: WriterHandle, terminal: &'a mut Terminal<B>) -> Self {
+    pub fn new(
+        params: &BeginParams,
+        handle: WriterHandle,
+        terminal: &'a mut Terminal<B>,
+        log_paths: Arc<LogPaths>,
+    ) -> Self {
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,
             handle: Some(handle),
             events: EventStream::new(),
             state: State::initial(Instant::now(), &params, input_file_bytes),
+            log_paths,
         }
     }
 
@@ -78,7 +85,7 @@ where
             self.handle = None;
         }
 
-        draw(&mut self.state, &mut self.terminal)?;
+        draw(&mut self.state, &mut self.terminal, &self.log_paths)?;
         Ok(self)
     }
 }
@@ -136,6 +143,7 @@ impl From<Rect> for ComputedLayout {
 pub fn draw(
     state: &mut State,
     terminal: &mut Terminal<impl ratatui::backend::Backend>,
+    log_paths: &LogPaths,
 ) -> anyhow::Result<()> {
     let progress_bar = WriterProgressBar::from_writer(&state.child);
 
@@ -168,7 +176,7 @@ pub fn draw(
 
         if let Some(error) = error {
             f.render_widget(
-                Paragraph::new(format!("{error}\n{}", get_bug_report_msg()))
+                Paragraph::new(format!("{error}\n{}", log_paths.get_bug_report_msg()))
                     .block(
                         Block::default()
                             .title("!!! ERROR !!!")

@@ -65,7 +65,7 @@ async fn event_loop(socket: &str, mut stream: impl AsyncBufRead + Unpin) -> anyh
         tokio::spawn(
             async move {
                 match child.wait().await {
-                    Ok(r) => info!("Exited with exit code {r}"),
+                    Ok(r) => info!("Child exited with exit code {r}"),
                     Err(e) => error!("Failed to wait on child: {e}"),
                 }
             }
