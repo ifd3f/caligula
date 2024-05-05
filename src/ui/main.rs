@@ -1,6 +1,8 @@
+use std::{path::PathBuf, sync::Arc};
+
 use crate::{
     device::WriteTarget,
-    logging::init_logging_parent,
+    logging::{init_logging_parent, LogPaths},
     ui::{
         ask_hash::ask_hash,
         ask_outfile,
@@ -8,6 +10,7 @@ use crate::{
         cli::{Args, Command},
         herder::{Herder, HerderSocket},
     },
+    util::ensure_state_dir,
 };
 use ask_outfile::{ask_compression, confirm_write};
 use clap::Parser;
@@ -16,10 +19,12 @@ use tracing::debug;
 
 #[tokio::main]
 pub async fn main() {
-    init_logging_parent();
+    let state_dir = ensure_state_dir().await.unwrap();
+    let log_paths = LogPaths::init(&state_dir);
+    init_logging_parent(&log_paths);
 
     debug!("Starting primary process");
-    match inner_main().await {
+    match inner_main(state_dir, log_paths).await {
         Ok(_) => (),
         Err(e) => handle_toplevel_error(e),
     }
@@ -38,11 +43,13 @@ fn handle_toplevel_error(err: anyhow::Error) {
     }
 }
 
-async fn inner_main() -> anyhow::Result<()> {
+async fn inner_main(state_dir: PathBuf, log_paths: LogPaths) -> anyhow::Result<()> {
     let args = Args::parse();
     let args = match args.command {
         Command::Burn(a) => a,
     };
+
+    let log_paths = Arc::new(log_paths);
 
     let compression = ask_compression(&args)?;
 
@@ -59,8 +66,8 @@ async fn inner_main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let socket = HerderSocket::new().await?;
-    let mut herder = Herder::new(socket);
+    let socket = HerderSocket::new(state_dir).await?;
+    let mut herder = Herder::new(socket, log_paths.clone());
     let handle = try_start_burn(
         &mut herder,
         &begin_params.make_child_config(),
@@ -68,7 +75,7 @@ async fn inner_main() -> anyhow::Result<()> {
         args.interactive.is_interactive(),
     )
     .await?;
-    begin_writing(args.interactive, begin_params, handle).await?;
+    begin_writing(args.interactive, begin_params, handle, log_paths).await?;
 
     debug!("Done!");
     Ok(())
