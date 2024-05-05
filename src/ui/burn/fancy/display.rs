@@ -14,7 +14,8 @@ use crate::{
     logging::get_bug_report_msg,
     ui::{
         burn::{fancy::state::UIEvent, start::BeginParams},
-        herder::writer::{handle::WriterHandle, state_tracking::WriterState},
+        herder::WriterHandle,
+        writer_tracking::WriterState,
     },
 };
 

@@ -1,21 +1,18 @@
+use crate::ui::herder::handle::ChildHandle;
 use crate::{
-    ipc_common::read_msg_async,
-    logging::get_log_paths,
-    run_mode::make_writer_spawn_command,
-    ui::herder::{
-        socket::HerderSocket,
-        writer::handle::{StartProcessError, WriterHandle},
-    },
+    ipc_common::read_msg_async, logging::get_log_paths, run_mode::make_writer_spawn_command,
+    ui::herder::socket::HerderSocket, writer_process::ipc::ErrorType,
 };
 use anyhow::Context;
 use interprocess::local_socket::tokio::prelude::*;
 use process_path::get_executable_path;
-use tokio::io::BufReader;
 use tracing::{debug, trace};
 use valuable::Valuable;
 
 use crate::escalation::run_escalate;
 use crate::writer_process::ipc::{StatusMessage, WriterProcessConfig};
+
+use super::handle::WriterHandle;
 
 /// Handles the herding of all child processes. This includes lifecycle management
 /// and communication.
@@ -66,12 +63,10 @@ impl Herder {
 
         debug!("Waiting for pipe to be opened...");
         let stream: LocalSocketStream = self.socket.accept().await?;
-        let (rx, tx) = stream.split();
-        let mut rx = Box::pin(BufReader::new(rx));
-        let tx = Box::pin(tx);
+        let mut handle = ChildHandle::new(Some(child), stream);
 
         trace!("Reading results from child");
-        let first_msg = read_msg_async::<StatusMessage>(&mut rx).await?;
+        let first_msg = read_msg_async::<StatusMessage>(&mut handle.rx).await?;
         debug!(
             first_msg = first_msg.as_value(),
             "Read raw result from child"
@@ -79,10 +74,21 @@ impl Herder {
 
         let initial_info = match first_msg {
             StatusMessage::InitSuccess(i) => Ok(i),
-            StatusMessage::Error(t) => Err(StartProcessError::Failed(Some(t))),
-            other => Err(StartProcessError::UnexpectedFirstStatus(other)),
+            StatusMessage::Error(t) => Err(StartWriterError::Failed(Some(t))),
+            other => Err(StartWriterError::UnexpectedFirstStatus(other)),
         }?;
 
-        Ok(WriterHandle::new(Some(child), initial_info, rx, tx))
+        Ok(WriterHandle {
+            handle,
+            initial_info,
+        })
     }
+}
+
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum StartWriterError {
+    #[error("Unexpected first status: {0:?}")]
+    UnexpectedFirstStatus(StatusMessage),
+    #[error("Explicit failure signaled: {0:?}")]
+    Failed(Option<ErrorType>),
 }

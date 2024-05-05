@@ -5,5 +5,6 @@ pub mod cli;
 mod herder;
 pub mod main;
 pub mod utils;
+mod writer_tracking;
 
 pub use ask_outfile::*;

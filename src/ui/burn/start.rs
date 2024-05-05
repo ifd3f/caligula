@@ -10,10 +10,7 @@ use crate::{
     ui::{
         burn::{fancy::FancyUI, simple},
         cli::{Interactive, UseSudo},
-        herder::{
-            writer::handle::{StartProcessError, WriterHandle},
-            Herder,
-        },
+        herder::{Herder, StartWriterError, WriterHandle},
         utils::TUICapture,
     },
     writer_process::ipc::{ErrorType, WriterProcessConfig},
@@ -67,9 +64,9 @@ pub async fn try_start_burn(
         Err(e) => e,
     };
 
-    let dc = err.downcast::<StartProcessError>()?;
+    let dc = err.downcast::<StartWriterError>()?;
 
-    if let StartProcessError::Failed(Some(ErrorType::PermissionDenied)) = &dc {
+    if let StartWriterError::Failed(Some(ErrorType::PermissionDenied)) = &dc {
         match (root, interactive) {
             (UseSudo::Ask, true) => {
                 debug!("Failure due to insufficient perms, asking user to escalate");

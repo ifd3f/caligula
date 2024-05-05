@@ -4,7 +4,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
     compression::CompressionFormat,
-    ui::herder::writer::{handle::WriterHandle, state_tracking::WriterState},
+    ui::{herder::WriterHandle, writer_tracking::WriterState},
 };
 
 pub async fn run_simple_ui(mut handle: WriterHandle, cf: CompressionFormat) -> anyhow::Result<()> {

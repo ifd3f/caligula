@@ -12,7 +12,7 @@ use ratatui::{
     },
 };
 
-use crate::ui::herder::writer::state_tracking::WriterState;
+use crate::ui::writer_tracking::WriterState;
 
 pub struct SpeedChart<'a> {
     pub state: &'a WriterState,
