@@ -70,9 +70,6 @@ impl Herder {
         escalate: bool,
     ) -> anyhow::Result<WriterHandle> {
         let log_path = get_log_paths().writer(0);
-        fn modify_cmd(cmd: &mut tokio::process::Command) {
-            cmd.kill_on_drop(true);
-        }
 
         let child = if escalate {
             let daemon = self.ensure_escalated_daemon().await?;
@@ -94,7 +91,7 @@ impl Herder {
             debug!("Directly spawning child process with command: {:?}", cmd);
 
             let mut cmd = tokio::process::Command::from(cmd);
-            modify_cmd(&mut cmd);
+            cmd.kill_on_drop(true);
             Some(cmd.spawn().context("Failed to spawn child process")?)
         };
 
