@@ -12,9 +12,8 @@ use inquire::{Select, Text};
 use crate::{
     compression::{decompress, CompressionFormat},
     hash::{parse_hash_input, FileHashInfo, HashAlg, Hashing},
+    ui::cli::{BurnArgs, HashArg, HashOf},
 };
-
-use super::cli::{BurnArgs, HashArg, HashOf};
 
 #[tracing::instrument(skip_all, fields(cf))]
 pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {

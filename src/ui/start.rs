@@ -9,10 +9,10 @@ use crate::{
     device::WriteTarget,
     logging::LogPaths,
     ui::{
-        burn::simple,
         cli::{Interactive, UseSudo},
         fancy_ui::FancyUI,
         herder::{Herder, StartWriterError, WriterHandle},
+        simple_ui::run_simple_burning_ui,
         utils::TUICapture,
     },
     writer_process::ipc::{ErrorType, WriterProcessConfig},
@@ -115,7 +115,7 @@ pub async fn begin_writing(
         debug!("Closing TUI");
     } else {
         debug!("Using simple TUI");
-        simple::run_simple_ui(handle, params.compression).await?;
+        run_simple_burning_ui(handle, params.compression).await?;
     }
 
     Ok(())

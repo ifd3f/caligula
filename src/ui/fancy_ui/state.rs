@@ -4,7 +4,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::info;
 
 use crate::{
-    ui::{burn::start::BeginParams, writer_tracking::WriterState},
+    ui::{start::BeginParams, writer_tracking::WriterState},
     writer_process::ipc::StatusMessage,
 };
 

@@ -6,10 +6,8 @@ use tracing::debug;
 use crate::{
     compression::{CompressionArg, CompressionFormat, DecompressError, AVAILABLE_FORMATS},
     device::{enumerate_devices, Removable, WriteTarget},
-    ui::cli::BurnArgs,
+    ui::{cli::BurnArgs, start::BeginParams},
 };
-
-use super::burn::start::BeginParams;
 
 #[tracing::instrument(skip_all)]
 pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
