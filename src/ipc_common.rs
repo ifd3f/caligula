@@ -4,7 +4,7 @@ use anyhow::Context;
 use bincode::Options;
 use byteorder::{BigEndian, WriteBytesExt};
 use serde::{de::DeserializeOwned, Serialize};
-use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Common bincode options to use for inter-process communication.
 #[inline]
@@ -20,6 +20,17 @@ pub fn write_msg<T: Serialize>(mut w: impl Write, msg: &T) -> anyhow::Result<()>
     w.write_u32::<BigEndian>(buf.len() as u32)?;
     w.write_all(&buf)?;
     w.flush()?;
+    Ok(())
+}
+
+pub async fn write_msg_async<T: Serialize>(
+    mut w: impl AsyncWrite + Unpin,
+    msg: &T,
+) -> anyhow::Result<()> {
+    let buf = bincode_options().serialize(msg)?;
+    w.write_u32(buf.len() as u32).await?;
+    w.write_all(&buf).await?;
+    w.flush().await?;
     Ok(())
 }
 

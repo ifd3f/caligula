@@ -4,7 +4,10 @@ use process_path::get_executable_path;
 use serde::Serialize;
 use valuable::Valuable;
 
-use crate::{escalation::Command, writer_process::ipc::WriterProcessConfig};
+use crate::{
+    escalated_daemon::ipc::EscalatedDaemonInitConfig, escalation::Command,
+    writer_process::ipc::WriterProcessConfig,
+};
 
 pub const RUN_MODE_ENV_NAME: &str = "__CALIGULA_RUN_MODE";
 
@@ -90,4 +93,12 @@ pub fn make_writer_spawn_command<'a>(
     init_config: &WriterProcessConfig,
 ) -> Command<'a> {
     make_spawn_command(socket, log_path, RunMode::Writer, init_config)
+}
+
+pub fn make_escalated_daemon_spawn_command<'a>(
+    socket: Cow<'a, str>,
+    log_path: Cow<'a, str>,
+    init_config: &EscalatedDaemonInitConfig,
+) -> Command<'a> {
+    make_spawn_command(socket, log_path, RunMode::EscalatedDaemon, init_config)
 }

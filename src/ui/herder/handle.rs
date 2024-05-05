@@ -1,10 +1,10 @@
 use crate::{ipc_common::read_msg_async, writer_process::ipc::InitialInfo};
 use std::pin::Pin;
 
-use interprocess::local_socket::tokio::{prelude::*, RecvHalf};
+use interprocess::local_socket::tokio::{prelude::*, RecvHalf, SendHalf};
 use serde::de::DeserializeOwned;
 use tokio::{
-    io::{AsyncWrite, BufReader},
+    io::{BufReader, BufWriter},
     process::Child,
 };
 
@@ -18,15 +18,15 @@ pub struct ChildHandle {
     /// process. So, we own a handle to it.
     pub(super) child: Option<Child>,
     pub(super) rx: Pin<Box<BufReader<RecvHalf>>>,
-    pub(super) _tx: Pin<Box<dyn AsyncWrite>>,
+    pub(super) tx: Pin<Box<BufWriter<SendHalf>>>,
 }
 
 impl ChildHandle {
     pub fn new(child: Option<Child>, stream: LocalSocketStream) -> ChildHandle {
         let (rx, tx) = stream.split();
         let rx = Box::pin(BufReader::new(rx));
-        let tx = Box::pin(tx);
-        Self { child, rx, _tx: tx }
+        let tx = Box::pin(BufWriter::new(tx));
+        Self { child, rx, tx }
     }
 
     pub async fn next_message<T: DeserializeOwned>(&mut self) -> anyhow::Result<T> {

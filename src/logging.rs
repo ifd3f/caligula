@@ -19,6 +19,10 @@ impl LogPaths {
         self.log_dir.join("main.log")
     }
 
+    pub fn escalated_daemon(&self) -> PathBuf {
+        self.log_dir.join("escalated.log")
+    }
+
     pub fn writer(&self, id: u64) -> PathBuf {
         self.log_dir.join(format!("writer-{id}.log"))
     }

@@ -1,3 +1,6 @@
+use crate::escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter};
+use crate::ipc_common::write_msg_async;
+use crate::run_mode::make_escalated_daemon_spawn_command;
 use crate::ui::herder::handle::ChildHandle;
 use crate::{
     ipc_common::read_msg_async, logging::get_log_paths, run_mode::make_writer_spawn_command,
@@ -5,7 +8,6 @@ use crate::{
 };
 use anyhow::Context;
 use interprocess::local_socket::tokio::prelude::*;
-use process_path::get_executable_path;
 use tracing::{debug, trace};
 use valuable::Valuable;
 
@@ -17,53 +19,88 @@ use super::handle::WriterHandle;
 /// Handles the herding of all child processes. This includes lifecycle management
 /// and communication.
 ///
-/// Why "Herder"? It's a horse, and horses are herded. I think. I'm not a farmer.
+/// Why "Herder"? Caligula liked his horse, and horses are herded. I think. I'm not
+/// a farmer.
 pub struct Herder {
     socket: HerderSocket,
+    escalated_daemon: Option<ChildHandle>,
 }
 
 impl Herder {
     pub fn new(socket: HerderSocket) -> Self {
-        Self { socket }
+        Self {
+            socket,
+            escalated_daemon: None,
+        }
     }
 
+    #[tracing::instrument(skip_all)]
+    async fn ensure_escalated_daemon(&mut self) -> anyhow::Result<&mut ChildHandle> {
+        // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
+        if self.escalated_daemon.is_none() {
+            let log_path = get_log_paths().escalated_daemon();
+            let cmd = make_escalated_daemon_spawn_command(
+                self.socket.socket_name().to_string_lossy(),
+                log_path.to_string_lossy(),
+                &EscalatedDaemonInitConfig {},
+            );
+
+            debug!("Starting child process with command: {:?}", cmd);
+            fn modify_cmd(cmd: &mut tokio::process::Command) {
+                cmd.kill_on_drop(true);
+            }
+            let child = run_escalate(&cmd, modify_cmd)
+                .await
+                .context("Failed to spawn escalated daemon process")?;
+
+            debug!(?child, "Process spawned, waiting for pipe to be opened...");
+            let stream: LocalSocketStream = self.socket.accept().await?;
+            let handle = ChildHandle::new(Some(child), stream);
+
+            self.escalated_daemon = Some(handle);
+        }
+
+        Ok(self.escalated_daemon.as_mut().unwrap())
+    }
+
+    #[tracing::instrument(skip_all, fields(escalate))]
     pub async fn start_writer(
         &mut self,
         args: &WriterProcessConfig,
         escalate: bool,
     ) -> anyhow::Result<WriterHandle> {
-        // Get path to this process
-        let proc = get_executable_path().unwrap();
-
-        debug!(
-            proc = proc.to_string_lossy().to_string(),
-            "Read absolute path to this program"
-        );
-
         let log_path = get_log_paths().writer(0);
-        let cmd = make_writer_spawn_command(
-            self.socket.socket_name().to_string_lossy(),
-            log_path.to_string_lossy(),
-            args,
-        );
-
-        debug!("Starting child process with command: {:?}", cmd);
         fn modify_cmd(cmd: &mut tokio::process::Command) {
             cmd.kill_on_drop(true);
         }
+
         let child = if escalate {
-            run_escalate(&cmd, modify_cmd)
-                .await
-                .context("Failed to spawn child process")?
+            let daemon = self.ensure_escalated_daemon().await?;
+            write_msg_async(
+                &mut daemon.tx,
+                &SpawnWriter {
+                    log_file: log_path.to_string_lossy().to_string(),
+                    init_config: args.clone(),
+                },
+            )
+            .await?;
+            None
         } else {
+            let cmd = make_writer_spawn_command(
+                self.socket.socket_name().to_string_lossy(),
+                log_path.to_string_lossy(),
+                args,
+            );
+            debug!("Directly spawning child process with command: {:?}", cmd);
+
             let mut cmd = tokio::process::Command::from(cmd);
             modify_cmd(&mut cmd);
-            cmd.spawn().context("Failed to spawn child process")?
+            Some(cmd.spawn().context("Failed to spawn child process")?)
         };
 
         debug!("Waiting for pipe to be opened...");
         let stream: LocalSocketStream = self.socket.accept().await?;
-        let mut handle = ChildHandle::new(Some(child), stream);
+        let mut handle = ChildHandle::new(child, stream);
 
         trace!("Reading results from child");
         let first_msg = read_msg_async::<StatusMessage>(&mut handle.rx).await?;
