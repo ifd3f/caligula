@@ -1,20 +1,18 @@
 use std::io::BufReader;
-use std::panic::set_hook;
 use std::{
-    env,
     fs::File,
     io::{self, Read, Seek, Write},
 };
 
 use bytesize::ByteSize;
 use interprocess::local_socket::{prelude::*, GenericFilePath};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, info, trace};
 use tracing_unwrap::ResultExt;
 
+use crate::childproc_common::child_init;
 use crate::compression::decompress;
 use crate::device;
 use crate::ipc_common::write_msg;
-use crate::logging::init_logging_child;
 
 use crate::writer_process::xplat::open_blockdev;
 
@@ -24,17 +22,8 @@ use super::ipc::*;
 /// escalated permissions.
 #[tokio::main]
 pub async fn main() {
-    let cli_args: Vec<String> = env::args().collect();
-    let args = serde_json::from_str::<WriterProcessConfig>(&cli_args[1]).unwrap_or_log();
-    init_logging_child(&args.logfile);
+    let (sock, args) = child_init::<WriterProcessConfig>();
 
-    set_hook(Box::new(|p| {
-        error!("{p:?}");
-    }));
-
-    info!("We are in child process mode with args {:#?}", args);
-
-    let sock = cli_args[2].as_str();
     info!("Opening socket {sock}");
     let mut stream =
         LocalSocketStream::connect(sock.to_fs_name::<GenericFilePath>().unwrap_or_log())

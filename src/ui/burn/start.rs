@@ -7,17 +7,13 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::WriteTarget,
-    logging::get_log_paths,
     ui::{
         burn::{fancy::FancyUI, simple},
         cli::{Interactive, UseSudo},
+        herder::{Herder, StartWriterError, WriterHandle},
         utils::TUICapture,
     },
-    writer_process::{
-        self,
-        handle::StartProcessError,
-        ipc::{ErrorType, WriterProcessConfig},
-    },
+    writer_process::ipc::{ErrorType, WriterProcessConfig},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -47,7 +43,6 @@ impl BeginParams {
         WriterProcessConfig {
             dest: self.target.devnode.clone(),
             src: self.input_file.clone(),
-            logfile: get_log_paths().child.clone(),
             verify: true,
             compression: self.compression,
             target_type: self.target.target_type,
@@ -57,20 +52,21 @@ impl BeginParams {
 
 #[tracing::instrument(skip_all, fields(root, interactive))]
 pub async fn try_start_burn(
+    herder: &mut Herder,
     args: &WriterProcessConfig,
     root: UseSudo,
     interactive: bool,
-) -> anyhow::Result<writer_process::Handle> {
-    let err = match writer_process::Handle::start(args, false).await {
+) -> anyhow::Result<WriterHandle> {
+    let err = match herder.start_writer(args, false).await {
         Ok(p) => {
             return Ok(p);
         }
         Err(e) => e,
     };
 
-    let dc = err.downcast::<StartProcessError>()?;
+    let dc = err.downcast::<StartWriterError>()?;
 
-    if let StartProcessError::Failed(Some(ErrorType::PermissionDenied)) = &dc {
+    if let StartWriterError::Failed(Some(ErrorType::PermissionDenied)) = &dc {
         match (root, interactive) {
             (UseSudo::Ask, true) => {
                 debug!("Failure due to insufficient perms, asking user to escalate");
@@ -85,11 +81,11 @@ pub async fn try_start_burn(
                 .prompt()?;
 
                 if response {
-                    return writer_process::Handle::start(args, true).await;
+                    return herder.start_writer(args, true).await;
                 }
             }
             (UseSudo::Always, _) => {
-                return writer_process::Handle::start(args, true).await;
+                return herder.start_writer(args, true).await;
             }
             _ => {}
         }
@@ -101,7 +97,7 @@ pub async fn try_start_burn(
 pub async fn begin_writing(
     interactive: Interactive,
     params: BeginParams,
-    handle: writer_process::Handle,
+    handle: WriterHandle,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
     if interactive.is_interactive() {

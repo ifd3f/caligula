@@ -6,6 +6,7 @@ use crate::{
         ask_outfile,
         burn::start::{begin_writing, try_start_burn, BeginParams},
         cli::{Args, Command},
+        herder::{Herder, HerderSocket},
     },
 };
 use ask_outfile::{ask_compression, confirm_write};
@@ -58,7 +59,10 @@ async fn inner_main() -> anyhow::Result<()> {
         return Ok(());
     }
 
+    let socket = HerderSocket::new().await?;
+    let mut herder = Herder::new(socket);
     let handle = try_start_burn(
+        &mut herder,
         &begin_params.make_child_config(),
         args.root,
         args.interactive.is_interactive(),

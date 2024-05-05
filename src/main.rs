@@ -1,8 +1,10 @@
 use run_mode::RunMode;
 
 mod byteseries;
+mod childproc_common;
 mod compression;
 mod device;
+mod escalated_daemon;
 mod escalation;
 mod hash;
 mod ipc_common;
@@ -16,5 +18,6 @@ fn main() {
     match RunMode::detect() {
         RunMode::Main => ui::main::main(),
         RunMode::Writer => writer_process::child::main(),
+        RunMode::EscalatedDaemon => escalated_daemon::main(),
     }
 }

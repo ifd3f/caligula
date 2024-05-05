@@ -2,10 +2,13 @@ use std::time::Instant;
 
 use tracing::{info, trace};
 
-use crate::byteseries::{ByteSeries, EstimatedTime};
+use crate::{
+    byteseries::{ByteSeries, EstimatedTime},
+    writer_process::ipc::{ErrorType, StatusMessage},
+};
 
-use super::ipc::{ErrorType, StatusMessage};
-
+/// A state machine for tracking the state of the writer, based on received
+/// messages.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WriterState {
     Writing(Writing),

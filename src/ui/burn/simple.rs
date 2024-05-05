@@ -4,10 +4,10 @@ use indicatif::{ProgressBar, ProgressStyle};
 
 use crate::{
     compression::CompressionFormat,
-    writer_process::{state_tracking::WriterState, Handle},
+    ui::{herder::WriterHandle, writer_tracking::WriterState},
 };
 
-pub async fn run_simple_ui(mut handle: Handle, cf: CompressionFormat) -> anyhow::Result<()> {
+pub async fn run_simple_ui(mut handle: WriterHandle, cf: CompressionFormat) -> anyhow::Result<()> {
     let input_file_bytes = handle.initial_info().input_file_bytes;
     let write_progress = ProgressBar::new(100).with_message("Burning").with_style(
         ProgressStyle::with_template(

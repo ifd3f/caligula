@@ -12,8 +12,11 @@ use tokio::{select, time};
 
 use crate::{
     logging::get_bug_report_msg,
-    ui::burn::{fancy::state::UIEvent, start::BeginParams},
-    writer_process::{self, state_tracking::WriterState, Handle},
+    ui::{
+        burn::{fancy::state::UIEvent, start::BeginParams},
+        herder::WriterHandle,
+        writer_tracking::WriterState,
+    },
 };
 
 use super::{
@@ -27,7 +30,7 @@ where
 {
     terminal: &'a mut Terminal<B>,
     events: EventStream,
-    handle: Option<writer_process::Handle>,
+    handle: Option<WriterHandle>,
     state: State,
 }
 
@@ -36,11 +39,7 @@ where
     B: Backend,
 {
     #[tracing::instrument(skip_all)]
-    pub fn new(
-        params: &BeginParams,
-        handle: writer_process::Handle,
-        terminal: &'a mut Terminal<B>,
-    ) -> Self {
+    pub fn new(params: &BeginParams, handle: WriterHandle, terminal: &'a mut Terminal<B>) -> Self {
         let input_file_bytes = handle.initial_info().input_file_bytes;
         Self {
             terminal,
@@ -91,7 +90,7 @@ async fn get_event_child_dead(ui_events: &mut EventStream) -> anyhow::Result<UIE
 #[tracing::instrument(skip_all, level = "trace")]
 async fn get_event_child_active(
     ui_events: &mut EventStream,
-    child_events: &mut Handle,
+    child_events: &mut WriterHandle,
 ) -> anyhow::Result<UIEvent> {
     let sleep = tokio::time::sleep(time::Duration::from_millis(250));
     select! {
