@@ -20,6 +20,8 @@ use crate::writer_process::ipc::{StatusMessage, WriterProcessConfig};
 
 /// Handles the herding of all child processes. This includes lifecycle management
 /// and communication.
+///
+/// Why "Herder"? It's a horse, and horses are herded. I think. I'm not a farmer.
 pub struct Herder {
     socket: HerderSocket,
 }

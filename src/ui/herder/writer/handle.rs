@@ -8,8 +8,12 @@ use tokio::{
 
 use crate::writer_process::ipc::{ErrorType, InitialInfo, StatusMessage};
 
-/// A handle for interacting with an initialized writer.
+/// A very low-level handle for interacting with an initialized writer.
+///
+/// If this is dropped, the child process inside is killed, if it manages one.
 pub struct WriterHandle {
+    /// We would like to kill the process on drop, if we are the direct parent of the
+    /// process. So, we own a handle to it.
     _child: Option<Child>,
     initial_info: InitialInfo,
     rx: Pin<Box<dyn AsyncBufRead>>,
@@ -17,6 +21,7 @@ pub struct WriterHandle {
 }
 
 impl WriterHandle {
+    /// Create a WriterHandle. This should only ever be invoked by the Herder.
     pub(in super::super) fn new(
         child: Option<Child>,
         initial_info: InitialInfo,

@@ -7,6 +7,8 @@ use crate::{
     writer_process::ipc::{ErrorType, StatusMessage},
 };
 
+/// A state machine for tracking the state of the writer, based on received
+/// messages.
 #[derive(Debug, Clone, PartialEq)]
 pub enum WriterState {
     Writing(Writing),
