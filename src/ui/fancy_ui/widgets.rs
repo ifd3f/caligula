@@ -1,14 +1,15 @@
 use std::time::Instant;
 
 use bytesize::ByteSize;
+use crossterm::event::KeyCode;
 use ratatui::{
     layout::{Alignment, Constraint, Rect},
-    style::{Color, Style},
+    style::{Color, Style, Stylize},
     symbols,
     text::Span,
     widgets::{
-        Axis, Block, Borders, Cell, Chart, Dataset, Gauge, GraphType, Row, StatefulWidget, Table,
-        Widget,
+        Axis, Block, BorderType, Borders, Cell, Chart, Clear, Dataset, Gauge, GraphType, Paragraph,
+        Row, StatefulWidget, Table, Widget,
     },
 };
 
@@ -160,7 +161,11 @@ impl WriterProgressBar {
             } => WriterProgressBar::from_simple(
                 write_hist.bytes_encountered(),
                 *total_write_bytes,
-                if error.is_some() { "Error!" } else { "Done!" },
+                if error.is_some() {
+                    "Error!"
+                } else {
+                    "Done! Press q to quit."
+                },
                 if error.is_some() {
                     Style::default().fg(Color::White).bg(Color::Red)
                 } else {
@@ -265,5 +270,60 @@ impl WritingInfoTable<'_> {
 impl Widget for WritingInfoTable<'_> {
     fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer) {
         Widget::render(self.make_info_table(), area, buf)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub struct QuitModal {
+    _private: (),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum QuitModalResult {
+    /// Quit the program.
+    Quit,
+
+    /// Stay in the program.
+    Stay,
+}
+
+impl QuitModal {
+    pub fn new() -> Self {
+        Self { _private: () }
+    }
+
+    /// Handle a key down event. If this would conclude the modal, returns the result.
+    /// Otherwise, if an indecisive keystroke was detected and we are to stay inside the
+    /// modal, returns None.
+    pub fn handle_key_down(self, kc: KeyCode) -> Option<QuitModalResult> {
+        use KeyCode::*;
+        use QuitModalResult::*;
+        match kc {
+            Esc => Some(Stay),
+            Char('q') | Char('Q') => Some(Quit),
+            _ => None,
+        }
+    }
+}
+
+impl Widget for QuitModal {
+    fn render(self, area: Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let prompt =
+            Paragraph::new("Are you sure you want to quit?\nPress q again to quit, ESC to stay")
+                .alignment(Alignment::Center)
+                .style(Style::new().yellow())
+                .block(
+                    Block::new()
+                        .bg(Color::Red)
+                        .border_style(Style::new().white())
+                        .border_type(BorderType::Plain)
+                        .borders(Borders::ALL),
+                );
+
+        Clear.render(area, buf);
+        prompt.render(area, buf);
     }
 }

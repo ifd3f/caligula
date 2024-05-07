@@ -113,10 +113,11 @@ struct ComputedLayout {
     progress: Rect,
     graph: Rect,
     args_display: Rect,
+    quit_modal: Rect,
 }
 
 impl From<Rect> for ComputedLayout {
-    fn from(value: Rect) -> Self {
+    fn from(area: Rect) -> Self {
         let root = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -124,16 +125,40 @@ impl From<Rect> for ComputedLayout {
                 Constraint::Min(10),
                 Constraint::Length(10),
             ])
-            .split(value);
+            .split(area);
 
         let info_pane = root[2];
+
+        let quit_modal = centered_rect(area, 40, 4);
 
         Self {
             graph: root[1],
             progress: root[0],
             args_display: info_pane,
+            quit_modal,
         }
     }
+}
+
+/// Given an outer rect and desired inner rect dimensions, returns the inner rect.
+fn centered_rect(r: Rect, w: u16, h: u16) -> Rect {
+    let popup_layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(h),
+            Constraint::Fill(1),
+        ])
+        .split(r);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Fill(1),
+            Constraint::Length(w),
+            Constraint::Fill(1),
+        ])
+        .split(popup_layout[1])[1]
 }
 
 pub fn draw(
@@ -183,6 +208,10 @@ pub fn draw(
             )
         } else {
             f.render_widget(info_table, layout.args_display);
+        }
+
+        if let Some(qm) = state.quit_modal {
+            f.render_widget(qm, layout.quit_modal)
         }
     })?;
     Ok(())
