@@ -122,7 +122,8 @@ macro_rules! generate {
             }
         }
 
-        pub fn decompress<R>(cf: CompressionFormat, $readervar: R) -> Result<DecompressRead<R>, DecompressError>
+        /// Open a decompressor for the given reader.
+        pub fn decompress<R>(cf: CompressionFormat, $readervar: R) -> anyhow::Result<DecompressRead<R>>
         where
             R : BufRead
         {
@@ -150,13 +151,6 @@ generate! {
             xz2::bufread::XzDecoder::new(r)
         },
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum DecompressError {
-    #[allow(unused)]
-    #[error("Unsupported compression format {0}!")]
-    UnsupportedFormat(CompressionFormat),
 }
 
 impl CompressionFormat {

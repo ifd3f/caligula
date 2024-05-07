@@ -104,7 +104,8 @@ fn for_each_block(
     let mut read_block = vec![0u8; block_size];
     let mut scratch_block = vec![0u8; block_size]; // A block for the user to mutate
 
-    let mut decompress = decompress(args.compression, BufReader::new(src)).unwrap();
+    let mut decompress = decompress(args.compression, BufReader::new(src))
+        .expect("Failed to open input file with decompressor");
 
     let checkpoint_blocks: usize = 32;
     let mut offset: u64 = 0;
