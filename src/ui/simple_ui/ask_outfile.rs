@@ -4,7 +4,7 @@ use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
 
 use crate::{
-    compression::{CompressionArg, CompressionFormat, DecompressError, AVAILABLE_FORMATS},
+    compression::{CompressionArg, CompressionFormat, AVAILABLE_FORMATS},
     device::{enumerate_devices, Removable, WriteTarget},
     ui::{cli::BurnArgs, start::BeginParams},
 };
@@ -21,13 +21,6 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
     if let Some(cf) = cf {
         eprintln!("Input file: {}", args.input.to_string_lossy());
         eprintln!("Detected compression format: {}", cf);
-        if !cf.is_available() {
-            eprintln!(
-                "Compression format {} is not supported on your platform!",
-                cf
-            );
-            Err(DecompressError::UnsupportedFormat(cf))?;
-        }
 
         if args.force || args.compression != CompressionArg::Ask {
             return Ok(cf);

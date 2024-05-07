@@ -12,7 +12,7 @@ macro_rules! generate {
     {
         $readervar:ident: $r:ident {
             $(
-                [feature=$feature:expr] $extpat:pat =>
+                $extpat:pat =>
                     $enumarm:ident($display:expr, $inner:ty)
                     $dcrinner:expr,
             )*
@@ -74,15 +74,6 @@ macro_rules! generate {
                     _ => false,
                 }
             }
-
-            pub fn is_available(self) -> bool {
-                match self {
-                    Self::Identity => true,
-                    $(
-                        Self::$enumarm => cfg!(feature = $feature),
-                    )*
-                }
-            }
         }
 
         impl Display for CompressionFormat {
@@ -99,7 +90,6 @@ macro_rules! generate {
         pub enum DecompressRead<$r> {
             Identity($r),
             $(
-                #[cfg(feature = $feature)]
                 $enumarm($inner),
             )*
         }
@@ -112,7 +102,6 @@ macro_rules! generate {
                 match self {
                     Self::Identity(r) => r,
                     $(
-                        #[cfg(feature = $feature)]
                         Self::$enumarm(r) => r.get_mut(),
                     )*
                 }
@@ -127,14 +116,14 @@ macro_rules! generate {
                 match self {
                     Self::Identity(r) => r.read(buf),
                     $(
-                        #[cfg(feature = $feature)]
                         Self::$enumarm(r) => r.read(buf),
                     )*
                 }
             }
         }
 
-        pub fn decompress<R>(cf: CompressionFormat, $readervar: R) -> Result<DecompressRead<R>, DecompressError>
+        /// Open a decompressor for the given reader.
+        pub fn decompress<R>(cf: CompressionFormat, $readervar: R) -> anyhow::Result<DecompressRead<R>>
         where
             R : BufRead
         {
@@ -142,15 +131,7 @@ macro_rules! generate {
                 CompressionFormat::Identity => Ok(DecompressRead::Identity($readervar)),
                 $(
                     CompressionFormat::$enumarm => {
-                        #[cfg(feature = $feature)]
-                        let result = Ok(DecompressRead::$enumarm($dcrinner));
-
-                        #[cfg(not(feature = $feature))]
-                        let result = Err(DecompressError::UnsupportedFormat(
-                            CompressionFormat::$enumarm
-                        ));
-
-                        result
+                        Ok(DecompressRead::$enumarm($dcrinner))
                     }
                 )*
             }
@@ -160,23 +141,16 @@ macro_rules! generate {
 
 generate! {
     r: R {
-        [feature = "gz"] "gz" => Gz("gzip", flate2::bufread::GzDecoder<R>) {
+        "gz" => Gz("gzip", flate2::bufread::GzDecoder<R>) {
             flate2::bufread::GzDecoder::new(r)
         },
-        [feature = "bz2"] "bz2" => Bz2("bzip2", bzip2::bufread::BzDecoder<R>) {
+        "bz2" => Bz2("bzip2", bzip2::bufread::BzDecoder<R>) {
             bzip2::bufread::BzDecoder::new(r)
         },
-        [feature = "xz"] "xz" => Xz("xz/LZMA", xz2::bufread::XzDecoder<R>) {
+        "xz" => Xz("xz/LZMA", xz2::bufread::XzDecoder<R>) {
             xz2::bufread::XzDecoder::new(r)
         },
     }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum DecompressError {
-    #[allow(unused)]
-    #[error("Unsupported compression format {0}!")]
-    UnsupportedFormat(CompressionFormat),
 }
 
 impl CompressionFormat {

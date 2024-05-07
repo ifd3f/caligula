@@ -5,6 +5,7 @@ use std::{
     process::exit,
 };
 
+use anyhow::Context;
 use bytesize::ByteSize;
 use indicatif::{ProgressBar, ProgressStyle};
 use inquire::{Select, Text};
@@ -156,7 +157,8 @@ fn do_hashing(path: &Path, params: &BeginHashParams) -> anyhow::Result<FileHashI
         ProgressStyle::with_template("{bytes:>10} / {total_bytes:<10} {wide_bar}").unwrap(),
     );
 
-    let decompress = decompress(params.hasher_compression, BufReader::new(file))?;
+    let decompress = decompress(params.hasher_compression, BufReader::new(file))
+        .context("Failed to open input file with decompressor")?;
 
     let mut hashing = Hashing::new(
         params.alg,
