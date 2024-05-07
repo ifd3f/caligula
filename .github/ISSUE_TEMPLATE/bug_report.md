@@ -24,6 +24,7 @@ A clear and concise description of what you expected to happen.
 Please upload log files to aid in debugging the issue.
 
 ## OS/Environment
+ - Terminal emulator: [e.g. konsole, GNOME terminal, alacritty, xterm]
  - OS: [e.g. Linux]
  - Version: [e.g. v0.4.3]
  - Distribution channel: [e.g. release binary, AUR, Nix, built from source]
