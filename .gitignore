@@ -8,6 +8,7 @@
 *.img
 *.iso
 *.xz
+*.lz4
 *.gz
 *.o
 *.a

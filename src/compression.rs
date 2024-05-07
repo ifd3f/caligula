@@ -87,7 +87,7 @@ macro_rules! generate {
             }
         }
 
-        pub enum DecompressRead<$r> {
+        pub enum DecompressRead<$r: BufRead> {
             Identity($r),
             $(
                 $enumarm($inner),
@@ -149,6 +149,9 @@ generate! {
         },
         "xz" => Xz("xz/LZMA", xz2::bufread::XzDecoder<R>) {
             xz2::bufread::XzDecoder::new(r)
+        },
+        "lz4" => Lz4("lz4", lz4_flex::frame::FrameDecoder<R>) {
+            lz4_flex::frame::FrameDecoder::new(r)
         },
     }
 }
