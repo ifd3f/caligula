@@ -30,6 +30,7 @@ interprocess = { version = "2.0.0", features = ["tokio"] }
 is-terminal = "0.4.12"
 itertools = "0.12.1"
 libc = "0.2.154"
+lz4_flex = "0.11.3"
 md-5 = "0.10.5"
 process_path = "0.1.4"
 ratatui = "0.26.0"
