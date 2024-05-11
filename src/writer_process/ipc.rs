@@ -14,6 +14,7 @@ pub struct WriterProcessConfig {
     pub verify: bool,
     pub compression: CompressionFormat,
     pub target_type: Type,
+    pub block_size: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
@@ -54,7 +55,7 @@ impl From<std::io::Error> for ErrorType {
     fn from(value: std::io::Error) -> Self {
         match value.kind() {
             std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
-            _ => Self::UnknownChildProcError(format!("{value}")),
+            _ => Self::UnknownChildProcError(format!("{value:#}")),
         }
     }
 }

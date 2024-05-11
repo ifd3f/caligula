@@ -62,7 +62,9 @@ impl ByteSeries {
 
     pub fn estimated_time_left(&self, total_bytes: u64) -> EstimatedTime {
         let speed = self.total_avg_speed().0;
-        let bytes_left = total_bytes - self.bytes_encountered();
+        // Saturating subtract is necessary because bytes encountered may be greater
+        // than total bytes, due to the nature of block writing.
+        let bytes_left = total_bytes.saturating_sub(self.bytes_encountered());
         let secs_left = bytes_left as f64 / speed;
         EstimatedTime::from(secs_left)
     }
