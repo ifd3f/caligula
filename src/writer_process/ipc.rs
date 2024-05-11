@@ -54,7 +54,7 @@ impl From<std::io::Error> for ErrorType {
     fn from(value: std::io::Error) -> Self {
         match value.kind() {
             std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
-            _ => Self::UnknownChildProcError(format!("{value}")),
+            _ => Self::UnknownChildProcError(format!("{value:#}")),
         }
     }
 }

@@ -6,19 +6,16 @@ use std::{
 use crate::compression::CompressionFormat;
 
 #[cfg(target_os = "linux")]
-pub fn open_blockdev(path: impl AsRef<Path>, cf: CompressionFormat) -> std::io::Result<File> {
+pub fn open_blockdev(path: impl AsRef<Path>, _cf: CompressionFormat) -> std::io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
 
-    use libc::O_SYNC;
+    use libc::O_DIRECT;
 
     let mut opts = OpenOptions::new();
     opts.write(true);
 
-    // Decompression is a bigger bottleneck than write, so only bypass the
-    // cache if there is compression.
-    if cf.is_identity() {
-        opts.custom_flags(O_SYNC);
-    }
+    // Write directly to the disk, full send, bypass the goddamn cache
+    opts.custom_flags(O_DIRECT);
 
     opts.open(path)
 }

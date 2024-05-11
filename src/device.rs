@@ -82,6 +82,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
                 model,
                 removable,
                 target_type,
+                block_size: None, // TODO
             })
         }
 
@@ -102,6 +103,7 @@ pub struct WriteTarget {
     pub model: Model,
     pub removable: Removable,
     pub target_type: Type,
+    pub block_size: Option<u64>,
 }
 
 impl WriteTarget {
@@ -175,6 +177,9 @@ impl WriteTarget {
             false => Type::Disk,
         };
 
+        let block_size = read_sys_file(sysnode.join("queue/physical_block_size"))?
+            .and_then(|s| s.parse::<u64>().ok());
+
         Ok(Self {
             name: name.to_string_lossy().into(),
             devnode,
@@ -182,6 +187,7 @@ impl WriteTarget {
             removable,
             model,
             target_type,
+            block_size,
         })
     }
 
@@ -193,6 +199,7 @@ impl WriteTarget {
             model: Model(None),
             removable: Removable::Unknown,
             target_type: Type::File,
+            block_size: None,
         })
     }
 }
