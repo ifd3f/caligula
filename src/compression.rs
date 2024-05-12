@@ -153,6 +153,9 @@ generate! {
         "lz4" => Lz4("lz4", lz4_flex::frame::FrameDecoder<R>) {
             lz4_flex::frame::FrameDecoder::new(r)
         },
+        "zst" => Zst("zstd/Zstandard", zstd::stream::read::Decoder<'static, R>) {
+            zstd::stream::read::Decoder::with_buffer(r).unwrap()
+        },
     }
 }
 

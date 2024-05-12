@@ -7,6 +7,7 @@
 *.log
 *.img
 *.iso
+*.zst
 *.xz
 *.lz4
 *.gz
