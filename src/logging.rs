@@ -5,7 +5,9 @@ use std::path::Path;
 use std::{path::PathBuf, sync::Mutex};
 
 use crossterm::terminal::disable_raw_mode;
+use crossterm::terminal::is_raw_mode_enabled;
 use tracing::{error, Level};
+use tracing_subscriber::fmt::format::FmtSpan;
 use tracing_subscriber::EnvFilter;
 
 /// Helper for calculating which files to log to.
@@ -57,7 +59,9 @@ const FILE_LOG_LEVEL: Level = Level::TRACE;
 pub fn init_logging_parent(paths: &LogPaths) {
     let bug_report_msg = paths.get_bug_report_msg();
     set_hook(Box::new(move |p| {
-        disable_raw_mode().ok();
+        if let Ok(true) = is_raw_mode_enabled() {
+            disable_raw_mode().ok();
+        }
         error!("{p}");
 
         eprintln!("An unexpected error occurred: {p}");
@@ -86,5 +90,6 @@ fn init_tracing_subscriber(write_path: impl AsRef<Path>) {
                 .with_default_directive(FILE_LOG_LEVEL.into())
                 .from_env_lossy(),
         )
+        .with_span_events(FmtSpan::FULL)
         .init();
 }
