@@ -3,6 +3,7 @@ name: "CI"
 on:
   push:
   pull_request:
+  pull_request_target:
 
 jobs:
   lint:
@@ -30,6 +31,7 @@ jobs:
       e2e_test_runner: ubuntu-latest
       target_triple: x86_64-linux
       do_e2e_tests: true
+      use_cachix: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   ci-x86_64-darwin:
@@ -39,6 +41,7 @@ jobs:
       e2e_test_runner: macos-13
       target_triple: x86_64-darwin
       do_e2e_tests: true
+      use_cachix: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   ci-aarch64-linux:
@@ -47,6 +50,7 @@ jobs:
       build_runner: ubuntu-latest
       target_triple: aarch64-linux
       do_e2e_tests: false
+      use_cachix: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   ci-aarch64-darwin:
@@ -56,6 +60,7 @@ jobs:
       e2e_test_runner: macos-latest
       target_triple: aarch64-darwin
       do_e2e_tests: true
+      use_cachix: ${{ github.event_name == 'push' }}
     secrets: inherit
 
   ci-devshell:
@@ -73,6 +78,7 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - uses: cachix/cachix-action@v14
+        if: ${{ github.event_name == 'push' }}
         with:
           name: astralbijection
           authToken: "${{ secrets.CACHIX_AUTH_TOKEN }}"
