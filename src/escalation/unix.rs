@@ -55,7 +55,9 @@ impl EscalationMethod {
             Self::Sudo => Command {
                 envs: vec![],
                 proc: "sudo".into(),
-                args: vec!["sh".into(), "-c".into(), raw.into()],
+                // We can't spawn sudo the normal way because it's gonna corrupt our terminal.
+                // This -S forces it to use stdin and stderr instead of /dev/tty.
+                args: vec!["-S".into(), "sh".into(), "-c".into(), raw.into()],
             },
             Self::Doas => Command {
                 envs: vec![],
@@ -163,7 +165,7 @@ mod tests {
 
         assert_eq!(
             result.to_string(),
-            "sudo sh -c 'asdf=foo some/proc two --three '\\''\"four\"'\\'''"
+            "sudo -S sh -c 'asdf=foo some/proc two --three '\\''\"four\"'\\'''"
         )
     }
 

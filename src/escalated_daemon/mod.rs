@@ -23,6 +23,7 @@ use valuable::Valuable;
 use crate::{
     childproc_common::child_init,
     escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter},
+    escalation::SUCCESS_TOKEN,
     ipc_common::read_msg_async,
     run_mode::make_writer_spawn_command,
 };
@@ -31,6 +32,8 @@ pub mod ipc;
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn main() {
+    println!("{}", SUCCESS_TOKEN);
+
     let (sock, _) = child_init::<EscalatedDaemonInitConfig>();
 
     info!("Opening socket {sock}");
@@ -64,6 +67,7 @@ async fn event_loop(socket: &str, mut stream: impl AsyncBufRead + Unpin) -> anyh
         let pid = child.id();
         tokio::spawn(
             async move {
+                info!("Waiting to reap child");
                 match child.wait().await {
                     Ok(r) => info!("Child exited with exit code {r}"),
                     Err(e) => error!("Failed to wait on child: {e}"),
