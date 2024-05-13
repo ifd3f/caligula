@@ -13,9 +13,12 @@ on:
       do_e2e_tests:
         required: true
         type: boolean
+      use_cachix:
+        required: true
+        type: boolean
     secrets:
       CACHIX_AUTH_TOKEN:
-        required: true
+        required: false
 
 env:
   nix_target: ".#caligula-${{ inputs.target_triple }}"
@@ -36,6 +39,7 @@ jobs:
             system-features = kvm benchmark big-parallel nixos-test uid-range
 
       - uses: cachix/cachix-action@v14
+        if: ${{ inputs.use_cachix }}
         with:
           name: astralbijection
           authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
