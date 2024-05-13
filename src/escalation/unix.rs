@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use itertools::Itertools;
 use shell_words::{join, quote};
+use tracing::info;
 use which::which;
 
 use super::Error;
@@ -27,8 +28,10 @@ pub struct Command<'a> {
 impl EscalationMethod {
     const ALL: [EscalationMethod; 3] = [Self::Sudo, Self::Doas, Self::Su];
 
+    #[tracing::instrument]
     pub fn detect() -> Result<Self, Error> {
         for m in Self::ALL {
+            info!("Trying {m}");
             if m.is_supported() {
                 return Ok(m);
             }

@@ -14,6 +14,7 @@ use tracing::{debug, debug_span, info, Instrument};
 use crate::escalation::hidden_input::HiddenInput;
 
 pub use self::unix::Command;
+pub use self::unix::EscalationMethod;
 
 /// A token that is used to detect if a process has been escalated.
 ///
@@ -22,7 +23,7 @@ pub const SUCCESS_TOKEN: &'static str = "znxbnvm,,xbnzcvnmxzv,.,,,";
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    #[error("Could not become root! Searched for sudo, doas, su")]
+    #[error("No escalation methods detected! Searched for sudo, doas, su")]
     UnixNotDetected,
 
     #[cfg(target_os = "macos")]
@@ -34,10 +35,11 @@ pub enum Error {
 pub async fn run_escalate(
     cmd: &Command<'_>,
     modify: impl FnOnce(&mut tokio::process::Command) -> (),
+    em: EscalationMethod,
 ) -> anyhow::Result<tokio::process::Child> {
     use self::unix::EscalationMethod;
 
-    let mut cmd: tokio::process::Command = EscalationMethod::detect()?.wrap_command(cmd).into();
+    let mut cmd: tokio::process::Command = em.wrap_command(cmd).into();
     modify(&mut cmd);
     // inherit sucks but it's unfortunately the best way to do this for now.
     cmd.stdin(Stdio::inherit())

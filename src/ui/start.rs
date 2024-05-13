@@ -7,6 +7,7 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::WriteTarget,
+    escalation::EscalationMethod,
     logging::LogPaths,
     ui::{
         cli::{Interactive, UseSudo},
@@ -59,7 +60,7 @@ pub async fn try_start_burn(
     root: UseSudo,
     interactive: bool,
 ) -> anyhow::Result<WriterHandle> {
-    let err = match herder.start_writer(args, false).await {
+    let err = match herder.start_writer(args, None).await {
         Ok(p) => {
             return Ok(p);
         }
@@ -72,22 +73,32 @@ pub async fn try_start_burn(
         match (root, interactive) {
             (UseSudo::Ask, true) => {
                 debug!("Failure due to insufficient perms, asking user to escalate");
-
-                let response = Confirm::new(&format!(
-                    "We don't have permissions on {}. Escalate using sudo?",
+                eprintln!(
+                    "We don't have permissions on {}",
                     args.dest.to_string_lossy()
-                ))
-                .with_help_message(
-                    "We will use the sudo command, which may prompt you for a password.",
-                )
-                .prompt()?;
+                );
+
+                let em = match EscalationMethod::detect() {
+                    Ok(em) => em,
+                    Err(err) => {
+                        eprintln!("{err}");
+                        eprintln!("Exiting.");
+                        std::process::exit(1);
+                    }
+                };
+
+                let response = Confirm::new(&format!("Escalate using {em}?"))
+                    .with_help_message(&format!(
+                        "We will use the {em} command, which may prompt you for a password."
+                    ))
+                    .prompt()?;
 
                 if response {
-                    return herder.start_writer(args, true).await;
+                    return herder.start_writer(args, Some(em)).await;
                 }
             }
             (UseSudo::Always, _) => {
-                return herder.start_writer(args, true).await;
+                return herder.start_writer(args, None).await;
             }
             _ => {}
         }

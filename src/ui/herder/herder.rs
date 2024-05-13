@@ -14,7 +14,7 @@ use interprocess::local_socket::tokio::prelude::*;
 use tracing::{debug, trace};
 use valuable::Valuable;
 
-use crate::escalation::run_escalate;
+use crate::escalation::{run_escalate, EscalationMethod};
 use crate::writer_process::ipc::{StatusMessage, WriterProcessConfig};
 
 use super::handle::WriterHandle;
@@ -40,7 +40,10 @@ impl Herder {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn ensure_escalated_daemon(&mut self) -> anyhow::Result<&mut ChildHandle> {
+    async fn ensure_escalated_daemon(
+        &mut self,
+        em: EscalationMethod,
+    ) -> anyhow::Result<&mut ChildHandle> {
         // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
         if self.escalated_daemon.is_none() {
             let log_path = self.log_paths.escalated_daemon();
@@ -54,7 +57,7 @@ impl Herder {
             fn modify_cmd(cmd: &mut tokio::process::Command) {
                 cmd.kill_on_drop(true);
             }
-            let child = run_escalate(&cmd, modify_cmd)
+            let child = run_escalate(&cmd, modify_cmd, em)
                 .await
                 .context("Failed to spawn escalated daemon process")?;
 
@@ -72,12 +75,12 @@ impl Herder {
     pub async fn start_writer(
         &mut self,
         args: &WriterProcessConfig,
-        escalate: bool,
+        em: Option<EscalationMethod>,
     ) -> anyhow::Result<WriterHandle> {
         let log_path = self.log_paths.writer(0);
 
-        let child = if escalate {
-            let daemon = self.ensure_escalated_daemon().await?;
+        let child = if let Some(em) = em {
+            let daemon = self.ensure_escalated_daemon(em).await?;
             write_msg_async(
                 &mut daemon.tx,
                 &SpawnWriter {
