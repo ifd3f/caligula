@@ -98,7 +98,9 @@ pub async fn try_start_burn(
                 }
             }
             (UseSudo::Always, _) => {
-                return herder.start_writer(args, None).await;
+                return herder
+                    .start_writer(args, Some(EscalationMethod::detect()?))
+                    .await;
             }
             _ => {}
         }

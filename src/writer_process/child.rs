@@ -24,6 +24,8 @@ use super::ipc::*;
 pub async fn main() {
     let (sock, args) = child_init::<WriterProcessConfig>();
 
+    let uid = unsafe { libc::geteuid() };
+    info!(?uid, "Running under user ID");
     info!("Opening socket {sock}");
     let mut stream =
         LocalSocketStream::connect(sock.to_fs_name::<GenericFilePath>().unwrap_or_log())

@@ -62,9 +62,9 @@ pub fn init_logging_parent(paths: &LogPaths) {
         if let Ok(true) = is_raw_mode_enabled() {
             disable_raw_mode().ok();
         }
-        error!("{p}");
+        error!("{p:#?}");
 
-        eprintln!("An unexpected error occurred: {p}");
+        eprintln!("An unexpected error occurred: {p:#?}");
         eprintln!();
         eprintln!("{}", bug_report_msg);
     }));

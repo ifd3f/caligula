@@ -11,7 +11,7 @@ use crate::{
 };
 use anyhow::Context;
 use interprocess::local_socket::tokio::prelude::*;
-use tracing::{debug, trace};
+use tracing::{debug, info, trace};
 use valuable::Valuable;
 
 use crate::escalation::{run_escalate, EscalationMethod};
@@ -47,19 +47,22 @@ impl Herder {
         // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
         if self.escalated_daemon.is_none() {
             let log_path = self.log_paths.escalated_daemon();
-            let cmd = make_escalated_daemon_spawn_command(
+            let raw_cmd = make_escalated_daemon_spawn_command(
                 self.socket.socket_name().to_string_lossy(),
                 log_path.to_string_lossy(),
                 &EscalatedDaemonInitConfig {},
             );
 
-            debug!("Starting child process with command: {:?}", cmd);
-            fn modify_cmd(cmd: &mut tokio::process::Command) {
-                cmd.kill_on_drop(true);
-            }
-            let child = run_escalate(&cmd, modify_cmd, em)
-                .await
-                .context("Failed to spawn escalated daemon process")?;
+            info!(?raw_cmd, "Starting escalated process");
+            let child = run_escalate(
+                &raw_cmd,
+                |cmd| {
+                    cmd.kill_on_drop(true);
+                },
+                em,
+            )
+            .await
+            .expect("Failed to spawn escalated daemon process");
 
             debug!(?child, "Process spawned, waiting for pipe to be opened...");
             let stream: LocalSocketStream = self.socket.accept().await?;
@@ -71,7 +74,7 @@ impl Herder {
         Ok(self.escalated_daemon.as_mut().unwrap())
     }
 
-    #[tracing::instrument(skip_all, fields(escalate))]
+    #[tracing::instrument(skip_all, fields(em))]
     pub async fn start_writer(
         &mut self,
         args: &WriterProcessConfig,
@@ -81,14 +84,12 @@ impl Herder {
 
         let child = if let Some(em) = em {
             let daemon = self.ensure_escalated_daemon(em).await?;
-            write_msg_async(
-                &mut daemon.tx,
-                &SpawnWriter {
-                    log_file: log_path.to_string_lossy().to_string(),
-                    init_config: args.clone(),
-                },
-            )
-            .await?;
+            let msg = SpawnWriter {
+                log_file: log_path.to_string_lossy().to_string(),
+                init_config: args.clone(),
+            };
+            info!(?msg, "Requesting escalated daemon to spawn a writer");
+            write_msg_async(&mut daemon.tx, &msg).await?;
             None
         } else {
             let cmd = make_writer_spawn_command(
@@ -96,7 +97,7 @@ impl Herder {
                 log_path.to_string_lossy(),
                 args,
             );
-            debug!("Directly spawning child process with command: {:?}", cmd);
+            info!(?cmd, "Directly spawning child process");
 
             let mut cmd = tokio::process::Command::from(cmd);
             cmd.kill_on_drop(true);

@@ -39,12 +39,13 @@ pub async fn run_escalate(
 ) -> anyhow::Result<tokio::process::Child> {
     use self::unix::EscalationMethod;
 
-    let mut cmd: tokio::process::Command = em.wrap_command(cmd).into();
+    let wrapped = em.wrap_command(cmd);
+    info!(?wrapped, "Constructed wrapped command");
+
+    let mut cmd: tokio::process::Command = wrapped.into();
     modify(&mut cmd);
     // inherit sucks but it's unfortunately the best way to do this for now.
-    cmd.stdin(Stdio::inherit())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     info!(?cmd, "Spawning child process");
     let mut proc = cmd.spawn()?;
@@ -54,7 +55,7 @@ pub async fn run_escalate(
     let tty = std::fs::File::open("/dev/tty")?;
     let _hidden = HiddenInput::new(tty.as_raw_fd())?;
 
-    // Search for the success token
+    info!("Starting event loop");
     match event_loop(tokio::io::stderr(), stdout, stderr).await? {
         true => Ok(proc),
         false => anyhow::bail!("Could not escalate"),
