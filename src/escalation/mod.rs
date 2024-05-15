@@ -4,11 +4,14 @@ mod darwin;
 mod hidden_input;
 mod unix;
 
+use std::io::{Read, Write};
 use std::{os::fd::AsRawFd, process::Stdio};
 
+use futures::future;
 use tokio::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
 };
+use tokio::sync::mpsc;
 use tracing::{debug, debug_span, info, Instrument};
 
 use crate::escalation::hidden_input::HiddenInput;
@@ -45,10 +48,13 @@ pub async fn run_escalate(
     let mut cmd: tokio::process::Command = wrapped.into();
     modify(&mut cmd);
     // inherit sucks but it's unfortunately the best way to do this for now.
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
 
     info!(?cmd, "Spawning child process");
     let mut proc = cmd.spawn()?;
+    let mut stdin = proc.stdin.take().unwrap();
     let mut stdout = BufReader::new(proc.stdout.take().unwrap());
     let mut stderr = proc.stderr.take().unwrap();
 
@@ -56,7 +62,15 @@ pub async fn run_escalate(
     let _hidden = HiddenInput::new(tty.as_raw_fd())?;
 
     info!("Starting event loop");
-    match event_loop(tokio::io::stderr(), stdout, stderr).await? {
+    match event_loop(
+        tokio::io::stdin(),
+        stdin,
+        tokio::io::stderr(),
+        stdout,
+        stderr,
+    )
+    .await?
+    {
         true => Ok(proc),
         false => anyhow::bail!("Could not escalate"),
     }
@@ -64,42 +78,60 @@ pub async fn run_escalate(
 
 #[tracing::instrument(skip_all, level = "trace")]
 async fn event_loop(
+    mut parent_stdin: impl AsyncRead + Unpin,
+    mut child_stdin: impl AsyncWrite + Unpin,
     mut parent_stderr: impl AsyncWrite + Unpin,
-    mut child_stdout: impl AsyncBufRead + Unpin + Send + 'static,
+    mut child_stdout: impl AsyncBufRead + Unpin,
     mut child_stderr: impl AsyncRead + Unpin,
 ) -> anyhow::Result<bool> {
     // Search for the success token
-    let mut search_for_token = tokio::task::spawn(
-        async move {
-            let mut buf = String::new();
-            loop {
-                let count = child_stdout.read_line(&mut buf).await?;
-                debug!(?buf, ?count, "Read line from child proc stdout");
+    let mut search_for_token = async move {
+        let mut buf = String::new();
+        loop {
+            let count = child_stdout.read_line(&mut buf).await?;
+            debug!(?buf, ?count, "Read line from child proc stdout");
 
-                // eof
-                if count == 0 {
-                    debug!(?buf, "EOF, did not escalate");
-                    return anyhow::Ok(false);
-                }
-
-                if buf.contains(SUCCESS_TOKEN) {
-                    debug!(?buf, "Found success token");
-                    return anyhow::Ok(true);
-                }
-                buf.clear();
+            // eof
+            if count == 0 {
+                debug!(?buf, "EOF, did not escalate");
+                return anyhow::Ok(false);
             }
+
+            if buf.contains(SUCCESS_TOKEN) {
+                debug!(?buf, "Found success token");
+                return anyhow::Ok(true);
+            }
+            buf.clear();
         }
-        .instrument(debug_span!("search_for_token")),
-    );
+    }
+    .instrument(debug_span!("search_for_token"));
 
-    loop {
-        tokio::select! {
-            found_token = &mut search_for_token => {
-                return found_token.unwrap();
+    #[tracing::instrument(skip_all)]
+    async fn fwd(
+        mut src: impl AsyncRead + Unpin,
+        mut dst: impl AsyncWrite + Unpin,
+        bufsize: usize,
+    ) -> std::io::Result<()> {
+        let mut buf = vec![0u8; bufsize];
+        loop {
+            let count = src.read(&mut buf).await?;
+            if count == 0 {
+                info!("Pipe ran out");
+                future::pending::<()>().await;
             }
-            b = (&mut child_stderr).read_u8() => {
-                parent_stderr.write_u8(b?).await?;
-            }
+            dst.write(&buf[..count]).await?;
+        }
+    }
+
+    tokio::select! {
+        found_token = search_for_token => {
+            return found_token;
+        }
+        r = fwd(parent_stdin, child_stdin, 1024) => {
+            panic!("This future never returns so this should be impossible {r:?}");
+        }
+        r = fwd(child_stderr, parent_stderr, 1024) => {
+            panic!("This future never returns so this should be impossible {r:?}");
         }
     }
 }

@@ -47,6 +47,6 @@ nixosTest {
         with subtest("should succeed when run as non-root wheel user"):
             machine.succeed('timeout 10 su admin -c "caligula burn /tmp/input.iso --force -o /dev/loop0 --hash skip --compression auto --root always --interactive never"')
     finally: 
-        print(machine.execute('bash -c "cat /tmp/caligula-*/log/*"', check_output=True)[1])
+        print(machine.execute('for x in $(find /tmp/caligula-* -type f); do echo "$x"; cat "$x"; echo; done', check_output=True)[1])
   '';
 }
