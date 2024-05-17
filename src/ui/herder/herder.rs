@@ -28,6 +28,7 @@ pub struct Herder {
     socket: HerderSocket,
     log_paths: Arc<LogPaths>,
     escalated_daemon: Option<ChildHandle>,
+    writer_ids: u64,
 }
 
 impl Herder {
@@ -36,6 +37,7 @@ impl Herder {
             socket,
             escalated_daemon: None,
             log_paths,
+            writer_ids: 0,
         }
     }
 
@@ -80,7 +82,8 @@ impl Herder {
         args: &WriterProcessConfig,
         em: Option<EscalationMethod>,
     ) -> anyhow::Result<WriterHandle> {
-        let log_path = self.log_paths.writer(0);
+        let log_path = self.log_paths.writer(self.writer_ids);
+        self.writer_ids += 1;
 
         let child = if let Some(em) = em {
             let daemon = self.ensure_escalated_daemon(em).await?;

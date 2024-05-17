@@ -1,20 +1,23 @@
 /**
  * Copyright Conrad Kleinespel (https://github.com/conradkleinespel)
  *
- * This code is lifted from the rpassword crate. It is Licensed under APACHE-2.0.
+ * This code is lifted and modified from the rpassword crate. It is
+ * Licensed under APACHE-2.0.
  */
 use libc::{c_int, tcsetattr, termios, ECHO, ECHONL, TCSANOW};
 use std::io::{self, BufRead};
 use std::mem;
 use std::os::unix::io::AsRawFd;
 
-pub struct HiddenInput {
-    fd: i32,
+pub struct HiddenInput<F: AsRawFd> {
     term_orig: termios,
+    file: F,
 }
 
-impl HiddenInput {
-    pub fn new(fd: i32) -> io::Result<HiddenInput> {
+impl<F: AsRawFd> HiddenInput<F> {
+    pub fn new(file: F) -> io::Result<HiddenInput<F>> {
+        let fd = file.as_raw_fd();
+
         // Make two copies of the terminal settings. The first one will be modified
         // and the second one will act as a backup for when we want to set the
         // terminal back to its original state.
@@ -30,15 +33,15 @@ impl HiddenInput {
         // Save the settings for now.
         io_result(unsafe { tcsetattr(fd, TCSANOW, &term) })?;
 
-        Ok(HiddenInput { fd, term_orig })
+        Ok(HiddenInput { file, term_orig })
     }
 }
 
-impl Drop for HiddenInput {
+impl<F: AsRawFd> Drop for HiddenInput<F> {
     fn drop(&mut self) {
         // Set the the mode back to normal
         unsafe {
-            tcsetattr(self.fd, TCSANOW, &self.term_orig);
+            tcsetattr(self.file.as_raw_fd(), TCSANOW, &self.term_orig);
         }
     }
 }

@@ -4,7 +4,7 @@ mod darwin;
 mod hidden_input;
 mod unix;
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::{os::fd::AsRawFd, process::Stdio};
 
 use futures::future;
@@ -58,8 +58,19 @@ pub async fn run_escalate(
     let mut stdout = BufReader::new(proc.stdout.take().unwrap());
     let mut stderr = proc.stderr.take().unwrap();
 
-    let tty = std::fs::File::open("/dev/tty")?;
-    let _hidden = HiddenInput::new(tty.as_raw_fd())?;
+    let _hidden = match std::fs::File::open("/dev/tty") {
+        Ok(tty) => Some(HiddenInput::new(tty.as_raw_fd())?),
+        Err(err) => {
+            info!(?err, "Error opening /dev/tty");
+            match err.raw_os_error() {
+                Some(libc::ENXIO) => {
+                    info!("/dev/tty not found, no need to hide input");
+                    None
+                }
+                _ => Err(err)?,
+            }
+        }
+    };
 
     info!("Starting event loop");
     match event_loop(
