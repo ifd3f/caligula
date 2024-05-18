@@ -1,7 +1,8 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{fs::File, path::PathBuf, sync::Arc};
 
 use crate::{
     logging::{init_logging_parent, LogPaths},
+    tty::TermiosRestore,
     ui::{
         cli::{Args, Command},
         herder::{Herder, HerderSocket},
@@ -12,13 +13,24 @@ use crate::{
 };
 use clap::Parser;
 use inquire::InquireError;
-use tracing::debug;
+use tracing::{debug, info};
 
 #[tokio::main]
 pub async fn main() {
     let state_dir = ensure_state_dir().await.unwrap();
     let log_paths = LogPaths::init(&state_dir);
     init_logging_parent(&log_paths);
+
+    let _termios_restore = match File::open("/dev/tty") {
+        Ok(tty) => TermiosRestore::new(tty).ok(),
+        Err(error) => {
+            info!(
+                ?error,
+                "failed to open /dev/tty, will not attempt to restore after program"
+            );
+            None
+        }
+    };
 
     debug!("Starting primary process");
     match inner_main(state_dir, log_paths).await {

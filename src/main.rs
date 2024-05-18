@@ -11,6 +11,7 @@ mod ipc_common;
 mod logging;
 mod native;
 mod run_mode;
+mod tty;
 mod ui;
 mod util;
 mod writer_process;
