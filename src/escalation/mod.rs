@@ -3,6 +3,8 @@
 mod darwin;
 mod unix;
 
+use std::process::Stdio;
+
 pub use self::unix::Command;
 
 #[derive(Debug, thiserror::Error)]
@@ -25,6 +27,7 @@ pub async fn run_escalate(
 
         let mut cmd: tokio::process::Command = EscalationMethod::detect()?.wrap_command(cmd).into();
         modify(&mut cmd);
+        cmd.stdin(Stdio::null());
         Ok(cmd.spawn()?)
     }
 
