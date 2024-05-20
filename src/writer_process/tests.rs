@@ -357,7 +357,7 @@ mod helpers {
         pub file: Vec<u8>,
         pub disk: Vec<u8>,
         pub events: Vec<StatusMessage>,
-        pub execute_result: Result<(), ErrorType>,
+        pub execute_result: Result<u64, ErrorType>,
     }
 
     impl WriteTest {
@@ -382,7 +382,12 @@ mod helpers {
             .execute(|e| events.push(e));
 
             if assert_success {
-                execute_result.as_ref().expect("Failed to execute WriteOp");
+                let bytes = *execute_result.as_ref().expect("Failed to execute WriteOp");
+                assert_eq!(
+                    bytes as usize,
+                    file_data.len(),
+                    "WriteOp's returned bytes do not match file input size"
+                )
             }
 
             WriteTestResult {

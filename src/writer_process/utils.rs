@@ -20,6 +20,11 @@ impl<R: Read> CountRead<R> {
     pub fn count(&self) -> u64 {
         self.count
     }
+
+    #[inline(always)]
+    pub fn get_ref(&self) -> &R {
+        &self.r
+    }
 }
 
 impl<R: Read> Read for CountRead<R> {

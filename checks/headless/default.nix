@@ -11,7 +11,11 @@ runCommand "caligula-headless-test" {
     --hash-of raw \
     --compression auto 
 
-  diff ${./expected.iso} ./out.iso
+  for x in $(find /tmp/caligula-* -type f); do
+    echo "$x"
+    cat "$x"
+    echo
+  done
 
-  echo 1 > $out
+  diff ${./expected.iso} ./out.iso && (echo 1 > $out)
 ''

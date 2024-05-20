@@ -98,6 +98,15 @@ macro_rules! generate {
         where
             R: BufRead,
         {
+            pub fn get_ref(&self) -> &R {
+                match self {
+                    Self::Identity(r) => r,
+                    $(
+                        Self::$enumarm(r) => r.get_ref(),
+                    )*
+                }
+            }
+
             pub fn get_mut(&mut self) -> &mut R {
                 match self {
                     Self::Identity(r) => r,

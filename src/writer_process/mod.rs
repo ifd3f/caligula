@@ -2,6 +2,7 @@
 //!
 //! IT IS NOT TO BE USED DIRECTLY BY THE USER! ITS API HAS NO STABILITY GUARANTEES!
 
+use std::fs::OpenOptions;
 use std::io::BufReader;
 use std::{
     fs::File,
@@ -10,7 +11,7 @@ use std::{
 
 use aligned_vec::avec_rt;
 use interprocess::local_socket::{prelude::*, GenericFilePath};
-use tracing::{debug, info};
+use tracing::info;
 use tracing_unwrap::ResultExt;
 
 use crate::childproc_common::child_init;
@@ -29,8 +30,8 @@ mod tests;
 mod utils;
 mod xplat;
 
-const MAX_BUF_SIZE: usize = 2 << 20; // 1MiB
-const CHECKPOINT_BYTES: usize = 4 * (2 << 20); // 4MiB
+const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
+const CHECKPOINT_BYTES: usize = 4 * (2 << 20); // 8MiB
 
 /// This is intended to be run in a forked child process, possibly with
 /// escalated permissions.
@@ -57,17 +58,21 @@ pub fn main() {
 }
 
 fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<(), ErrorType> {
-    debug!("Opening file {}", args.src.to_string_lossy());
+    info!("Opening file {}", args.src.to_string_lossy());
     let mut file = File::open(&args.src).unwrap_or_log();
     let size = file.seek(io::SeekFrom::End(0))?;
     file.seek(io::SeekFrom::Start(0))?;
 
-    debug!(size, "Got input file size");
+    info!(size, "Got input file size");
 
-    debug!("Opening {} for writing", args.dest.to_string_lossy());
+    info!("Opening {} for writing", args.dest.to_string_lossy());
 
     let mut disk = SyncDataFile(match args.target_type {
-        device::Type::File => File::create(&args.dest)?,
+        device::Type::File => OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(&args.dest)?,
         device::Type::Disk | device::Type::Partition => {
             open_blockdev(&args.dest, args.compression)?
         }
@@ -87,7 +92,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
     let buf_size = ((bs * 2048) as usize).min(MAX_BUF_SIZE);
     let checkpoint_period = CHECKPOINT_BYTES / buf_size;
 
-    WriteOp {
+    let actual_input_bytes = WriteOp {
         file: &mut file,
         disk: &mut disk,
         cf: args.compression,
@@ -103,16 +108,23 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
     });
 
     if !args.verify {
-        debug!("Verification skip was requested, quitting");
+        info!("Verification skip was requested, stopping");
         return Ok(());
     }
 
-    debug!("Rewinding source and target to beginning");
+    info!("Rewinding source and target to beginning");
     file.seek(io::SeekFrom::Start(0))?;
     disk.seek(io::SeekFrom::Start(0))?;
 
-    debug!("Executing verification");
+    if args.target_type == device::Type::File {
+        info!(
+            ?actual_input_bytes,
+            "Output is a file, truncating to input length in case we wrote too much"
+        );
+        disk.0.set_len(actual_input_bytes)?;
+    };
 
+    info!("Executing verification");
     VerifyOp {
         file: &mut file,
         disk: &mut disk,
@@ -142,20 +154,23 @@ struct WriteOp<F: Read, D: Write> {
 }
 
 impl<S: Read, D: Write> WriteOp<S, D> {
+    /// Execute the write operation. Returns total number of bytes written.
     #[inline(always)]
-    fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<(), ErrorType> {
-        let mut file = decompress(
-            self.cf,
-            BufReader::with_capacity(self.file_read_buf_size, CountRead::new(&mut self.file)),
-        )
-        .unwrap();
+    fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<u64, ErrorType> {
+        let mut file = CountRead::new(
+            decompress(
+                self.cf,
+                BufReader::with_capacity(self.file_read_buf_size, CountRead::new(&mut self.file)),
+            )
+            .unwrap(),
+        );
         let mut disk = CountWrite::new(&mut self.disk);
         let mut buf = avec_rt![[self.disk_block_size] | 0u8; self.buf_size];
 
         macro_rules! checkpoint {
             () => {
                 tx(StatusMessage::TotalBytes {
-                    src: file.get_mut().get_ref().count(),
+                    src: file.get_ref().get_ref().get_ref().count(),
                     dest: disk.count(),
                 });
             };
@@ -168,7 +183,7 @@ impl<S: Read, D: Write> WriteOp<S, D> {
                 if read_bytes == 0 {
                     disk.flush()?;
                     checkpoint!();
-                    return Ok(());
+                    return Ok(file.count());
                 }
 
                 // Write the entire buffer, because we're doing direct writes.
