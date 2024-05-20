@@ -75,6 +75,8 @@ pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
                 _ => Type::File,
             };
 
+            let block_size = BlockSize(Some(ByteSize::b(d.block_size)));
+
             out.push(WriteTarget {
                 name: bsdname,
                 devnode,
@@ -82,6 +84,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
                 model,
                 removable,
                 target_type,
+                block_size,
             })
         }
 
@@ -102,6 +105,7 @@ pub struct WriteTarget {
     pub model: Model,
     pub removable: Removable,
     pub target_type: Type,
+    pub block_size: BlockSize,
 }
 
 impl WriteTarget {
@@ -175,6 +179,12 @@ impl WriteTarget {
             false => Type::Disk,
         };
 
+        let block_size = BlockSize(
+            read_sys_file(sysnode.join("queue/physical_block_size"))?
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(ByteSize::b),
+        );
+
         Ok(Self {
             name: name.to_string_lossy().into(),
             devnode,
@@ -182,6 +192,7 @@ impl WriteTarget {
             removable,
             model,
             target_type,
+            block_size,
         })
     }
 
@@ -193,6 +204,7 @@ impl WriteTarget {
             model: Model(None),
             removable: Removable::Unknown,
             target_type: Type::File,
+            block_size: BlockSize(None),
         })
     }
 }
@@ -313,5 +325,17 @@ impl Display for Type {
                 Type::Partition => "partition",
             }
         )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, derive_more::From)]
+pub struct BlockSize(pub Option<ByteSize>);
+
+impl Display for BlockSize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(bs) => write!(f, "{}", bs),
+            None => write!(f, "[unknown block size]"),
+        }
     }
 }

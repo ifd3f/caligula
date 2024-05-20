@@ -48,6 +48,7 @@ impl BeginParams {
             verify: true,
             compression: self.compression,
             target_type: self.target.target_type,
+            block_size: self.target.block_size.0.map(|s| s.as_u64()),
         }
     }
 }
@@ -135,6 +136,7 @@ impl Display for BeginParams {
         writeln!(f, "Output: {}", self.target.name)?;
         writeln!(f, "  Model: {}", self.target.model)?;
         writeln!(f, "  Size: {}", self.target.size)?;
+        writeln!(f, "  Block size: {}", self.target.block_size)?;
         writeln!(f, "  Type: {}", self.target.target_type)?;
         writeln!(f, "  Path: {}", self.target.devnode.to_string_lossy())?;
         writeln!(f, "  Removable: {}", self.target.removable)?;

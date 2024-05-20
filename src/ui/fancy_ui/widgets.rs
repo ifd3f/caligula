@@ -185,6 +185,15 @@ impl WriterProgressBar {
         }
     }
 
+    /// This function clamps the ratio to [0, 1].
+    ///
+    /// Unfortunately, it is sometimes outside of [0, 1]. The most common example is when
+    /// we write a non-block-aligned file, in which case bytes_written > max because we
+    /// compensate by writing the partial block.
+    pub fn ratio(&self) -> f64 {
+        self.ratio.clamp(0.0, 1.0)
+    }
+
     pub fn render(&self) -> Gauge {
         if let Some(max) = self.display_total_bytes {
             Gauge::default()
@@ -194,7 +203,7 @@ impl WriterProgressBar {
                     ByteSize::b(self.bytes_written),
                     ByteSize::b(max)
                 ))
-                .ratio(self.ratio)
+                .ratio(self.ratio())
                 .gauge_style(self.style)
         } else {
             Gauge::default()
@@ -203,7 +212,7 @@ impl WriterProgressBar {
                     self.label_state,
                     ByteSize::b(self.bytes_written),
                 ))
-                .ratio(self.ratio)
+                .ratio(self.ratio())
                 .gauge_style(self.style)
         }
     }

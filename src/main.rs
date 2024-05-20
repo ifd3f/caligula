@@ -19,7 +19,7 @@ mod writer_process;
 fn main() {
     match RunMode::detect() {
         RunMode::Main => ui::main::main(),
-        RunMode::Writer => writer_process::child::main(),
+        RunMode::Writer => writer_process::main(),
         RunMode::EscalatedDaemon => escalated_daemon::main(),
     }
 }
