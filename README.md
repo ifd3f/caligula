@@ -136,7 +136,7 @@ To be fair, Rust doesn't have a very comprehensive standard library, and I only 
 
 ### Will the binary ever get bigger?
 
-I want to keep the binary very small, or at least as small as I can make it. My current soft limit is to keep the x86_64-linux version under ~~4~~6MB. This value may change with time or as features are added, but I don't want the binary to be anywhere near what an average Electron app is at. As of v0.4.6, it's only 4.29MB, which is not too bad!
+I want to keep the binary very small, or at least as small as I can make it. My current soft limit is to keep the x86_64-linux version under 4 (or maybe 6) MB. This value may change with time or as features are added, but I don't want the binary to be anywhere near what an average Electron app is at. As of v0.4.6, it's only 4.29MB, which is not too bad!
 
 ### Why do you have to type in `burn`? Will you add other subcommands later?
 
