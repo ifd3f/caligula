@@ -3,7 +3,6 @@
 //! IT IS NOT TO BE USED DIRECTLY BY THE USER! ITS API HAS NO STABILITY GUARANTEES!
 
 use std::fs::OpenOptions;
-use std::io::BufReader;
 use std::{
     fs::File,
     io::{self, Read, Seek, Write},
@@ -15,11 +14,11 @@ use tracing::info;
 use tracing_unwrap::ResultExt;
 
 use crate::childproc_common::child_init;
-use crate::compression::{decompress, CompressionFormat};
+use crate::compression::CompressionFormat;
 use crate::device;
 use crate::ipc_common::write_msg;
 
-use crate::writer_process::utils::{CountRead, CountWrite, SyncDataFile};
+use crate::writer_process::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
 use crate::writer_process::xplat::open_blockdev;
 
 use ipc::*;
@@ -143,8 +142,8 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
 /// - decompress the input file
 /// - write to a disk
 /// - write stats down a pipe
-struct WriteOp<F: Read, D: Write> {
-    file: F,
+struct WriteOp<S: Read, D: Write> {
+    file: S,
     disk: D,
     cf: CompressionFormat,
     buf_size: usize,
@@ -157,20 +156,14 @@ impl<S: Read, D: Write> WriteOp<S, D> {
     /// Execute the write operation. Returns total number of bytes written.
     #[inline(always)]
     fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<u64, ErrorType> {
-        let mut file = CountRead::new(
-            decompress(
-                self.cf,
-                BufReader::with_capacity(self.file_read_buf_size, CountRead::new(&mut self.file)),
-            )
-            .unwrap(),
-        );
+        let mut file = FileSourceReader::new(self.cf, self.file_read_buf_size, &mut self.file);
         let mut disk = CountWrite::new(&mut self.disk);
         let mut buf = avec_rt![[self.disk_block_size] | 0u8; self.buf_size];
 
         macro_rules! checkpoint {
             () => {
                 tx(StatusMessage::TotalBytes {
-                    src: file.get_ref().get_ref().get_ref().count(),
+                    src: file.read_file_bytes(),
                     dest: disk.count(),
                 });
             };
@@ -183,7 +176,7 @@ impl<S: Read, D: Write> WriteOp<S, D> {
                 if read_bytes == 0 {
                     disk.flush()?;
                     checkpoint!();
-                    return Ok(file.count());
+                    return Ok(file.decompressed_bytes());
                 }
 
                 // Write the entire buffer, because we're doing direct writes.
@@ -236,11 +229,7 @@ struct VerifyOp<F: Read, D: Read> {
 impl<F: Read, D: Read> VerifyOp<F, D> {
     #[inline(always)]
     fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<(), ErrorType> {
-        let mut file = decompress(
-            self.cf,
-            BufReader::with_capacity(self.file_read_buf_size, CountRead::new(&mut self.file)),
-        )
-        .unwrap();
+        let mut file = FileSourceReader::new(self.cf, self.file_read_buf_size, &mut self.file);
         let mut disk = CountRead::new(&mut self.disk);
 
         let mut file_buf = avec_rt![[self.disk_block_size] | 0u8; self.buf_size];
@@ -249,7 +238,7 @@ impl<F: Read, D: Read> VerifyOp<F, D> {
         macro_rules! checkpoint {
             () => {
                 tx(StatusMessage::TotalBytes {
-                    src: file.get_mut().get_ref().count(),
+                    src: file.read_file_bytes(),
                     dest: disk.count(),
                 });
             };
