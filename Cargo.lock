@@ -265,6 +265,7 @@ dependencies = [
  "process_path",
  "rand",
  "ratatui",
+ "ruzstd",
  "serde",
  "serde_json",
  "sha1",
@@ -1273,6 +1274,15 @@ name = "rustversion"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "80af6f9131f277a45a3fba6ce8e2258037bb0477a67e610d3c1fe046ab31de47"
+
+[[package]]
+name = "ruzstd"
+version = "0.6.0"
+source = "git+https://github.com/ifd3f/zstd-rs.git?rev=4b79cb9091b7ae2db110b4e3f0abdf2bd60fd625#4b79cb9091b7ae2db110b4e3f0abdf2bd60fd625"
+dependencies = [
+ "byteorder",
+ "twox-hash",
+]
 
 [[package]]
 name = "ryu"
