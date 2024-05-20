@@ -29,8 +29,11 @@ mod tests;
 mod utils;
 mod xplat;
 
+/// Maximum size we may allocate for each buffer.
 const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
-const CHECKPOINT_BYTES: usize = 4 * (2 << 20); // 8MiB
+
+/// How many bytes should be written before we perform a checkpoint (aka report progress).
+const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
 /// This is intended to be run in a forked child process, possibly with
 /// escalated permissions.
@@ -139,16 +142,24 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
 }
 
 /// Wraps a bunch of parameters for a big complicated operation where we:
+///
 /// - decompress the input file
 /// - write to a disk
 /// - write stats down a pipe
 struct WriteOp<S: Read, D: Write> {
+    /// File to read from
     file: S,
+    /// Disk to write to
     disk: D,
+    /// Compression format to use
     cf: CompressionFormat,
+    /// Buffer size to use when writing
     buf_size: usize,
+    /// Block size of the disk
     disk_block_size: usize,
+    /// How many writes of size [`Self::buf_size`] before we report back
     checkpoint_period: usize,
+    /// How big the file reader's buffer should be
     file_read_buf_size: usize,
 }
 
@@ -212,21 +223,29 @@ fn try_read_exact(r: &mut impl Read, mut buf: &mut [u8]) -> std::io::Result<usiz
 }
 
 /// Wraps a bunch of parameters for a big complicated operation where we:
+///
 /// - decompress the input file
 /// - read from a disk
 /// - verify both sides are correct
 /// - write stats down a pipe
-struct VerifyOp<F: Read, D: Read> {
-    file: F,
+struct VerifyOp<S: Read, D: Read> {
+    /// File to validate against
+    file: S,
+    /// Disk to validate
     disk: D,
+    /// Compression format to use
     cf: CompressionFormat,
+    /// Buffer size to use when writing
     buf_size: usize,
+    /// Block size of the disk
     disk_block_size: usize,
+    /// How many writes of size [`Self::buf_size`] before we report back
     checkpoint_period: usize,
+    /// How big the file reader's buffer should be
     file_read_buf_size: usize,
 }
 
-impl<F: Read, D: Read> VerifyOp<F, D> {
+impl<S: Read, D: Read> VerifyOp<S, D> {
     #[inline(always)]
     fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<(), ErrorType> {
         let mut file = FileSourceReader::new(self.cf, self.file_read_buf_size, &mut self.file);

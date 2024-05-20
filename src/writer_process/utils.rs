@@ -71,12 +71,12 @@ impl<W: Write> Write for CountWrite<W> {
     }
 }
 
-/// [`File::flush`] is a lie. It does literally nothing. This is a simple wrapper
-/// over [`File`] that:
+/// [`File::flush`] is a lie. It does literally nothing on most OSes. This is a
+/// simple wrapper over [`File`] that:
 ///
-/// - trivially delegates Read and Seek
-/// - trivially delegates Write::write
-/// - replaces Write::flush with the platform-specific synchronous call to ensure
+/// - trivially delegates [`Read`] and [`Seek`]
+/// - trivially delegates [`Write::write`]
+/// - replaces [`Write::flush`] with the platform-specific synchronous call to ensure
 ///   that the data has been written to the disk.
 pub struct SyncDataFile(pub File);
 
@@ -118,6 +118,8 @@ impl Seek for SyncDataFile {
 
 /// A reader type specifically for [`super::WriteOp`] and [`super::VerifyOp`] to
 /// read stuff off of files.
+///
+/// It provides decompression, buffering, and instrumentation of read stats.
 pub struct FileSourceReader<R: Read>(CountRead<DecompressRead<BufReader<CountRead<R>>>>);
 
 impl<R: Read> FileSourceReader<R> {

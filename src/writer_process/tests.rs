@@ -6,7 +6,7 @@ use rand::{rngs::SmallRng, SeedableRng};
 use rstest::*;
 
 #[test]
-fn write_op_works() {
+fn write_op_works_with_emitted_events() {
     let test = WriteTest {
         buf_size: 16,
         file_size: 1024,
@@ -118,16 +118,29 @@ fn write_very_big_happy_case(#[values(512, 1024, 2048)] bs: usize) {
 }
 
 #[rstest]
-fn write_512_case() {
+#[case({
     let bs = 512;
-    let test = WriteTest {
+    WriteTest {
         buf_size: bs * 9,
         file_size: 83128,
         disk_size: bs * 272,
         disk_block_size: bs,
         checkpoint_period: 16,
         file_read_buf_size: 8192,
-    };
+    }
+})]
+#[case({
+    let bs = 4;
+    WriteTest {
+        buf_size: bs * 9,
+        file_size: 593,
+        disk_size: bs * 272,
+        disk_block_size: bs,
+        checkpoint_period: 16,
+        file_read_buf_size: bs * (8192 / 512),
+    }
+})]
+fn write_misc_cases(#[case] test: WriteTest) {
     let result = test.execute(true);
 
     for w in &result.requested_writes {
@@ -143,26 +156,6 @@ fn write_512_case() {
     {
         assert_eq!(a, e, "Discrepancy detected at byte {i}")
     }
-}
-
-#[rstest]
-fn write_block_dumb() {
-    let bs = 4;
-    let test = WriteTest {
-        buf_size: bs * 9,
-        file_size: 593,
-        disk_size: bs * 272,
-        disk_block_size: bs,
-        checkpoint_period: 16,
-        file_read_buf_size: bs * (8192 / 512),
-    };
-    let result = test.execute(true);
-
-    for w in &result.requested_writes {
-        assert_eq!(w.len(), test.buf_size);
-    }
-
-    assert_eq!(result.disk[..test.file_size], result.file,)
 }
 
 #[rstest]

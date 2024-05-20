@@ -28,7 +28,7 @@ pub fn open_blockdev(path: impl AsRef<Path>, _cf: CompressionFormat) -> std::io:
     let file = OpenOptions::new().write(true).read(true).open(path)?;
 
     unsafe {
-        // Enable direct writes. Bypass that cache.
+        // Enable direct writes
         fcntl(file.as_raw_fd(), F_NOCACHE);
     }
 
