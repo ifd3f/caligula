@@ -1351,9 +1351,11 @@ checksum = "80af6f9131f277a45a3fba6ce8e2258037bb0477a67e610d3c1fe046ab31de47"
 [[package]]
 name = "ruzstd"
 version = "0.6.0"
-source = "git+https://github.com/ifd3f/zstd-rs.git?rev=4b79cb9091b7ae2db110b4e3f0abdf2bd60fd625#4b79cb9091b7ae2db110b4e3f0abdf2bd60fd625"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5174a470eeb535a721ae9fdd6e291c2411a906b96592182d05217591d5c5cf7b"
 dependencies = [
  "byteorder",
+ "derive_more",
  "twox-hash",
 ]
 
