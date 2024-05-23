@@ -1,3 +1,5 @@
+mod zstd_streaming_decoder;
+
 use clap::ValueEnum;
 use std::{
     fmt::Display,
@@ -184,8 +186,8 @@ generate! {
     Zst {
         extension_pattern: "zst",
         display: "zstd/ZStandard",
-        from_reader() -> ruzstd::streaming_decoder::StreamingDecoder<R, ruzstd::frame_decoder::FrameDecoder> {
-            ruzstd::streaming_decoder::StreamingDecoder::new(r)?
+        from_reader() -> self::zstd_streaming_decoder::StreamingDecoder<R, ruzstd::frame_decoder::FrameDecoder> {
+            self::zstd_streaming_decoder::StreamingDecoder::new(r)?
         }
     }
 }
