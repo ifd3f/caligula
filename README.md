@@ -52,7 +52,7 @@ There are a couple of ways to install Caligula.
 - **Nix:**
   - [Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/by-name/ca/caligula/package.nix): `nix-env -i caligula`
   - Repository flake: If your system is flake-enabled, you can use `github:ifd3f/caligula` for bleeding-edge changes.
-- **Cargo:** `cargo install caligula`
+- **Cargo:** Caligula is published on [crates.io](https://crates.io/crates/caligula). Just run `cargo install caligula`
 - **Build from source:** This is a relatively standard cargo project so you should be able to just `git clone` and `cargo build --release` it.
 
 ### Platform support matrix
