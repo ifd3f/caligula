@@ -26,7 +26,7 @@ use ipc::*;
 pub mod ipc;
 #[cfg(test)]
 mod tests;
-mod utils;
+pub(crate) mod utils;
 mod xplat;
 
 /// Maximum size we may allocate for each buffer.
