@@ -6,21 +6,21 @@ use std::io::Read;
 use valuable::Valuable;
 
 macro_rules! generate {
-    {
-        $(
-            $digest_bytes:expr => [
-                $(
-                    $sri_prefix:expr => $enumarm:ident($display:expr): $hash_inner:ty {
-                        $makehash_expr:expr
-                    }
-                )*
-            ]
-        )*
-    } => {
+    {$(
+        hash_length: $digest_bytes:expr => [
+            $($enum_arm:ident {
+                name: $sri_prefix:literal,
+                display: $display:expr,
+                new() -> $hash_inner:ty {
+                    $makehash_expr:expr
+                }
+            })*
+        ]
+    )*} => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Valuable)]
         pub enum HashAlg {
             $($(
-                $enumarm,
+                $enum_arm,
             )*)*
         }
 
@@ -38,7 +38,7 @@ macro_rules! generate {
             R : Read,
         {
             $($(
-                $enumarm(GenericHashing<$hash_inner, R>),
+                $enum_arm(GenericHashing<$hash_inner, R>),
             )*)*
         }
 
@@ -49,7 +49,7 @@ macro_rules! generate {
             pub fn from_sri_alg(alg: &str) -> Option<Self> {
                 match alg {
                     $($(
-                        $sri_prefix => Some(Self::$enumarm),
+                        $sri_prefix => Some(Self::$enum_arm),
                     )*)*
                     _ => None,
                 }
@@ -62,7 +62,7 @@ macro_rules! generate {
                     $(
                         $digest_bytes => &[
                             $(
-                                Self::$enumarm,
+                                Self::$enum_arm,
                             )*
                         ],
                     )*
@@ -74,7 +74,7 @@ macro_rules! generate {
             pub fn digest_bytes(&self) -> usize {
                 match self {
                     $($(
-                        Self::$enumarm => $digest_bytes,
+                        Self::$enum_arm => $digest_bytes,
                     )*)*
                 }
             }
@@ -84,7 +84,7 @@ macro_rules! generate {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match self {
                     $($(
-                        Self::$enumarm => write!(f, $display),
+                        Self::$enum_arm => write!(f, $display),
                     )*)*
                 }
             }
@@ -98,7 +98,7 @@ macro_rules! generate {
             pub fn new(alg: HashAlg, r: R, block_size: usize) -> Self {
                 let inner = match alg {
                     $($(
-                        HashAlg::$enumarm => HashingInner::$enumarm(
+                        HashAlg::$enum_arm => HashingInner::$enum_arm(
                             GenericHashing::new($makehash_expr, r, block_size)
                         ),
                     )*)*
@@ -111,7 +111,7 @@ macro_rules! generate {
             pub fn finalize(self) -> std::io::Result<FileHashInfo> {
                 match self.inner {
                     $($(
-                        HashingInner::$enumarm(i) => i.finalize(),
+                        HashingInner::$enum_arm(i) => i.finalize(),
                     )*)*
                 }
             }
@@ -120,7 +120,7 @@ macro_rules! generate {
             pub fn get_reader_mut(&mut self) -> &mut R {
                 match &mut self.inner {
                     $($(
-                        HashingInner::$enumarm(i) => i.get_reader_mut(),
+                        HashingInner::$enum_arm(i) => i.get_reader_mut(),
                     )*)*
                 }
             }
@@ -136,7 +136,7 @@ macro_rules! generate {
             fn next(&mut self) -> Option<Self::Item> {
                 match &mut self.inner {
                     $($(
-                        HashingInner::$enumarm(i) => i.next(),
+                        HashingInner::$enum_arm(i) => i.next(),
                     )*)*
                 }
             }
@@ -145,34 +145,58 @@ macro_rules! generate {
 }
 
 generate! {
-    16 => [
-        "md5" => Md5("MD5"): md5::Md5 {
-            md5::Md5::new()
+    hash_length: 16 => [
+        Md5 {
+            name: "md5",
+            display: "MD5",
+            new() -> md5::Md5 {
+                md5::Md5::new()
+            }
         }
     ]
-    20 => [
-        "sha1" => Sha1("SHA-1"): sha1::Sha1 {
-            sha1::Sha1::new()
+    hash_length: 20 => [
+        Sha1 {
+            name: "sha1",
+            display: "SHA-1",
+            new() -> sha1::Sha1 {
+                sha1::Sha1::new()
+            }
         }
     ]
-    28 => [
-        "sha224" => Sha224("SHA-224"): sha2::Sha224 {
-            sha2::Sha224::new()
+    hash_length: 28 => [
+        Sha224 {
+            name: "sha224",
+            display: "SHA-224",
+            new() -> sha2::Sha224 {
+                sha2::Sha224::new()
+            }
         }
     ]
-    32 => [
-        "sha256" => Sha256("SHA-256"): sha2::Sha256 {
-            sha2::Sha256::new()
+    hash_length: 32 => [
+        Sha256 {
+            name: "sha256",
+            display: "SHA-256",
+            new() -> sha2::Sha256 {
+                sha2::Sha256::new()
+            }
         }
     ]
-    48 => [
-        "sha384" => Sha384("SHA-384"): sha2::Sha384 {
-            sha2::Sha384::new()
+    hash_length: 48 => [
+        Sha384 {
+            name: "sha384",
+            display: "SHA-384",
+            new() -> sha2::Sha384 {
+                sha2::Sha384::new()
+            }
         }
     ]
-    64 => [
-        "sha512" => Sha512("SHA-512"): sha2::Sha512 {
-            sha2::Sha512::new()
+    hash_length: 64 => [
+        Sha512 {
+            name: "sha512",
+            display: "SHA-512",
+            new() -> sha2::Sha512 {
+                sha2::Sha512::new()
+            }
         }
     ]
 }

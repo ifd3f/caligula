@@ -1,3 +1,5 @@
+mod zstd_streaming_decoder;
+
 use clap::ValueEnum;
 use std::{
     fmt::Display,
@@ -10,13 +12,15 @@ use valuable::Valuable;
 
 macro_rules! generate {
     {
-        $readervar:ident: $r:ident {
-            $(
-                $extpat:pat =>
-                    $enumarm:ident($display:expr, $inner:ty)
-                    $dcrinner:expr,
-            )*
-        }
+        reader_var: $reader_var:ident,
+        reader_typename: $reader_typename:ident,
+        $($enum_arm:ident {
+            extension_pattern: $ext_pat:pat,
+            display: $display:expr,
+            from_reader() -> $inner:ty {
+                $from_reader:expr
+            }
+        })*
     } => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
         pub enum CompressionArg {
@@ -24,7 +28,7 @@ macro_rules! generate {
             Auto,
             None,
             $(
-                $enumarm,
+                $enum_arm,
             )*
         }
 
@@ -37,7 +41,7 @@ macro_rules! generate {
                     Self::Auto => None,
                     Self::None => Some(CompressionFormat::Identity),
                     $(
-                        Self::$enumarm => Some(CompressionFormat::$enumarm),
+                        Self::$enum_arm => Some(CompressionFormat::$enum_arm),
                     )*
                 }
             }
@@ -47,14 +51,14 @@ macro_rules! generate {
         pub enum CompressionFormat {
             Identity,
             $(
-                $enumarm,
+                $enum_arm,
             )*
         }
 
         pub const AVAILABLE_FORMATS: &[CompressionFormat] = &[
             CompressionFormat::Identity,
             $(
-                CompressionFormat::$enumarm,
+                CompressionFormat::$enum_arm,
             )*
         ];
 
@@ -62,7 +66,7 @@ macro_rules! generate {
             pub fn detect_from_extension(ext: &str) -> Self {
                 match ext.to_lowercase().trim_start_matches(".") {
                     $(
-                        $extpat => Self::$enumarm,
+                        $ext_pat => Self::$enum_arm,
                     )*
                     _ => Self::Identity,
                 }
@@ -81,16 +85,16 @@ macro_rules! generate {
                 match self {
                     CompressionFormat::Identity => write!(f, "no compression"),
                     $(
-                        Self::$enumarm => write!(f, $display),
+                        Self::$enum_arm => write!(f, $display),
                     )*
                 }
             }
         }
 
-        pub enum DecompressRead<$r: BufRead> {
-            Identity($r),
+        pub enum DecompressRead<$reader_typename: BufRead> {
+            Identity($reader_typename),
             $(
-                $enumarm($inner),
+                $enum_arm($inner),
             )*
         }
 
@@ -102,7 +106,7 @@ macro_rules! generate {
                 match self {
                     Self::Identity(r) => r,
                     $(
-                        Self::$enumarm(r) => r.get_ref(),
+                        Self::$enum_arm(r) => r.get_ref(),
                     )*
                 }
             }
@@ -111,7 +115,7 @@ macro_rules! generate {
                 match self {
                     Self::Identity(r) => r,
                     $(
-                        Self::$enumarm(r) => r.get_mut(),
+                        Self::$enum_arm(r) => r.get_mut(),
                     )*
                 }
             }
@@ -125,22 +129,22 @@ macro_rules! generate {
                 match self {
                     Self::Identity(r) => r.read(buf),
                     $(
-                        Self::$enumarm(r) => r.read(buf),
+                        Self::$enum_arm(r) => r.read(buf),
                     )*
                 }
             }
         }
 
         /// Open a decompressor for the given reader.
-        pub fn decompress<R>(cf: CompressionFormat, $readervar: R) -> anyhow::Result<DecompressRead<R>>
+        pub fn decompress<R>(cf: CompressionFormat, $reader_var: R) -> anyhow::Result<DecompressRead<R>>
         where
             R : BufRead
         {
             match cf {
-                CompressionFormat::Identity => Ok(DecompressRead::Identity($readervar)),
+                CompressionFormat::Identity => Ok(DecompressRead::Identity($reader_var)),
                 $(
-                    CompressionFormat::$enumarm => {
-                        Ok(DecompressRead::$enumarm($dcrinner))
+                    CompressionFormat::$enum_arm => {
+                        Ok(DecompressRead::$enum_arm($from_reader))
                     }
                 )*
             }
@@ -149,22 +153,42 @@ macro_rules! generate {
 }
 
 generate! {
-    r: R {
-        "gz" => Gz("gzip", flate2::bufread::GzDecoder<R>) {
+    reader_var: r,
+    reader_typename: R,
+    Gz {
+        extension_pattern: "gz",
+        display: "gzip",
+        from_reader() -> flate2::bufread::GzDecoder<R> {
             flate2::bufread::GzDecoder::new(r)
-        },
-        "bz2" => Bz2("bzip2", bzip2::bufread::BzDecoder<R>) {
+        }
+    }
+    Bz2 {
+        extension_pattern: "bz2",
+        display: "bzip2",
+        from_reader() -> bzip2::bufread::BzDecoder<R> {
             bzip2::bufread::BzDecoder::new(r)
-        },
-        "xz" => Xz("xz/LZMA", xz2::bufread::XzDecoder<R>) {
+        }
+    }
+    Xz {
+        extension_pattern: "xz",
+        display: "xz/LZMA",
+        from_reader() -> xz2::bufread::XzDecoder<R> {
             xz2::bufread::XzDecoder::new(r)
-        },
-        "lz4" => Lz4("lz4", lz4_flex::frame::FrameDecoder<R>) {
+        }
+    }
+    Lz4 {
+        extension_pattern: "lz4",
+        display: "lz4",
+        from_reader() -> lz4_flex::frame::FrameDecoder<R> {
             lz4_flex::frame::FrameDecoder::new(r)
-        },
-        "zst" => Zst("zstd/Zstandard", ruzstd::streaming_decoder::StreamingDecoder<R, ruzstd::frame_decoder::FrameDecoder>) {
-            ruzstd::streaming_decoder::StreamingDecoder::new(r)?
-        },
+        }
+    }
+    Zst {
+        extension_pattern: "zst",
+        display: "zstd/ZStandard",
+        from_reader() -> self::zstd_streaming_decoder::StreamingDecoder<R, ruzstd::frame_decoder::FrameDecoder> {
+            self::zstd_streaming_decoder::StreamingDecoder::new(r)?
+        }
     }
 }
 

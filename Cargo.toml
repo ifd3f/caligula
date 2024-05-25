@@ -4,7 +4,7 @@ description = "A lightweight, user-friendly disk imaging tool"
 homepage = "https://github.com/ifd3f/caligula"
 repository = "https://github.com/ifd3f/caligula.git"
 authors = ["Astrid Yu <astrid@astrid.tech>"]
-version = "0.4.4"
+version = "0.4.7"
 edition = "2021"
 license = "GPL-3.0"
 
@@ -35,7 +35,7 @@ lz4_flex = "0.11.3"
 md-5 = "0.10.5"
 process_path = "0.1.4"
 ratatui = "0.26.0"
-ruzstd = { git = "https://github.com/ifd3f/zstd-rs.git", rev = "4b79cb9091b7ae2db110b4e3f0abdf2bd60fd625", version = "0.6.0" }
+ruzstd = "0.6.0"
 serde = { version = "1.0.200", features = ["derive"] }
 serde_json = "1.0.116"
 sha1 = "0.10.5"
