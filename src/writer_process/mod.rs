@@ -3,6 +3,8 @@
 //! IT IS NOT TO BE USED DIRECTLY BY THE USER! ITS API HAS NO STABILITY GUARANTEES!
 
 use std::fs::OpenOptions;
+use std::os::unix::process::ExitStatusExt;
+use std::process::{Command, Stdio};
 use std::{
     fs::File,
     io::{self, Read, Seek, Write},
@@ -10,7 +12,7 @@ use std::{
 
 use aligned_vec::avec_rt;
 use interprocess::local_socket::{prelude::*, GenericFilePath};
-use tracing::info;
+use tracing::{debug, info};
 use tracing_unwrap::ResultExt;
 
 use crate::childproc_common::child_init;
@@ -60,6 +62,36 @@ pub fn main() {
 }
 
 fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<(), ErrorType> {
+    if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
+        let mut command = Command::new("diskutil");
+        command
+            .arg("unmountdisk")
+            .arg(&args.dest)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        info!(?command, "spawning process to unmount disk");
+        let mut child = command.spawn()?;
+        debug!("successfully ran diskutil, waiting on child process");
+
+        let exit = child.wait()?;
+        let mut stderr = String::new();
+        child.stderr.take().unwrap().read_to_string(&mut stderr)?;
+        let mut stdout = String::new();
+        child.stdout.take().unwrap().read_to_string(&mut stdout)?;
+
+        debug!(?exit, ?stderr, "child exited");
+
+        let exit_code = exit.into_raw();
+        if !exit.success() {
+            return Err(ErrorType::FailedToUnmount {
+                message: format!("stderr: {stderr}\nstdout: {stdout}"),
+                exit_code,
+            });
+        }
+    }
+
     info!("Opening file {}", args.src.to_string_lossy());
     let mut file = File::open(&args.src).unwrap_or_log();
     let size = file.seek(io::SeekFrom::End(0))?;

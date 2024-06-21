@@ -49,6 +49,7 @@ pub enum ErrorType {
     VerificationFailed,
     UnexpectedTermination,
     UnknownChildProcError(String),
+    FailedToUnmount { message: String, exit_code: i32 },
 }
 
 impl From<std::io::Error> for ErrorType {
@@ -75,6 +76,10 @@ impl Display for ErrorType {
             ErrorType::UnknownChildProcError(err) => {
                 write!(f, "Unknown error occurred in child process: {err}")
             }
+            ErrorType::FailedToUnmount { message, exit_code } => write!(
+                f,
+                "Failed to unmount disk (exit code {exit_code})\n{message}"
+            ),
         }
     }
 }
