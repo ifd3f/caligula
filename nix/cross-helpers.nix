@@ -85,7 +85,9 @@ in rec {
 
       crossParams = if host == target then {
         cc = pkgs.stdenv.cc;
-        extraBuildEnv = { };
+        extraBuildEnv = { 
+          RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+        };
       } else rec {
         cc = pkgsCross.stdenv.cc;
         extraBuildEnv = {
