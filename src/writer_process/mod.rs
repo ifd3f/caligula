@@ -11,14 +11,16 @@ use std::{
 };
 
 use aligned_vec::avec_rt;
-use interprocess::local_socket::{prelude::*, GenericFilePath};
+use interprocess::local_socket::{tokio::prelude::*, GenericFilePath};
+use tokio::io::AsyncWriteExt;
+use tokio::sync::mpsc;
 use tracing::{debug, info};
 use tracing_unwrap::ResultExt;
 
 use crate::childproc_common::child_init;
 use crate::compression::CompressionFormat;
 use crate::device;
-use crate::ipc_common::write_msg;
+use crate::ipc_common::{write_msg, write_msg_async};
 
 use crate::writer_process::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
 use crate::writer_process::xplat::open_blockdev;
@@ -39,29 +41,46 @@ const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
 /// This is intended to be run in a forked child process, possibly with
 /// escalated permissions.
-pub fn main() {
+#[tokio::main]
+pub async fn main() {
     let (sock, args) = child_init::<WriterProcessConfig>();
 
     info!("Opening socket {sock}");
     let mut stream =
         LocalSocketStream::connect(sock.to_fs_name::<GenericFilePath>().unwrap_or_log())
+            .await
             .unwrap_or_log();
 
+    let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<StatusMessage>();
+    let status_sender = tokio::spawn(async move {
+        loop {
+            let Some(msg) = msg_rx.recv().await else {
+                break;
+            };
+            write_msg_async(&mut stream, &msg)
+                .await
+                .expect("failed to write message");
+            stream.flush().await.expect("Failed to flush stream");
+        }
+    });
+
     let mut tx = move |msg: StatusMessage| {
-        write_msg(&mut stream, &msg).expect("Failed to write message");
-        stream.flush().expect("Failed to flush stream");
+        msg_tx.send(msg).unwrap_or_log();
     };
 
-    let final_msg = match run(&mut tx, &args) {
+    let final_msg = match run(&mut tx, &args).await {
         Ok(_) => StatusMessage::Success,
         Err(e) => StatusMessage::Error(e),
     };
 
     info!(?final_msg, "Completed");
     tx(final_msg);
+    drop(tx);
+
+    status_sender.await.unwrap_or_log();
 }
 
-fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<(), ErrorType> {
+async fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<(), ErrorType> {
     if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
         let mut command = Command::new("diskutil");
         command
