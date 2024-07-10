@@ -1,6 +1,18 @@
 use std::{
-    fs::File,
     io::{BufReader, Read, Seek, Write},
+    pin::{pin, Pin},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    task::{Context, Poll},
+};
+
+use futures::{future::BoxFuture, FutureExt};
+use pin_project::pin_project;
+use tokio::{
+    fs::File,
+    io::{AsyncRead, AsyncSeek, AsyncWrite},
 };
 
 use crate::compression::{decompress, CompressionFormat, DecompressRead};
@@ -40,12 +52,14 @@ impl<R: Read> Read for CountRead<R> {
 
 /// Wraps a writer and counts how many bytes we've written in total, without
 /// making any system calls.
-pub struct CountWrite<W: Write> {
+#[pin_project]
+pub struct CountWrite<W: AsyncWrite> {
+    #[pin]
     w: W,
     count: u64,
 }
 
-impl<W: Write> CountWrite<W> {
+impl<W: AsyncWrite> CountWrite<W> {
     #[inline(always)]
     pub fn new(w: W) -> Self {
         Self { w, count: 0 }
@@ -57,17 +71,38 @@ impl<W: Write> CountWrite<W> {
     }
 }
 
-impl<W: Write> Write for CountWrite<W> {
+fn inspect_poll<T>(p: Poll<T>, f: impl FnOnce(&T) -> ()) -> Poll<T> {
+    match &p {
+        Poll::Ready(x) => f(x),
+        Poll::Pending => (),
+    }
+    p
+}
+
+impl<W: AsyncWrite> AsyncWrite for CountWrite<W> {
     #[inline(always)]
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let bytes = self.w.write(buf)?;
-        self.count += bytes as u64;
-        Ok(bytes)
+    fn poll_write(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        let proj = self.as_mut().project();
+        let poll = proj.w.poll_write(cx, buf);
+        inspect_poll(poll, move |r| {
+            r.as_ref().inspect(|c| {
+                *proj.count += **c as u64;
+            });
+        })
     }
 
     #[inline(always)]
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.w.flush()
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        self.project().w.poll_flush(cx)
+    }
+
+    #[inline(always)]
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        self.project().w.poll_shutdown(cx)
     }
 }
 
@@ -78,41 +113,122 @@ impl<W: Write> Write for CountWrite<W> {
 /// - trivially delegates [`Write::write`]
 /// - replaces [`Write::flush`] with the platform-specific synchronous call to ensure
 ///   that the data has been written to the disk.
-pub struct SyncDataFile(pub File);
+#[pin_project]
+pub struct SyncDataFile {
+    #[pin]
+    state: SyncDataState,
+}
 
-impl Read for SyncDataFile {
-    #[inline(always)]
-    fn read(&mut self, buf: &mut [u8]) -> futures_io::Result<usize> {
-        self.0.read(buf)
+#[pin_project(project = SyncDataStateProj)]
+enum SyncDataState {
+    NotFlushing(#[pin] File),
+    Flushing {
+        file: Arc<File>,
+        future: BoxFuture<'static, std::io::Result<()>>,
+    },
+}
+
+impl SyncDataFile {
+    fn new(file: File) -> Self {
+        Self {
+            state: SyncDataState::NotFlushing(file),
+        }
+    }
+
+    fn try_get_file(self: Pin<&mut Self>) -> Option<Pin<&mut File>> {
+        match self.project().state.project() {
+            SyncDataStateProj::NotFlushing(f) => Some(f),
+            _ => None,
+        }
     }
 }
 
-impl Write for SyncDataFile {
+impl AsyncRead for SyncDataFile {
     #[inline(always)]
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.write(buf)
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> Poll<std::io::Result<()>> {
+        match self.try_get_file() {
+            Some(file) => file.poll_read(cx, buf),
+            None => Poll::Pending,
+        }
+    }
+}
+
+impl AsyncWrite for SyncDataFile {
+    #[inline(always)]
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        match self.try_get_file() {
+            Some(file) => file.poll_write(cx, buf),
+            None => Poll::Pending,
+        }
     }
 
     #[inline(always)]
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         #[cfg(target_os = "linux")]
         {
-            self.0.sync_data()
+            let (file, mut fut) = match self.state {
+                SyncDataState::NotFlushing(f) => {
+                    let f = Arc::new(f);
+                    let f2 = f.clone();
+                    (f, async move { f2.sync_data().await }.boxed())
+                }
+                SyncDataState::Flushing { file, future } => (file, future),
+            };
+            let p = fut.poll_unpin(cx);
+            self.state = match &p {
+                Poll::Ready(_) => {
+                    drop(fut);
+                    SyncDataState::NotFlushing(
+                        Arc::try_unwrap(file)
+                            .expect("this should be the last instance of this Arc!"),
+                    )
+                }
+                Poll::Pending => SyncDataState::Flushing { file, future: fut },
+            };
+            p
         }
 
         // On MacOS, calling sync_data() on a disk yields "Inappropriate ioctl for device (os error 25)"
         // so for now we will just no-op.
         #[cfg(target_os = "macos")]
         {
-            Ok(())
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    #[inline(always)]
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        match self.try_get_file() {
+            Some(file) => file.poll_shutdown(cx),
+            None => Poll::Pending,
         }
     }
 }
 
-impl Seek for SyncDataFile {
-    #[inline(always)]
-    fn seek(&mut self, pos: futures_io::SeekFrom) -> std::io::Result<u64> {
-        self.0.seek(pos)
+impl AsyncSeek for SyncDataFile {
+    fn start_seek(self: Pin<&mut Self>, position: std::io::SeekFrom) -> std::io::Result<()> {
+        match self.try_get_file() {
+            Some(file) => file.start_seek(position),
+            None => Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "other file operation is pending, call poll_complete before start_seek",
+            )),
+        }
+    }
+
+    fn poll_complete(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<u64>> {
+        match self.try_get_file() {
+            Some(file) => file.poll_complete(cx),
+            None => Poll::Pending,
+        }
     }
 }
 
