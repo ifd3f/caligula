@@ -1,5 +1,5 @@
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{BufReader, Seek},
     path::Path,
     process::exit,
@@ -7,8 +7,10 @@ use std::{
 
 use anyhow::Context;
 use bytesize::ByteSize;
+use faster_hex::hex_decode;
 use indicatif::{ProgressBar, ProgressStyle};
-use inquire::{Select, Text};
+use inquire::{Confirm, Select, Text};
+use itertools::Itertools;
 
 use crate::{
     compression::{decompress, CompressionFormat},
@@ -16,11 +18,90 @@ use crate::{
     ui::cli::{BurnArgs, HashArg, HashOf},
 };
 
+// Common filenames of hash files.
+const HASH_FILES: [(HashAlg, &str); 24] = [
+    (HashAlg::Md5, "md5sum.txt"),
+    (HashAlg::Md5, "md5sums.txt"),
+    (HashAlg::Md5, "MD5SUM"),
+    (HashAlg::Md5, "MD5SUMS"),
+    (HashAlg::Sha1, "sha1sum.txt"),
+    (HashAlg::Sha1, "sha1sums.txt"),
+    (HashAlg::Sha1, "SHA1SUM"),
+    (HashAlg::Sha1, "SHA1SUMS"),
+    (HashAlg::Sha224, "sha224sum.txt"),
+    (HashAlg::Sha224, "sha224sums.txt"),
+    (HashAlg::Sha224, "SHA224SUM"),
+    (HashAlg::Sha224, "SHA224SUMS"),
+    (HashAlg::Sha256, "sha256sum.txt"),
+    (HashAlg::Sha256, "sha256sums.txt"),
+    (HashAlg::Sha256, "SHA256SUM"),
+    (HashAlg::Sha256, "SHA256SUMS"),
+    (HashAlg::Sha384, "sha384sum.txt"),
+    (HashAlg::Sha384, "sha384sums.txt"),
+    (HashAlg::Sha384, "SHA384SUM"),
+    (HashAlg::Sha384, "SHA384SUMS"),
+    (HashAlg::Sha512, "sha512sum.txt"),
+    (HashAlg::Sha512, "sha512sums.txt"),
+    (HashAlg::Sha512, "SHA512SUM"),
+    (HashAlg::Sha512, "SHA512SUMS"),
+];
+
 #[tracing::instrument(skip_all, fields(cf))]
 pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {
     let hash_params = match &args.hash {
         HashArg::Skip => None,
-        HashArg::Ask => ask_hash_loop(cf)?,
+        HashArg::Ask => {
+            let mut expected_alg = None;
+            let mut expected_hash = vec![];
+            let mut expected_hashfile = "";
+
+            'outer: for (alg, hash_file) in HASH_FILES {
+                let hash_filepath = format!(
+                    "{}/{}",
+                    args.input.parent().unwrap().to_str().unwrap(),
+                    hash_file
+                );
+
+                if let Ok(true) = fs::exists(&hash_filepath) {
+                    let content = fs::read_to_string(&hash_filepath)?;
+                    let lines = content.split('\n');
+
+                    for line in lines {
+                        if let Some((hash, file)) = line.split_whitespace().collect_tuple() {
+                            if file == args.input.file_name().unwrap().to_str().unwrap() {
+                                expected_hash.resize(hash.len() / 2, 0);
+                                hex_decode(hash.as_bytes(), &mut expected_hash)?;
+                                expected_alg = Some(alg);
+                                expected_hashfile = hash_file;
+                                break 'outer;
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if let Some(alg) = expected_alg {
+                if Confirm::new(&format!(
+                    "Detected hash file {expected_hashfile} in the directory. Do you want to use it?"
+                ))
+                .with_default(true)
+                .prompt()
+                .unwrap()
+                {
+                    Some(BeginHashParams {
+                        expected_hash,
+                        alg,
+                        hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
+                    })
+                } else {
+                    ask_hash_loop(cf)?
+                }
+            } else {
+                ask_hash_loop(cf)?
+            }
+        }
         HashArg::Hash { alg, expected_hash } => Some(BeginHashParams {
             expected_hash: expected_hash.clone(),
             alg: alg.clone(),
