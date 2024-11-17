@@ -198,10 +198,11 @@ impl WriterProgressBar {
         if let Some(max) = self.display_total_bytes {
             Gauge::default()
                 .label(format!(
-                    "{} {} / {}",
+                    "{} {} / {} ({:.1} %)",
                     self.label_state,
                     ByteSize::b(self.bytes_written),
-                    ByteSize::b(max)
+                    ByteSize::b(max),
+                    self.ratio() * 100.0
                 ))
                 .ratio(self.ratio())
                 .gauge_style(self.style)
