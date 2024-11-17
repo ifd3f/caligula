@@ -14,6 +14,8 @@ pub enum EscalationMethod {
     Doas,
     #[display(fmt = "su")]
     Su,
+    #[display(fmt = "run0")]
+    Run0,
 }
 
 /// Command components, backed by copy-on-write storage.
@@ -25,7 +27,7 @@ pub struct Command<'a> {
 }
 
 impl EscalationMethod {
-    const ALL: [EscalationMethod; 3] = [Self::Sudo, Self::Doas, Self::Su];
+    const ALL: [EscalationMethod; 4] = [Self::Sudo, Self::Doas, Self::Su, Self::Run0];
 
     pub fn detect() -> Result<Self, Error> {
         for m in Self::ALL {
@@ -45,6 +47,7 @@ impl EscalationMethod {
             Self::Sudo => "sudo",
             Self::Doas => "doas",
             Self::Su => "su",
+            Self::Run0 => "run0",
         }
     }
 
@@ -72,6 +75,11 @@ impl EscalationMethod {
                     "-c".into(),
                     raw.into(),
                 ],
+            },
+            Self::Run0 => Command {
+                envs: vec![],
+                proc: "run0".into(),
+                args: vec!["sh".into(), "-c".into(), raw.into()],
             },
         }
     }
