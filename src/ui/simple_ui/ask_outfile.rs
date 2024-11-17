@@ -26,7 +26,7 @@ pub fn ask_compression(args: &BurnArgs) -> anyhow::Result<CompressionFormat> {
             return Ok(cf);
         }
 
-        if !Confirm::new("Is this okay?").prompt()? {
+        if !Confirm::new("Is this okay?").with_default(true).prompt()? {
             Err(InquireError::OperationCanceled)?;
         }
         return Ok(cf);

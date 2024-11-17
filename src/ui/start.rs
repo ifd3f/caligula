@@ -78,6 +78,7 @@ pub async fn try_start_burn(
                     "We don't have permissions on {}. Escalate using sudo?",
                     args.dest.to_string_lossy()
                 ))
+                .with_default(true)
                 .with_help_message(
                     "We will use the sudo command, which may prompt you for a password.",
                 )
