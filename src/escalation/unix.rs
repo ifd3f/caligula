@@ -196,4 +196,15 @@ mod tests {
             "su root -c sh -c 'asdf=foo some/proc two --three '\\''\"four\"'\\'''"
         )
     }
+
+    #[test]
+    fn test_run0() {
+        let result = EscalationMethod::Run0.wrap_command(&get_test_command());
+
+        let printed = format!("result:?");
+        assert_eq!(
+            result.to_string(),
+            "run0 sh -c 'asdf=foo some/proc two --three '\\''\"four\"'\\'''"
+        )
+    }
 }
