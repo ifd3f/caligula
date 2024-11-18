@@ -49,6 +49,8 @@ There are a couple of ways to install Caligula.
 - **Arch Linux:** 
   - [Official repository](https://archlinux.org/packages/extra/x86_64/caligula): `pacman -S caligula`
   - [caligula-bin on the AUR](https://aur.archlinux.org/packages/caligula-bin): We also automatically publish binaries with every release.
+  - [caligula-git on the AUR](https://aur.archlinux.org/packages/caligula-git): Build from latest commit on `main` branch
+  - [caligula-git on archlinuxcn](https://github.com/archlinuxcn/repo/tree/master/archlinuxcn/caligula-git): Prebuilt binaries from latest commit on `main` branch
 - **Nix:**
   - [Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/by-name/ca/caligula/package.nix): `nix-env -i caligula`
   - Repository flake: If your system is flake-enabled, you can use `github:ifd3f/caligula` for bleeding-edge changes.
