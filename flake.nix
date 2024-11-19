@@ -1,8 +1,6 @@
 {
   inputs = {
-    # nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    # temporarily pin to last known working rev
-    nixpkgs.url = "github:NixOS/nixpkgs/3f316d2a50699a78afe5e77ca486ad553169061e";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
     flake-utils.url = "github:numtide/flake-utils";
 
