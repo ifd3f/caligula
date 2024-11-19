@@ -20,6 +20,10 @@ nixosTest {
           };
         }
 
+        else if escalationTool == "run0" then {
+          security.sudo.enable = mkForce false;
+        }
+
         else
           builtins.throw ("Unrecognized escalation tool" ++ escalationTool))
       ];
