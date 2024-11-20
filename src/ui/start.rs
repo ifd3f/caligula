@@ -6,7 +6,7 @@ use tracing::debug;
 
 use crate::{
     compression::CompressionFormat,
-    device::WriteTarget,
+    device::{self, WriteTarget},
     logging::LogPaths,
     ui::{
         cli::{Interactive, UseSudo},
@@ -140,7 +140,10 @@ impl Display for BeginParams {
         writeln!(f, "  Block size: {}", self.target.block_size)?;
         writeln!(f, "  Type: {}", self.target.target_type)?;
         writeln!(f, "  Path: {}", self.target.devnode.to_string_lossy())?;
-        writeln!(f, "  Removable: {}", self.target.removable)?;
+
+        if self.target.target_type == device::Type::Disk {
+            writeln!(f, "  Removable: {}", self.target.removable)?;
+        }
 
         Ok(())
     }
