@@ -18,6 +18,8 @@ in with lib;
       pkgs.callPackage ./autoescalate { escalationTool = "doas"; };
     autoescalate-sudo =
       pkgs.callPackage ./autoescalate { escalationTool = "sudo"; };
+    # autoescalate-run0 =
+    #   pkgs.callPackage ./autoescalate { escalationTool = "run0"; };
   } //
 
   # blocksize alignment tests
