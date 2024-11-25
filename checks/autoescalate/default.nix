@@ -23,6 +23,8 @@ nixosTest {
         else if escalationTool == "run0" then {
           security.sudo.enable = mkForce false;
 
+          security.polkit.enable = true;
+
           # see https://warlord0blog.wordpress.com/2024/07/30/passwordless-run0/
           security.polkit.extraConfig = ''
             polkit.addRule(function(action, subject) {
