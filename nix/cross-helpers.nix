@@ -27,7 +27,7 @@ in rec {
     overlays = [ rust-overlay.overlays.default ];
   };
 
-  baseToolchain = pkgs.rust-bin.stable."1.78.0".default;
+  baseToolchain = pkgs.rust-bin.stable.latest.default;
 
   supportedSystems = if hostInfo.kernel.name == "linux" then [
     "aarch64-linux"
@@ -78,7 +78,7 @@ in rec {
       rust-toolchain =
         baseToolchain.override { targets = [ buildCfg.rustTarget ]; };
 
-      naersk' = pkgs.callPackage naersk {
+      platform = pkgs.makeRustPlatform {
         cargo = rust-toolchain;
         rustc = rust-toolchain;
       };
@@ -102,8 +102,12 @@ in rec {
 
       # The actual package
       caligula = with pkgs;
-        naersk'.buildPackage ({
+        platform.buildRustPackage ({
           inherit src;
+          name = "caligula";
+          cargoLock = {
+    lockFile = ../Cargo.lock;
+  };
           doCheck = host == target;
           propagatedBuildInputs = [ crossParams.cc ];
           inherit buildInputs;
@@ -111,11 +115,9 @@ in rec {
         } // crossParams.extraBuildEnv);
 
     in {
-      inherit pkgs pkgsCross rust-toolchain caligula buildInputs;
+      inherit platform pkgs pkgsCross rust-toolchain caligula buildInputs;
       inherit (buildCfg) platformDeps rustTarget;
       inherit (crossParams) extraBuildEnv;
-
-      naersk = naersk';
     };
 
   crossCompileDevShell = let
