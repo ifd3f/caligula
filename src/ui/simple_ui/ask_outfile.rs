@@ -100,21 +100,18 @@ enum ListOption {
 impl fmt::Display for ListOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ListOption::Device(dev) => {
-                if dev.target_type == device::Type::Disk {
-                    write!(
-                        f,
-                        "{} | {} - {} ({}, removable: {})",
-                        dev.name, dev.model, dev.size, dev.target_type, dev.removable
-                    )?;
-                } else {
-                    write!(
-                        f,
-                        "{} | {} - {} ({})",
-                        dev.name, dev.model, dev.size, dev.target_type
-                    )?;
-                }
-            }
+            ListOption::Device(dev) => match dev.target_type {
+                device::Type::Disk => write!(
+                    f,
+                    "{} | {} - {} ({}, removable: {})",
+                    dev.name, dev.model, dev.size, dev.target_type, dev.removable
+                )?,
+                _ => write!(
+                    f,
+                    "{} | {} - {} ({})",
+                    dev.name, dev.model, dev.size, dev.target_type
+                )?,
+            },
             ListOption::RetryWithShowAll(true) => {
                 write!(f, "<Show all disks, removable or not>")?;
             }
