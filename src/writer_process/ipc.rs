@@ -2,12 +2,10 @@ use std::{fmt::Display, path::PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use valuable::Valuable;
-
 use crate::compression::CompressionFormat;
 use crate::device::Type;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WriterProcessConfig {
     pub dest: PathBuf,
     pub src: PathBuf,
@@ -17,7 +15,7 @@ pub struct WriterProcessConfig {
     pub block_size: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StatusMessage {
     InitSuccess(InitialInfo),
     TotalBytes {
@@ -37,12 +35,12 @@ pub enum StatusMessage {
     Error(ErrorType),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InitialInfo {
     pub input_file_bytes: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Valuable)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorType {
     EndOfOutput,
     PermissionDenied,

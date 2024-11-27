@@ -8,11 +8,12 @@ use std::{
 use anyhow::Context;
 use bytesize::ByteSize;
 use indicatif::{ProgressBar, ProgressStyle};
-use inquire::{Select, Text};
+use inquire::{Confirm, Select, Text};
 
 use crate::{
     compression::{decompress, CompressionFormat},
     hash::{parse_hash_input, FileHashInfo, HashAlg, Hashing},
+    hashfile::find_hash,
     ui::cli::{BurnArgs, HashArg, HashOf},
 };
 
@@ -20,7 +21,22 @@ use crate::{
 pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {
     let hash_params = match &args.hash {
         HashArg::Skip => None,
-        HashArg::Ask => ask_hash_loop(cf)?,
+        HashArg::Ask => {
+            match find_hash(&args.input) {
+                Some((alg, expected_hashfile, expected_hash))
+                if Confirm::new(&format!(
+                    "Detected hash file {expected_hashfile} in the directory. Do you want to use it?"
+                ))
+                .with_default(true)
+                .prompt()? =>
+                    Some(BeginHashParams {
+                        expected_hash,
+                        alg,
+                        hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
+                    }),
+                _ => ask_hash_loop(cf)?
+            }
+        }
         HashArg::Hash { alg, expected_hash } => Some(BeginHashParams {
             expected_hash: expected_hash.clone(),
             alg: alg.clone(),
