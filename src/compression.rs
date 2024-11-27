@@ -8,7 +8,6 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use valuable::Valuable;
 
 macro_rules! generate {
     {
@@ -47,7 +46,7 @@ macro_rules! generate {
             }
         }
 
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Valuable)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
         pub enum CompressionFormat {
             Identity,
             $(

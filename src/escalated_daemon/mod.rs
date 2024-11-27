@@ -18,7 +18,6 @@ use interprocess::local_socket::{tokio::prelude::*, GenericFilePath};
 use tokio::io::{AsyncBufRead, BufReader};
 use tracing::{error, info, info_span, Instrument};
 use tracing_unwrap::ResultExt;
-use valuable::Valuable;
 
 use crate::{
     childproc_common::child_init,
@@ -51,7 +50,7 @@ pub async fn main() {
 async fn event_loop(socket: &str, mut stream: impl AsyncBufRead + Unpin) -> anyhow::Result<()> {
     loop {
         let msg = read_msg_async::<SpawnWriter>(&mut stream).await?;
-        info!(msg = msg.as_value(), "Received SpawnWriter request");
+        info!(?msg, "Received SpawnWriter request");
 
         let command =
             make_writer_spawn_command(socket.into(), msg.log_file.into(), &msg.init_config);
