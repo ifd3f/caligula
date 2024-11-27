@@ -14,6 +14,8 @@ pub enum EscalationMethod {
     Doas,
     #[display(fmt = "su")]
     Su,
+    #[display(fmt = "run0")]
+    Run0,
 }
 
 /// Command components, backed by copy-on-write storage.
@@ -25,7 +27,9 @@ pub struct Command<'a> {
 }
 
 impl EscalationMethod {
-    const ALL: [EscalationMethod; 3] = [Self::Sudo, Self::Doas, Self::Su];
+    // Order is relevant here. Since this array is enumerated in `EscalationMethod::detect()`
+    // The first esalation found tool will be used
+    const ALL: [EscalationMethod; 4] = [Self::Sudo, Self::Doas, Self::Run0, Self::Su];
 
     pub fn detect() -> Result<Self, Error> {
         for m in Self::ALL {
@@ -45,6 +49,7 @@ impl EscalationMethod {
             Self::Sudo => "sudo",
             Self::Doas => "doas",
             Self::Su => "su",
+            Self::Run0 => "run0",
         }
     }
 
@@ -72,6 +77,11 @@ impl EscalationMethod {
                     "-c".into(),
                     raw.into(),
                 ],
+            },
+            Self::Run0 => Command {
+                envs: vec![],
+                proc: "run0".into(),
+                args: vec!["sh".into(), "-c".into(), raw.into()],
             },
         }
     }
@@ -186,6 +196,17 @@ mod tests {
         assert_eq!(
             result.to_string(),
             "su root -c sh -c 'asdf=foo some/proc two --three '\\''\"four\"'\\'''"
+        )
+    }
+
+    #[test]
+    fn test_run0() {
+        let result = EscalationMethod::Run0.wrap_command(&get_test_command());
+
+        let printed = format!("result:?");
+        assert_eq!(
+            result.to_string(),
+            "run0 sh -c 'asdf=foo some/proc two --three '\\''\"four\"'\\'''"
         )
     }
 }
