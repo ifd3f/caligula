@@ -3,7 +3,6 @@ use digest::Digest;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::io::Read;
-use valuable::Valuable;
 
 macro_rules! generate {
     {$(
@@ -17,7 +16,7 @@ macro_rules! generate {
             })*
         ]
     )*} => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Valuable)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
         pub enum HashAlg {
             $($(
                 $enum_arm,

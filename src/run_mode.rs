@@ -2,7 +2,6 @@ use std::{borrow::Cow, fmt::Debug};
 
 use process_path::get_executable_path;
 use serde::Serialize;
-use valuable::Valuable;
 
 use crate::{
     escalated_daemon::ipc::EscalatedDaemonInitConfig, escalation::Command,
@@ -67,7 +66,7 @@ impl RunMode {
 }
 
 /// Build a [Command] that, when run, spawns a process with a specific configuration.
-pub fn make_spawn_command<'a, C: Serialize + Debug + Valuable>(
+pub fn make_spawn_command<'a, C: Serialize + Debug>(
     socket: Cow<'a, str>,
     log_path: Cow<'a, str>,
     run_mode: RunMode,

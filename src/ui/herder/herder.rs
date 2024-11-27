@@ -12,7 +12,6 @@ use crate::{
 use anyhow::Context;
 use interprocess::local_socket::tokio::prelude::*;
 use tracing::{debug, trace};
-use valuable::Valuable;
 
 use crate::escalation::run_escalate;
 use crate::writer_process::ipc::{StatusMessage, WriterProcessConfig};
@@ -109,10 +108,7 @@ impl Herder {
 
         trace!("Reading results from child");
         let first_msg = read_msg_async::<StatusMessage>(&mut handle.rx).await?;
-        debug!(
-            first_msg = first_msg.as_value(),
-            "Read raw result from child"
-        );
+        debug!(?first_msg, "Read raw result from child");
 
         let initial_info = match first_msg {
             StatusMessage::InitSuccess(i) => Ok(i),
