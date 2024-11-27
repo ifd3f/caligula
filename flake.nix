@@ -5,7 +5,7 @@
     flake-utils.url = "github:numtide/flake-utils";
 
     naersk = {
-      url = "github:nix-community/naersk/c5037590290c6c7dae2e42e7da1e247e54ed2d49";
+      url = "github:nix-community/naersk";
       inputs.nixpkgs.follows = "nixpkgs";
     };
     rust-overlay = {
