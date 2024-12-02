@@ -20,4 +20,4 @@ sed -i "$sedcmd" "$cargotoml"
 
 git add "$cargotoml"
 git commit -m "bump version to v$version"
-
+cargo lock
