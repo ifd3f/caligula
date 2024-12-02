@@ -32,10 +32,12 @@ in rec {
   supportedSystems = if hostInfo.kernel.name == "linux" then [
     "aarch64-linux"
     "x86_64-linux"
-  ] else if host == "x86_64-darwin" then [
-    # "aarch64-darwin" # Temporarily broken. TODO: fix
-    "x86_64-darwin"
-  ] else if host == "aarch64-darwin" then
+  ] else if host == "x86_64-darwin" then
+    [
+      # "aarch64-darwin" # Temporarily broken. TODO: fix
+      "x86_64-darwin"
+    ]
+  else if host == "aarch64-darwin" then
     [ "aarch64-darwin" ]
   else
     throw "unsupported host system ${host}";
@@ -85,8 +87,9 @@ in rec {
 
       crossParams = if host == target then {
         cc = pkgs.stdenv.cc;
-        extraBuildEnv = { 
-          RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
+        extraBuildEnv = {
+          RUST_SRC_PATH =
+            "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
         };
       } else rec {
         cc = pkgsCross.stdenv.cc;
@@ -107,6 +110,7 @@ in rec {
           doCheck = host == target;
           propagatedBuildInputs = [ crossParams.cc ];
           inherit buildInputs;
+          cargoBuildOptions = args: args ++ [ "--locked" ];
           CARGO_BUILD_TARGET = buildCfg.rustTarget;
         } // crossParams.extraBuildEnv);
 
