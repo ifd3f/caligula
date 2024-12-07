@@ -12,7 +12,7 @@ use std::{
 
 use aligned_vec::avec_rt;
 use interprocess::local_socket::{prelude::*, GenericFilePath};
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 use tracing_unwrap::ResultExt;
 
 use crate::childproc_common::child_init;
@@ -298,15 +298,16 @@ impl<S: Read, D: Read> VerifyOp<S, D> {
 
         loop {
             for _ in 0..self.checkpoint_period {
-                let read_bytes = file.read(&mut file_buf)?;
-                if read_bytes == 0 {
+                let file_read_bytes = try_read_exact(&mut file, &mut file_buf)?;
+                if file_read_bytes == 0 {
                     checkpoint!();
                     return Ok(());
                 }
 
-                disk.read_exact(&mut disk_buf)?;
+                try_read_exact(&mut disk, &mut disk_buf)?;
 
-                if file_buf[..read_bytes] != disk_buf[..read_bytes] {
+                if file_buf[..file_read_bytes] != disk_buf[..file_read_bytes] {
+                    trace!(file_read_bytes, "verification failed");
                     return Err(ErrorType::VerificationFailed);
                 }
             }
