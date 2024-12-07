@@ -210,7 +210,7 @@ impl WriteTarget {
 
 impl PartialOrd for WriteTarget {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.devnode.partial_cmp(&other.devnode)
+        Some(self.cmp(other))
     }
 }
 
@@ -227,7 +227,7 @@ impl TryFrom<&Path> for WriteTarget {
         #[cfg(target_os = "linux")]
         if value.starts_with("/sys/class/block") || value.starts_with("/dev") {
             if let Some(n) = value.file_name() {
-                return Ok(Self::from_dev_name(n)?);
+                return Self::from_dev_name(n);
             }
         }
 
@@ -238,7 +238,7 @@ impl TryFrom<&Path> for WriteTarget {
             }
         }
 
-        Ok(Self::from_normal_file(value.to_owned())?)
+        Self::from_normal_file(value.to_owned())
     }
 }
 

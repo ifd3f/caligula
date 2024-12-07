@@ -307,7 +307,7 @@ mod helpers {
     impl<'a> MockRead<'a> {
         pub fn new(data: &'a [u8], enforced_block_size: Option<usize>) -> Self {
             Self {
-                cursor: Cursor::new(&data),
+                cursor: Cursor::new(data),
                 requested_reads: vec![],
                 enforced_block_size,
             }

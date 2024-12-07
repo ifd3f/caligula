@@ -39,7 +39,7 @@ pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option
         }
         HashArg::Hash { alg, expected_hash } => Some(BeginHashParams {
             expected_hash: expected_hash.clone(),
-            alg: alg.clone(),
+            alg: *alg,
             hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
         }),
     };

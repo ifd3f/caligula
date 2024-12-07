@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
-    path::PathBuf,
+    path::Path,
 };
 
 /// Common filenames of hash files.
@@ -34,7 +34,7 @@ const HASH_FILES: [(HashAlg, &str); 24] = [
     (HashAlg::Sha512, "SHA512SUMS"),
 ];
 
-pub fn find_hash(input: &PathBuf) -> Option<(HashAlg, &str, Vec<u8>)> {
+pub fn find_hash(input: &Path) -> Option<(HashAlg, &str, Vec<u8>)> {
     for (alg, hash_file) in HASH_FILES {
         let hash_filepath = input.parent()?.join(hash_file);
         match File::open(&hash_filepath) {

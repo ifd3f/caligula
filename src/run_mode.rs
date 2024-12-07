@@ -79,8 +79,8 @@ pub fn make_spawn_command<'a, C: Serialize + Debug>(
         envs: vec![(RUN_MODE_ENV_NAME.into(), run_mode.as_str().into())],
         // Arg order is documented in childproc_common.
         args: vec![
-            log_path.into(),
-            socket.into(),
+            log_path,
+            socket,
             serde_json::to_string(&init_config).unwrap().into(),
         ],
     }

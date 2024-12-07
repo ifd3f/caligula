@@ -19,7 +19,7 @@ pub enum Error {
 
 pub async fn run_escalate(
     cmd: &Command<'_>,
-    modify: impl FnOnce(&mut tokio::process::Command) -> (),
+    modify: impl FnOnce(&mut tokio::process::Command),
 ) -> anyhow::Result<tokio::process::Child> {
     #[cfg(target_os = "linux")]
     {

@@ -106,6 +106,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&args.dest)?,
         device::Type::Disk | device::Type::Partition => {
             open_blockdev(&args.dest, args.compression)?
@@ -303,9 +304,9 @@ impl<S: Read, D: Read> VerifyOp<S, D> {
                     return Ok(());
                 }
 
-                disk.read(&mut disk_buf)?;
+                disk.read_exact(&mut disk_buf)?;
 
-                if &file_buf[..read_bytes] != &disk_buf[..read_bytes] {
+                if file_buf[..read_bytes] != disk_buf[..read_bytes] {
                     return Err(ErrorType::VerificationFailed);
                 }
             }

@@ -30,7 +30,7 @@ impl ChildHandle {
     }
 
     pub async fn next_message<T: DeserializeOwned>(&mut self) -> anyhow::Result<T> {
-        Ok(read_msg_async::<T>(&mut self.rx).await?)
+        read_msg_async::<T>(&mut self.rx).await
     }
 }
 

@@ -54,9 +54,7 @@ fn handle_toplevel_error(err: anyhow::Error) {
 
 async fn inner_main(state_dir: PathBuf, log_paths: LogPaths) -> anyhow::Result<()> {
     let args = Args::parse();
-    let args = match args.command {
-        Command::Burn(a) => a,
-    };
+    let Command::Burn(args) = args.command;
 
     let log_paths = Arc::new(log_paths);
 

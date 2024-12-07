@@ -45,7 +45,6 @@ impl StatefulWidget for SpeedChart<'_> {
         let verify_speeds: Option<Vec<(f64, f64)>> = self.state.verify_hist().map(|verify_data| {
             verify_data
                 .speeds(window)
-                .into_iter()
                 .map(|(x, y)| (x + write_data.last_datapoint().0, y))
                 .collect()
         });
@@ -76,7 +75,7 @@ impl StatefulWidget for SpeedChart<'_> {
                 dataset_style
                     .name("Verify")
                     .style(Style::default().fg(Color::Blue))
-                    .data(&vdata),
+                    .data(vdata),
             );
         }
 

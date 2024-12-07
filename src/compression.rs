@@ -193,12 +193,8 @@ generate! {
 
 impl CompressionFormat {
     pub fn detect_from_path(path: impl AsRef<Path>) -> Option<CompressionFormat> {
-        if let Some(ext) = path.as_ref().extension() {
-            Some(CompressionFormat::detect_from_extension(
-                &ext.to_string_lossy(),
-            ))
-        } else {
-            None
-        }
+        path.as_ref()
+            .extension()
+            .map(|ext| CompressionFormat::detect_from_extension(&ext.to_string_lossy()))
     }
 }
