@@ -22,9 +22,7 @@ impl LogPaths {
             state_dir.as_ref().join("log")
         };
         create_dir_all(&log_dir).unwrap();
-        Self {
-            log_dir: log_dir.into(),
-        }
+        Self { log_dir }
     }
 
     pub fn main(&self) -> PathBuf {

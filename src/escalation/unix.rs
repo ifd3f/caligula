@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt};
 
 use itertools::Itertools;
 use shell_words::{join, quote};
@@ -53,7 +53,7 @@ impl EscalationMethod {
         }
     }
 
-    pub fn wrap_command<'a>(&self, cmd: &Command) -> Command {
+    pub fn wrap_command(&self, cmd: &Command) -> Command {
         let raw = cmd.to_string();
 
         match self {
@@ -87,18 +87,18 @@ impl EscalationMethod {
     }
 }
 
-impl ToString for Command<'_> {
-    fn to_string(&self) -> String {
+impl fmt::Display for Command<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let args = join([&self.proc].into_iter().chain(self.args.iter()));
 
         if self.envs.is_empty() {
-            args
+            write!(f, "{args}")
         } else {
             let envs: String = (self.envs.iter())
                 .map(|(k, v)| format!("{}={}", quote(k), quote(v)))
                 .join(" ");
 
-            format!("{envs} {args}")
+            write!(f, "{envs} {args}")
         }
     }
 }
@@ -203,7 +203,7 @@ mod tests {
     fn test_run0() {
         let result = EscalationMethod::Run0.wrap_command(&get_test_command());
 
-        let printed = format!("result:?");
+        let printed = "result:?".to_string();
         assert_eq!(
             result.to_string(),
             "run0 sh -c 'asdf=foo some/proc two --three '\\''\"four\"'\\'''"

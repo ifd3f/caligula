@@ -35,17 +35,22 @@
         lib = pkgs.lib;
 
         crossHelpers = self.lib.crossHelpers system;
+        crossHelpersSelf = crossHelpers.forTarget "x86_64-linux";
       in {
         checks = import ./checks inputs system;
 
         packages = {
           default = self.packages."${system}".caligula;
 
-          lint-script = pkgs.writeScriptBin "lint.sh" ''
-            #!/bin/sh
-            export PATH=${lib.makeBinPath [ crossHelpers.baseToolchain ]}
-            ${./scripts/lint.sh}
-          '';
+          lint-script = with pkgs;
+            writeShellScriptBin "lint.sh" ''
+              #!/bin/sh
+              export PATH=${
+                lib.makeBinPath ([ bash crossHelpers.baseToolchain ]
+                  ++ crossHelpersSelf.buildInputs)
+              }
+              ${./scripts/lint.sh}
+            '';
 
           caligula = self.packages."${system}"."caligula-${system}";
         }

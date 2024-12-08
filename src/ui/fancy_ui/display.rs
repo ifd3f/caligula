@@ -47,7 +47,7 @@ where
             terminal,
             handle: Some(handle),
             events: EventStream::new(),
-            state: State::initial(Instant::now(), &params, input_file_bytes),
+            state: State::initial(Instant::now(), params, input_file_bytes),
             log_paths,
         }
     }
@@ -81,7 +81,7 @@ where
             self.handle = None;
         }
 
-        draw(&mut self.state, &mut self.terminal, &self.log_paths)?;
+        draw(&mut self.state, self.terminal, &self.log_paths)?;
         Ok(self)
     }
 }

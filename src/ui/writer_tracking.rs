@@ -124,10 +124,7 @@ impl WriterState {
     }
 
     pub fn is_finished(&self) -> bool {
-        match self {
-            WriterState::Finished { .. } => true,
-            _ => false,
-        }
+        matches!(self, WriterState::Finished { .. })
     }
 }
 

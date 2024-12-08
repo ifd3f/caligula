@@ -286,8 +286,8 @@ where
 
 pub fn parse_base16_or_base64(s: &str) -> Option<Vec<u8>> {
     base16::decode(s)
-        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(&s))
-        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(&s))
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(s))
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(s))
         .ok()
 }
 
@@ -299,8 +299,8 @@ pub fn parse_hash_input(h: &str) -> Result<(Vec<HashAlg>, Vec<u8>), HashParseErr
     if let Some((alg, hash)) = h.split_once('-') {
         let alg =
             HashAlg::from_sri_alg(alg).ok_or_else(|| HashParseError::UnknownAlg(alg.into()))?;
-        let expected_hash = parse_base16_or_base64(hash)
-            .ok_or_else(|| HashParseError::SRIValueNotBase16OrBase64)?;
+        let expected_hash =
+            parse_base16_or_base64(hash).ok_or(HashParseError::SRIValueNotBase16OrBase64)?;
 
         let expected_bytes = alg.digest_bytes();
         let actual_bytes = expected_hash.len();

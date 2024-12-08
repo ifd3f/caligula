@@ -12,7 +12,7 @@ use std::{
 
 use aligned_vec::avec_rt;
 use interprocess::local_socket::{prelude::*, GenericFilePath};
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 use tracing_unwrap::ResultExt;
 
 use crate::childproc_common::child_init;
@@ -106,6 +106,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(&args.dest)?,
         device::Type::Disk | device::Type::Partition => {
             open_blockdev(&args.dest, args.compression)?
@@ -297,15 +298,16 @@ impl<S: Read, D: Read> VerifyOp<S, D> {
 
         loop {
             for _ in 0..self.checkpoint_period {
-                let read_bytes = file.read(&mut file_buf)?;
-                if read_bytes == 0 {
+                let file_read_bytes = try_read_exact(&mut file, &mut file_buf)?;
+                if file_read_bytes == 0 {
                     checkpoint!();
                     return Ok(());
                 }
 
-                disk.read(&mut disk_buf)?;
+                try_read_exact(&mut disk, &mut disk_buf)?;
 
-                if &file_buf[..read_bytes] != &disk_buf[..read_bytes] {
+                if file_buf[..file_read_bytes] != disk_buf[..file_read_bytes] {
+                    trace!(file_read_bytes, "verification failed");
                     return Err(ErrorType::VerificationFailed);
                 }
             }

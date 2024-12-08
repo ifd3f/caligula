@@ -124,7 +124,7 @@ in rec {
 
   crossCompileDevShell = let
     rust = baseToolchain.override {
-      extensions = [ "rust-src" "rust-analyzer" ];
+      extensions = [ "rust-src" "rust-analyzer" "clippy" ];
       targets = (map (target: (forTarget target).rustTarget) supportedSystems);
     };
 

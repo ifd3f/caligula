@@ -128,7 +128,7 @@ pub enum UseSudo {
 fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(p);
     if !path.exists() {
-        return Err(format!("path does not exist"));
+        return Err("path does not exist".to_string());
     }
     Ok(path)
 }
