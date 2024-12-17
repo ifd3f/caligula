@@ -40,7 +40,7 @@ pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
             let bsdname = OsStr::from_bytes(CStr::from_ptr(d.bsdname).to_bytes());
             let mut rawdevname = OsString::from("r");
             rawdevname.push(bsdname);
-            let devnode: PathBuf = PathBuf::from("/dev").join(rawdevname);
+            let devnode = Path::new("/dev").join(rawdevname);
             let bsdname = bsdname.to_string_lossy().into();
             free(d.bsdname as *mut c_void);
 
@@ -149,12 +149,12 @@ impl WriteTarget {
             }
         }
 
-        let devnode = PathBuf::from("/dev").join(name);
+        let devnode = Path::new("/dev").join(name);
         if !devnode.exists() {
             return Err(DeviceParseError::NotFound);
         }
 
-        let sysnode = PathBuf::from("/sys/class/block").join(name);
+        let sysnode = Path::new("/sys/class/block").join(name);
 
         let removable = match read_sys_file(sysnode.join("removable"))?
             .as_ref()
@@ -195,10 +195,10 @@ impl WriteTarget {
         })
     }
 
-    fn from_normal_file(path: PathBuf) -> Result<Self, DeviceParseError> {
+    fn from_normal_file(path: &Path) -> Result<Self, DeviceParseError> {
         Ok(WriteTarget {
             name: path.to_string_lossy().into(),
-            devnode: path,
+            devnode: path.into(),
             size: TargetSize(None),
             model: Model(None),
             removable: Removable::Unknown,
@@ -238,7 +238,7 @@ impl TryFrom<&Path> for WriteTarget {
             }
         }
 
-        Self::from_normal_file(value.to_owned())
+        Self::from_normal_file(value)
     }
 }
 
