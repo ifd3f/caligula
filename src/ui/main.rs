@@ -15,6 +15,8 @@ use clap::Parser;
 use inquire::InquireError;
 use tracing::{debug, info};
 
+use super::{fancy_ui::run_setup, utils::TUICapture};
+
 #[tokio::main]
 pub async fn main() {
     let state_dir = ensure_state_dir().await.unwrap();
@@ -58,6 +60,9 @@ async fn inner_main(state_dir: PathBuf, log_paths: LogPaths) -> anyhow::Result<(
 
     let log_paths = Arc::new(log_paths);
 
+    let mut tui = TUICapture::new()?;
+    run_setup(args, tui.terminal()).await;
+    /* 
     let Some(begin_params) = do_setup_wizard(&args)? else {
         return Ok(());
     };
@@ -74,5 +79,6 @@ async fn inner_main(state_dir: PathBuf, log_paths: LogPaths) -> anyhow::Result<(
     begin_writing(args.interactive, begin_params, handle, log_paths).await?;
 
     debug!("Done!");
+    */
     Ok(())
 }

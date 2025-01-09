@@ -50,6 +50,8 @@ tracing = { version = "0.1.40", features = [
 ] }
 tracing-subscriber = { version = "0.3.16", features = ["env-filter", "fmt"] }
 tracing-unwrap = "1.0.1"
+tui-input = "0.11.1"
+tui-menu = "0.3.0"
 which = "6.0.1"
 xz2 = { version = "0.1.7", features = ["static"] }
 
