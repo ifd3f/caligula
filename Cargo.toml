@@ -42,7 +42,7 @@ sha1 = "0.10.5"
 sha2 = "0.10.6"
 shell-words = "1.1.0"
 thiserror = "1.0.59"
-tokio = { version = "1.37.0", features = ["full"] }
+tokio = { version = "1.38.2", features = ["full"] }
 tracing = { version = "0.1.40", features = [
     "async-await",
     "log",
