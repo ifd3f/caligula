@@ -74,7 +74,7 @@ We plan on supporting Windows, FreeBSD, and OpenBSD Eventually™. If you would 
 
 ### Why did you make this?
 
-Because I wanted a nice, user-friendly wrapper around `dd` that wasn't like, a ~~90~~ 95 MB executable that packages Chromium and eats hundreds of MB of RAM like certain other disk etching softwares do.
+Because I wanted a nice, user-friendly wrapper around `dd` that wasn't like, a ~~90~~ 95 MB executable that packages Chromium and eats hundreds of MB of RAM like certain other disk etching software do.
 
 ### Why is it called "Caligula"?
 
