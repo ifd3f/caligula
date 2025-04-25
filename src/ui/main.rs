@@ -1,4 +1,4 @@
-use std::{fs::File, path::PathBuf, sync::Arc};
+use std::{fs::File, path::Path, sync::Arc};
 
 use crate::{
     logging::{init_logging_parent, LogPaths},
@@ -33,7 +33,7 @@ pub async fn main() {
     };
 
     debug!("Starting primary process");
-    match inner_main(state_dir, log_paths).await {
+    match inner_main(&state_dir, log_paths).await {
         Ok(_) => (),
         Err(e) => handle_toplevel_error(e),
     }
@@ -52,7 +52,7 @@ fn handle_toplevel_error(err: anyhow::Error) {
     }
 }
 
-async fn inner_main(state_dir: PathBuf, log_paths: LogPaths) -> anyhow::Result<()> {
+async fn inner_main(state_dir: &Path, log_paths: LogPaths) -> anyhow::Result<()> {
     let args = Args::parse();
     let Command::Burn(args) = args.command;
 
