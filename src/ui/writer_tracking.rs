@@ -60,7 +60,7 @@ impl WriterState {
                 self.into_finished(now, Some(ErrorType::UnexpectedTermination))
             }
             other => panic!(
-                "Recieved nexpected child status {:#?}\nCurrent state: {:#?}",
+                "Received nexpected child status {:#?}\nCurrent state: {:#?}",
                 other, self
             ),
         }
