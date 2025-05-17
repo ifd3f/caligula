@@ -69,6 +69,10 @@ pub struct BurnArgs {
     )]
     pub hash: HashArg,
 
+    /// Where to look for the hash of the input file.
+    #[arg(long, value_parser = parse_path_exists)]
+    pub hash_file: Option<PathBuf>,
+
     /// Is the hash calculated from the raw file, or the compressed file?
     #[arg(long)]
     pub hash_of: Option<HashOf>,
