@@ -54,6 +54,7 @@ There are a couple of ways to install Caligula.
 - **Nix:**
   - [Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/by-name/ca/caligula/package.nix): `nix-env -i caligula`
   - Repository flake: If your system is flake-enabled, you can use `github:ifd3f/caligula` for bleeding-edge changes.
+- **Homebrew**: [philocalyst has made a homebrew tap for caligula](https://github.com/philocalyst/homebrew-tap): `brew tap philocalyst/tap && brew install caligula`
 - **Cargo:** Caligula is published on [crates.io](https://crates.io/crates/caligula). Just run `cargo install caligula`
 - **Build from source:** This is a relatively standard cargo project so you should be able to just `git clone` and `cargo build --release` it.
 
@@ -74,7 +75,7 @@ We plan on supporting Windows, FreeBSD, and OpenBSD Eventually™. If you would 
 
 ### Why did you make this?
 
-Because I wanted a nice, user-friendly wrapper around `dd` that wasn't like, a ~~90~~ 95 MB executable that packages Chromium and eats hundreds of MB of RAM like certain other disk etching softwares do.
+Because I wanted a nice, user-friendly wrapper around `dd` that wasn't like, a ~~90~~ 95 MB executable that packages Chromium and eats hundreds of MB of RAM like certain other disk etching software do.
 
 ### Why is it called "Caligula"?
 

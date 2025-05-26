@@ -78,9 +78,14 @@ impl State {
             (KeyCode::Char('c'), KeyModifiers::CONTROL)
             | (KeyCode::Esc, _)
             | (KeyCode::Char('q'), _) => {
-                info!("Got request to quit, spawning prompt");
-                self.quit_modal = Some(QuitModal::new());
-                Ok(self)
+                if self.child.is_finished() {
+                    info!("Writing and verification finished; quitting immediately");
+                    Err(Quit.into())
+                } else {
+                    info!("Got request to quit, spawning prompt");
+                    self.quit_modal = Some(QuitModal::new());
+                    Ok(self)
+                }
             }
             _ => Ok(self),
         }
