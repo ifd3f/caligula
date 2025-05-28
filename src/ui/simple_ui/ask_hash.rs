@@ -19,15 +19,30 @@ use crate::{
 
 #[tracing::instrument(skip_all, fields(cf))]
 pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {
-    let hash_params = match &args.hash {
-        HashArg::Skip => None,
-        HashArg::Ask => {
-            let parsed = match &args.hash_file {
-                Some(hash_file) => find_hash_in_user_file(&args.input, &hash_file),
-                None => find_hash_in_standard_files(&args.input),
+    let hash_params = match (&args.hash, &args.hash_file) {
+        (_, Some(hash_file)) => {
+            let Some((algs, _, expected_hash)) = find_hash_in_user_file(&args.input, hash_file)
+            else {
+                eprintln!(
+                    "Could not parse {} as a valid hash file!",
+                    hash_file.to_string_lossy()
+                );
+                exit(-1);
             };
 
-            match parsed {
+            eprintln!(
+                "Using user-provided hash file: {}",
+                hash_file.to_string_lossy()
+            );
+            Some(BeginHashParams {
+                expected_hash,
+                alg: ask_alg(&algs)?,
+                hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
+            })
+        }
+        (HashArg::Skip, _) => None,
+        (HashArg::Ask, _) => {
+            match find_hash_in_standard_files(&args.input) {
                 Some((algs, expected_hashfile, expected_hash))
                     if Confirm::new(&format!(
                         "Detected hash file {expected_hashfile} in the directory. Do you want to use it?"
@@ -44,7 +59,7 @@ pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option
                 _ => ask_hash_loop(cf)?,
             }
         }
-        HashArg::Hash { alg, expected_hash } => Some(BeginHashParams {
+        (HashArg::Hash { alg, expected_hash }, _) => Some(BeginHashParams {
             expected_hash: expected_hash.clone(),
             alg: *alg,
             hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
