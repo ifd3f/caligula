@@ -13,31 +13,53 @@ use inquire::{Confirm, Select, Text};
 use crate::{
     compression::{decompress, CompressionFormat},
     hash::{parse_hash_input, FileHashInfo, HashAlg, Hashing},
-    hashfile::find_hash,
+    hashfile::{find_hash_in_standard_files, find_hash_in_user_file},
     ui::cli::{BurnArgs, HashArg, HashOf},
 };
 
 #[tracing::instrument(skip_all, fields(cf))]
 pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {
-    let hash_params = match &args.hash {
-        HashArg::Skip => None,
-        HashArg::Ask => {
-            match find_hash(&args.input) {
-                Some((alg, expected_hashfile, expected_hash))
-                if Confirm::new(&format!(
-                    "Detected hash file {expected_hashfile} in the directory. Do you want to use it?"
-                ))
-                .with_default(true)
-                .prompt()? =>
+    let hash_params = match (&args.hash, &args.hash_file) {
+        (_, Some(hash_file)) => {
+            let Some((algs, _, expected_hash)) = find_hash_in_user_file(&args.input, hash_file)
+            else {
+                eprintln!(
+                    "Could not parse {} as a valid hash file!",
+                    hash_file.to_string_lossy()
+                );
+                exit(-1);
+            };
+
+            eprintln!(
+                "Using user-provided hash file: {}",
+                hash_file.to_string_lossy()
+            );
+            Some(BeginHashParams {
+                expected_hash,
+                alg: ask_alg(&algs)?,
+                hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
+            })
+        }
+        (HashArg::Skip, _) => None,
+        (HashArg::Ask, _) => {
+            match find_hash_in_standard_files(&args.input) {
+                Some((algs, expected_hashfile, expected_hash))
+                    if Confirm::new(&format!(
+                        "Detected hash file {expected_hashfile} in the directory. Do you want to use it?"
+                    ))
+                    .with_default(true)
+                    .prompt()? =>
+                {
                     Some(BeginHashParams {
                         expected_hash,
-                        alg,
+                        alg: ask_alg(&algs)?,
                         hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
-                    }),
-                _ => ask_hash_loop(cf)?
+                    })
+                }
+                _ => ask_hash_loop(cf)?,
             }
         }
-        HashArg::Hash { alg, expected_hash } => Some(BeginHashParams {
+        (HashArg::Hash { alg, expected_hash }, _) => Some(BeginHashParams {
             expected_hash: expected_hash.clone(),
             alg: *alg,
             hasher_compression: ask_hasher_compression(cf, args.hash_of)?,
@@ -109,24 +131,7 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
         },
     };
 
-    let alg = match &algs[..] {
-        &[] => {
-            eprintln!("Could not detect the hash algorithm from your hash!");
-            Err(Recoverable::AskAgain)?
-        }
-        &[only_alg] => {
-            eprintln!("Detected {}", only_alg);
-            only_alg
-        }
-        multiple => {
-            let ans = Select::new("Which algorithm is it?", multiple.into()).prompt_skippable()?;
-            if let Some(alg) = ans {
-                alg
-            } else {
-                Err(Recoverable::AskAgain)?
-            }
-        }
-    };
+    let alg = ask_alg(&algs)?;
 
     let hasher_compression = ask_hasher_compression(cf, None)?;
 
@@ -135,6 +140,28 @@ fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
         alg,
         hasher_compression,
     })
+}
+
+#[tracing::instrument]
+fn ask_alg(algs: &[HashAlg]) -> anyhow::Result<HashAlg> {
+    match algs {
+        &[] => {
+            eprintln!("Could not detect the hash algorithm from your hash!");
+            Err(Recoverable::AskAgain)?
+        }
+        &[only_alg] => {
+            eprintln!("Detected {}", only_alg);
+            Ok(only_alg)
+        }
+        multiple => {
+            let ans = Select::new("Which algorithm is it?", multiple.into()).prompt_skippable()?;
+            if let Some(alg) = ans {
+                Ok(alg)
+            } else {
+                Err(Recoverable::AskAgain)?
+            }
+        }
+    }
 }
 
 #[tracing::instrument]

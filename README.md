@@ -19,6 +19,7 @@ Options:
   -o <OUT>                         Where to write the output. If not supplied, we will search for possible disks and ask you for where you want to burn
   -z, --compression <COMPRESSION>  What compression format the input file is in [default: ask] [possible values: ask, auto, none, gz, bz2, xz]
   -s, --hash <HASH>                The hash of the input file. For more information, see long help (--help) [default: ask]
+      --hash-file <HASH_FILE>      Where to look for the hash of the input file
       --hash-of <HASH_OF>          Is the hash calculated from the raw file, or the compressed file? [possible values: raw, compressed]
       --show-all-disks             If provided, we will show all disks, removable or not
       --interactive <INTERACTIVE>  If we should run in interactive mode or not [default: auto] [possible values: auto, always, never]
@@ -46,7 +47,7 @@ Options:
 There are a couple of ways to install Caligula.
 
 - **Binary release:** You can download pre-built binaries from [the latest Github release](https://github.com/ifd3f/caligula/releases/latest).
-- **Arch Linux:** 
+- **Arch Linux:**
   - [Official repository](https://archlinux.org/packages/extra/x86_64/caligula): `pacman -S caligula`
   - [caligula-bin on the AUR](https://aur.archlinux.org/packages/caligula-bin): We also automatically publish binaries with every release.
   - [caligula-git on the AUR](https://aur.archlinux.org/packages/caligula-git): Build from latest commit on `main` branch

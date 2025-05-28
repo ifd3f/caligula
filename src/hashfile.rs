@@ -34,17 +34,39 @@ const HASH_FILES: [(HashAlg, &str); 24] = [
     (HashAlg::Sha512, "SHA512SUMS"),
 ];
 
-pub fn find_hash(input: &Path) -> Option<(HashAlg, &str, Vec<u8>)> {
+pub fn find_hash_in_standard_files(input: &Path) -> Option<(Vec<HashAlg>, &str, Vec<u8>)> {
     for (alg, hash_file) in HASH_FILES {
         let hash_filepath = input.parent()?.join(hash_file);
         match File::open(&hash_filepath) {
             Ok(file) => match parse_hashfile(BufReader::new(file), input.file_name()?.to_str()?) {
-                Ok(Some(expected_hash)) => return Some((alg, hash_file, expected_hash)),
+                Ok(Some(expected_hash)) => return Some((vec![alg], hash_file, expected_hash)),
                 Ok(None) => tracing::warn!("Hash not found in {}", hash_filepath.display()),
                 Err(e) => tracing::warn!("{e}"),
             },
             Err(e) => tracing::warn!("{e}"),
         }
+    }
+
+    None
+}
+
+pub fn find_hash_in_user_file<'a>(
+    input: &Path,
+    hash_filepath: &'a Path,
+) -> Option<(Vec<HashAlg>, &'a str, Vec<u8>)> {
+    match File::open(&hash_filepath) {
+        Ok(file) => match parse_hashfile(BufReader::new(file), input.file_name()?.to_str()?) {
+            Ok(Some(expected_hash)) => {
+                return Some((
+                    HashAlg::detect_from_length(expected_hash.len()).to_vec(),
+                    hash_filepath.file_name()?.to_str()?,
+                    expected_hash,
+                ));
+            }
+            Ok(None) => tracing::warn!("Hash not found in {}", hash_filepath.display()),
+            Err(e) => tracing::warn!("{e}"),
+        },
+        Err(e) => tracing::warn!("{e}"),
     }
 
     None
