@@ -7,7 +7,7 @@ use std::{
 };
 
 /// Common filenames of hash files.
-const HASH_FILES: [(HashAlg, &str); 24] = [
+const HASH_FILES: &[(HashAlg, &str)] = &[
     (HashAlg::Md5, "md5sum.txt"),
     (HashAlg::Md5, "md5sums.txt"),
     (HashAlg::Md5, "MD5SUM"),
@@ -34,13 +34,40 @@ const HASH_FILES: [(HashAlg, &str); 24] = [
     (HashAlg::Sha512, "SHA512SUMS"),
 ];
 
-pub fn find_hash_in_standard_files(input: &Path) -> Option<(Vec<HashAlg>, &str, Vec<u8>)> {
+/// Common hash file extensions.
+const HASH_EXTENSIONS: &[(HashAlg, &str)] = &[
+    (HashAlg::Md5, "md5"),
+    (HashAlg::Sha1, "sha1"),
+    (HashAlg::Sha224, "sha224"),
+    (HashAlg::Sha256, "sha256"),
+    (HashAlg::Sha384, "sha384"),
+    (HashAlg::Sha512, "sha512"),
+];
+
+pub fn find_hash_in_standard_files(input: &Path) -> Option<(Vec<HashAlg>, String, Vec<u8>)> {
+    let basename = input.file_name()?.to_str()?;
     for (alg, hash_file) in HASH_FILES {
         let hash_filepath = input.parent()?.join(hash_file);
         match File::open(&hash_filepath) {
-            Ok(file) => match parse_hashfile(BufReader::new(file), input.file_name()?.to_str()?) {
-                Ok(Some(expected_hash)) => return Some((vec![alg], hash_file, expected_hash)),
+            Ok(file) => match parse_hashfile(BufReader::new(file), basename) {
+                Ok(Some(expected_hash)) => {
+                    return Some((vec![*alg], hash_file.to_string(), expected_hash))
+                }
                 Ok(None) => tracing::warn!("Hash not found in {}", hash_filepath.display()),
+                Err(e) => tracing::warn!("{e}"),
+            },
+            Err(e) => tracing::warn!("{e}"),
+        }
+    }
+
+    for (alg, hash_ext) in HASH_EXTENSIONS {
+        let hash_filepath = format!("{}.{hash_ext}", input.display());
+        match File::open(&hash_filepath) {
+            Ok(file) => match parse_hashfile(BufReader::new(file), basename) {
+                Ok(Some(expected_hash)) => {
+                    return Some((vec![*alg], format!("{basename}.{hash_ext}"), expected_hash))
+                }
+                Ok(None) => tracing::warn!("Hash not found in {}", &hash_filepath),
                 Err(e) => tracing::warn!("{e}"),
             },
             Err(e) => tracing::warn!("{e}"),
