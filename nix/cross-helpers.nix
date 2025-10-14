@@ -27,7 +27,7 @@ in rec {
     overlays = [ rust-overlay.overlays.default ];
   };
 
-  baseToolchain = pkgs.rust-bin.stable."1.78.0".default;
+  baseToolchain = pkgs.rust-bin.stable.latest.default;
 
   supportedSystems = if hostInfo.kernel.name == "linux" then [
     "aarch64-linux"
@@ -51,12 +51,7 @@ in rec {
         platformDeps = [ ];
       } else if targetInfo.kernel.name == "darwin" then {
         rustTarget = "${targetInfo.cpu.name}-apple-darwin";
-        platformDeps = with pkgs.darwin.apple_sdk.frameworks; [
-          Cocoa
-          IOKit
-          Foundation
-          DiskArbitration
-        ];
+        platformDeps = with pkgs; [ apple-sdk ];
       } else
         throw "unsupported target system ${target}";
 
