@@ -27,7 +27,7 @@ in rec {
     overlays = [ rust-overlay.overlays.default ];
   };
 
-  baseToolchain = pkgs.rust-bin.stable."1.78.0".default;
+  baseToolchain = pkgs.rust-bin.stable.latest.default;
 
   supportedSystems = if hostInfo.kernel.name == "linux" then [
     "aarch64-linux"
