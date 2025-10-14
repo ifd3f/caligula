@@ -9,6 +9,7 @@ version="$1"
 
 dir="$(dirname "$(dirname "$0")")"
 cargotoml="$dir/Cargo.toml"
+cargolock="$dir/Cargo.lock"
 
 sedcmd='0,/version =/s/version = .*/version = "'
 sedcmd+="$1"
@@ -18,6 +19,7 @@ set -euxo pipefail
 
 sed -i "$sedcmd" "$cargotoml"
 
-git add "$cargotoml"
+git checkout -b "release/v$version"
+cargo generate-lockfile
+git add "$cargotoml" "$cargolock"
 git commit -m "bump version to v$version"
-cargo lock
