@@ -6,6 +6,8 @@
 
 _Caligula_ is a user-friendly, lightweight TUI for imaging disks.
 
+<!-- BEGIN GENERATED HELP OUTPUT -->
+
 ```
 $ caligula burn -h
 A lightweight, user-friendly disk imaging tool
@@ -28,6 +30,8 @@ Options:
   -h, --help                       Print help (see more with '--help')
   -V, --version                    Print version
 ```
+
+<!-- END GENERATED HELP OUTPUT -->
 
 ## Features
 
