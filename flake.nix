@@ -66,7 +66,7 @@
 
         devShells.default = crossHelpers.crossCompileDevShell.overrideAttrs
           (final: prev: {
-            buildInputs = prev.buildInputs ++ (with pkgs; [ nixfmt ]);
+            buildInputs = prev.buildInputs ++ (with pkgs; [ nixfmt python3 ]);
           });
       }));
 }

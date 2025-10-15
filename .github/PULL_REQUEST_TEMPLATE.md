@@ -18,6 +18,8 @@ todo
 - [ ] Refactor
 - [ ] Breaking change
 - [ ] This change requires a documentation update
+- [ ] This change contains modifications to the `--help` output
+    - [ ] I ran `scripts/regenerate_readme.py` from the root directory to ensure it has the latest sample output
 
 ## Test plan
 
