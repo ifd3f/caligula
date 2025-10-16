@@ -7,30 +7,33 @@
 _Caligula_ is a user-friendly, lightweight TUI for imaging disks.
 
 <!-- BEGIN GENERATED HELP OUTPUT -->
-
 ```
 $ caligula burn -h
 A lightweight, user-friendly disk imaging tool
 
-Usage: caligula burn [OPTIONS] <INPUT>
+[1m[4mUsage:[0m [1mcaligula burn[0m [OPTIONS] <INPUT>
 
-Arguments:
+[1m[4mArguments:[0m
   <INPUT>  Input file to burn
 
-Options:
-  -o <OUT>                         Where to write the output. If not supplied, we will search for possible disks and ask you for where you want to burn
-  -z, --compression <COMPRESSION>  What compression format the input file is in [default: ask] [possible values: ask, auto, none, gz, bz2, xz]
-  -s, --hash <HASH>                The hash of the input file. For more information, see long help (--help) [default: ask]
-      --hash-file <HASH_FILE>      Where to look for the hash of the input file
-      --hash-of <HASH_OF>          Is the hash calculated from the raw file, or the compressed file? [possible values: raw, compressed]
-      --show-all-disks             If provided, we will show all disks, removable or not
-      --interactive <INTERACTIVE>  If we should run in interactive mode or not [default: auto] [possible values: auto, always, never]
-  -f, --force                      If supplied, we will not ask for confirmation before destroying your disk
-      --root <ROOT>                If we don't have permissions on the output file, should we try to become root? [default: ask] [possible values: ask, always, never]
-  -h, --help                       Print help (see more with '--help')
-  -V, --version                    Print version
+[1m[4mOptions:[0m
+  [1m-o[0m <OUT>
+          Where to write the output. If not supplied, we will search for
+          possible disks and ask you for where you want to burn
+  [1m-z[0m, [1m--compression[0m <COMPRESSION>
+          What compression format the input file is in [default: ask] [possible
+          values: ask, auto, none, gz, bz2, xz, lz4, zst]
+  [1m-s[0m, [1m--hash[0m <HASH>
+          The hash of the input file. For more information, see long help
+          (--help) [default: ask]
+      [1m--hash-file[0m <HASH_FILE>
+          Where to look for the hash of the input file
+      [1m--hash-of[0m <HASH_OF>
+          Is the hash calculated from the raw file, or the compressed file?
+          [possible values: raw, compressed]
+      [1m--show-all-disks[0m
+          If provided, we will show all disks, remo
 ```
-
 <!-- END GENERATED HELP OUTPUT -->
 
 ## Features
