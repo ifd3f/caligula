@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 
 use crate::{
     compression::CompressionArg,
-    hash::{parse_hash_input, HashAlg},
+    hash::{HashAlg, parse_hash_input},
 };
 
 /// A safe, user-friendly disk imager.
@@ -185,7 +185,7 @@ mod tests {
 
     use crate::hash::HashAlg;
 
-    use super::{parse_hash_arg, HashArg};
+    use super::{HashArg, parse_hash_arg};
     use test_case::test_case;
 
     #[test]

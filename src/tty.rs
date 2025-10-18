@@ -1,6 +1,6 @@
 use std::{mem, os::fd::AsRawFd};
 
-use libc::{c_int, tcsetattr, termios, TCSANOW};
+use libc::{TCSANOW, c_int, tcsetattr, termios};
 use tracing::info;
 
 /// Stores the state of the terminal when created, and restores it on drop

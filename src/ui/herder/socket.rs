@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use interprocess::local_socket::{tokio::prelude::*, GenericFilePath, ListenerOptions};
+use interprocess::local_socket::{GenericFilePath, ListenerOptions, tokio::prelude::*};
 use tracing::debug;
 use tracing_unwrap::ResultExt;
 

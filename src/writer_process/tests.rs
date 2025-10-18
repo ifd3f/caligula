@@ -2,7 +2,7 @@ use self::helpers::*;
 use super::*;
 use assert_matches::assert_matches;
 use pretty_assertions::assert_eq;
-use rand::{rngs::SmallRng, SeedableRng};
+use rand::{SeedableRng, rngs::SmallRng};
 use rstest::*;
 
 #[test]
@@ -249,11 +249,11 @@ fn verify_misaligned_case_sad_path_works(#[case] file_size: usize, #[case] flip_
 mod helpers {
     use std::io::{self, Cursor, Read, Write};
 
-    use rand::{rngs::SmallRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::SmallRng};
 
     use super::{
-        ipc::{ErrorType, StatusMessage},
         CompressionFormat, VerifyOp, WriteOp,
+        ipc::{ErrorType, StatusMessage},
     };
 
     /// Wraps an in-memory buffer and logs every single chunk of data written to it.

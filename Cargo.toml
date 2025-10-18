@@ -5,7 +5,7 @@ homepage = "https://github.com/ifd3f/caligula"
 repository = "https://github.com/ifd3f/caligula.git"
 authors = ["Astrid Yu <astrid@astrid.tech>"]
 version = "0.4.9"
-edition = "2021"
+edition = "2024"
 license = "GPL-3.0"
 
 [dependencies]

@@ -1,7 +1,7 @@
 use std::{fs::File, path::Path, sync::Arc};
 
 use crate::{
-    logging::{init_logging_parent, LogPaths},
+    logging::{LogPaths, init_logging_parent},
     tty::TermiosRestore,
     ui::{
         cli::{Args, Command},

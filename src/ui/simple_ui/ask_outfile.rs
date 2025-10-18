@@ -4,8 +4,8 @@ use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
 
 use crate::{
-    compression::{CompressionArg, CompressionFormat, AVAILABLE_FORMATS},
-    device::{self, enumerate_devices, Removable, WriteTarget},
+    compression::{AVAILABLE_FORMATS, CompressionArg, CompressionFormat},
+    device::{self, Removable, WriteTarget, enumerate_devices},
     ui::{cli::BurnArgs, start::BeginParams},
 };
 
