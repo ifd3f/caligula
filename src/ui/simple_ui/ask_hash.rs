@@ -11,8 +11,8 @@ use indicatif::{ProgressBar, ProgressStyle};
 use inquire::{Confirm, Select, Text};
 
 use crate::{
-    compression::{decompress, CompressionFormat},
-    hash::{parse_hash_input, FileHashInfo, HashAlg, Hashing},
+    compression::{CompressionFormat, decompress},
+    hash::{FileHashInfo, HashAlg, Hashing, parse_hash_input},
     hashfile::{find_hash_in_standard_files, find_hash_in_user_file},
     ui::cli::{BurnArgs, HashArg, HashOf},
 };

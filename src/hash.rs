@@ -216,7 +216,6 @@ where
 
 /// Represents the full results of hashing.
 pub struct FileHashInfo {
-    pub file_bytes: u64,
     pub file_hash: Vec<u8>,
 }
 
@@ -243,7 +242,6 @@ where
         match self.error {
             Some(e) => Err(e),
             None => Ok(FileHashInfo {
-                file_bytes: self.len as u64,
                 file_hash: self.hash.finalize()[..].into(),
             }),
         }
@@ -334,7 +332,9 @@ pub enum HashParseError {
     UnknownAlg(String),
     #[error("SRI-style value is not base16 or base64")]
     SRIValueNotBase16OrBase64,
-    #[error("Algorithm {alg} expected a digest of length {expected_bytes}, but got length {actual_bytes}")]
+    #[error(
+        "Algorithm {alg} expected a digest of length {expected_bytes}, but got length {actual_bytes}"
+    )]
     InvalidLengthForAlg {
         alg: HashAlg,
         expected_bytes: usize,
@@ -356,7 +356,7 @@ mod tests {
 
     use crate::hash::HashAlg;
 
-    use super::{parse_hash_input, HashParseError};
+    use super::{HashParseError, parse_hash_input};
     use test_case::test_case;
 
     #[test]

@@ -1,11 +1,11 @@
-use std::fs::create_dir_all;
 use std::fs::File;
+use std::fs::create_dir_all;
 use std::panic::set_hook;
 use std::path::Path;
 use std::{path::PathBuf, sync::Mutex};
 
 use crossterm::terminal::disable_raw_mode;
-use tracing::{error, Level};
+use tracing::{Level, error};
 use tracing_subscriber::EnvFilter;
 
 /// Helper for calculating which files to log to.

@@ -5,61 +5,61 @@ homepage = "https://github.com/ifd3f/caligula"
 repository = "https://github.com/ifd3f/caligula.git"
 authors = ["Astrid Yu <astrid@astrid.tech>"]
 version = "0.4.9"
-edition = "2021"
+edition = "2024"
 license = "GPL-3.0"
 
 [dependencies]
 aligned-vec = "0.5.0"
-anyhow = "1.0.82"
+anyhow = "1.0.100"
 base16 = "0.2.1"
 base64 = "0.22.1"
 bincode = "1.3.3"
 byteorder = "1.5.0"
-bytesize = "1.3.0"
-bzip2 = { version = "0.6.0", features = ["static"] }
-clap = { version = "4.5.4", features = ["derive", "cargo", "wrap_help"] }
+bytesize = "1.3.3"
+bzip2 = { version = "0.6.1", features = ["static"] }
+clap = { version = "4.5.49", features = ["derive", "cargo", "wrap_help"] }
 crossterm = { version = "0.27.0", features = ["event-stream"] }
-derive_more = "0.99.17"
-digest = "0.10.6"
-flate2 = "1.0.25"
+derive_more = "0.99.20"
+digest = "0.10.7"
+flate2 = "1.1.4"
 format-bytes = "0.3.0"
-futures = "0.3.30"
-futures-io = "0.3.26"
-indicatif = "0.17.8"
+futures = "0.3.31"
+futures-io = "0.3.31"
+indicatif = "0.17.11"
 inquire = "0.7.5"
-interprocess = { version = "2.0.0", features = ["tokio"] }
-is-terminal = "0.4.12"
+interprocess = { version = "2.2.3", features = ["tokio"] }
+is-terminal = "0.4.16"
 itertools = "0.12.1"
-libc = "0.2.154"
-lz4_flex = "0.11.3"
-md-5 = "0.10.5"
+libc = "0.2.177"
+lz4_flex = "0.11.5"
+md-5 = "0.10.6"
 process_path = "0.1.4"
-ratatui = "0.26.0"
+ratatui = "0.26.3"
 ruzstd = "0.6.0"
-serde = { version = "1.0.200", features = ["derive"] }
-serde_json = "1.0.116"
-sha1 = "0.10.5"
-sha2 = "0.10.6"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.145"
+sha1 = "0.10.6"
+sha2 = "0.10.9"
 shell-words = "1.1.0"
-thiserror = "1.0.59"
-tokio = { version = "1.38.2", features = ["full"] }
-tracing = { version = "0.1.40", features = [
+thiserror = "1.0.69"
+tokio = { version = "1.48.0", features = ["full"] }
+tracing = { version = "0.1.41", features = [
     "async-await",
     "log",
     "release_max_level_debug",
 ] }
-tracing-subscriber = { version = "0.3.16", features = ["env-filter", "fmt"] }
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 tracing-unwrap = "1.0.1"
-which = "6.0.1"
+which = "6.0.3"
 xz2 = { version = "0.1.7", features = ["static"] }
 
 [dev-dependencies]
 approx = "0.5.1"
 assert_matches = "1.5.0"
-pretty_assertions = "1.4.0"
+pretty_assertions = "1.4.1"
 rand = { version = "0.8.5", features = ["small_rng"] }
 rstest = "0.19.0"
-test-case = "3.0.0"
+test-case = "3.3.1"
 
 [profile.release]
 opt-level = 2
@@ -67,8 +67,8 @@ lto = true
 codegen-units = 1
 
 [target.aarch64-apple-darwin.dependencies]
-libc = "0.2.139"
+libc = "0.2.177"
 
 [build-dependencies]
-bindgen = "0.64.0"
-cc = "1.0.79"
+bindgen = "0.72.1"
+cc = "1.2.41"

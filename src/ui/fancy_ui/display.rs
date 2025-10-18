@@ -3,10 +3,10 @@ use std::{sync::Arc, time::Instant};
 use crossterm::event::EventStream;
 use futures::StreamExt;
 use ratatui::{
+    Terminal,
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Terminal,
 };
 use tokio::{select, time};
 

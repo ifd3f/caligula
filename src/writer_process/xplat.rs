@@ -22,7 +22,7 @@ pub fn open_blockdev(path: impl AsRef<Path>, _cf: CompressionFormat) -> std::io:
     // For more info, see:
     // https://stackoverflow.com/questions/2299402/how-does-one-do-raw-io-on-mac-os-x-ie-equivalent-to-linuxs-o-direct-flag
 
-    use libc::{fcntl, F_NOCACHE};
+    use libc::{F_NOCACHE, fcntl};
     use std::os::fd::AsRawFd;
 
     let file = OpenOptions::new().write(true).read(true).open(path)?;

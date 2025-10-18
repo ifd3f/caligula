@@ -3,7 +3,7 @@ use std::io::Write;
 use anyhow::Context;
 use bincode::Options;
 use byteorder::{BigEndian, WriteBytesExt};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 /// Common bincode options to use for inter-process communication.

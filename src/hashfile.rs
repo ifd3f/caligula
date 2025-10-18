@@ -51,7 +51,7 @@ pub fn find_hash_in_standard_files(input: &Path) -> Option<(Vec<HashAlg>, String
         match File::open(&hash_filepath) {
             Ok(file) => match parse_hashfile(BufReader::new(file), basename) {
                 Ok(Some(expected_hash)) => {
-                    return Some((vec![*alg], hash_file.to_string(), expected_hash))
+                    return Some((vec![*alg], hash_file.to_string(), expected_hash));
                 }
                 Ok(None) => tracing::warn!("Hash not found in {}", hash_filepath.display()),
                 Err(e) => tracing::warn!("{e}"),
@@ -65,7 +65,7 @@ pub fn find_hash_in_standard_files(input: &Path) -> Option<(Vec<HashAlg>, String
         match File::open(&hash_filepath) {
             Ok(file) => match parse_hashfile(BufReader::new(file), basename) {
                 Ok(Some(expected_hash)) => {
-                    return Some((vec![*alg], format!("{basename}.{hash_ext}"), expected_hash))
+                    return Some((vec![*alg], format!("{basename}.{hash_ext}"), expected_hash));
                 }
                 Ok(None) => tracing::warn!("Hash not found in {}", &hash_filepath),
                 Err(e) => tracing::warn!("{e}"),
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn parse_simple_hashfile() {
         let mut cursor = Cursor::new(
-            "bceb3dded8935c1d3521c475a69ae557e082839b46d921c8b400524470b5c965  archlinux-2024.11.01-x86_64.iso"
+            "bceb3dded8935c1d3521c475a69ae557e082839b46d921c8b400524470b5c965  archlinux-2024.11.01-x86_64.iso",
         );
 
         assert_eq!(
@@ -142,7 +142,7 @@ mod tests {
     #[test]
     fn parse_complicated_hashfile() {
         let mut cursor = Cursor::new(
-        "bceb3dded8935c1d3521c475a69ae557e082839b46d921c8b400524470b5c965  archlinux-2024.11.01-x86_64.iso\n\
+            "bceb3dded8935c1d3521c475a69ae557e082839b46d921c8b400524470b5c965  archlinux-2024.11.01-x86_64.iso\n\
         bceb3dded8935c1d3521c475a69ae557e082839b46d921c8b400524470b5c965  archlinux-x86_64.iso\n\
         c64745475da03a31f270b92e9abfbe7b6315596c7c97b17ef9a373433562a4a4  archlinux-bootstrap-2024.11.01-x86_64.tar.zst\n\
         c64745475da03a31f270b92e9abfbe7b6315596c7c97b17ef9a373433562a4a4  archlinux-bootstrap-x86_64.tar.zst",

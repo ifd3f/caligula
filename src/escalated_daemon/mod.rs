@@ -14,9 +14,9 @@
 //! IT IS NOT TO BE USED DIRECTLY BY THE USER! ITS API HAS NO STABILITY GUARANTEES!
 
 use anyhow::Context;
-use interprocess::local_socket::{tokio::prelude::*, GenericFilePath};
+use interprocess::local_socket::{GenericFilePath, tokio::prelude::*};
 use tokio::io::{AsyncBufRead, BufReader};
-use tracing::{error, info, info_span, Instrument};
+use tracing::{Instrument, error, info, info_span};
 use tracing_unwrap::ResultExt;
 
 use crate::{

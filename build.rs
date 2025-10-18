@@ -27,7 +27,7 @@ fn compile_macos() {
 
     let bindings = bindgen::Builder::default()
         .header("native/darwin/enumdisk.h")
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks))
+        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         .generate()
         .expect("Unable to generate bindings");
 

@@ -1,7 +1,7 @@
 use crate::{ipc_common::read_msg_async, writer_process::ipc::InitialInfo};
 use std::pin::Pin;
 
-use interprocess::local_socket::tokio::{prelude::*, RecvHalf, SendHalf};
+use interprocess::local_socket::tokio::{RecvHalf, SendHalf, prelude::*};
 use serde::de::DeserializeOwned;
 use tokio::{
     io::{BufReader, BufWriter},

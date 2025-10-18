@@ -64,11 +64,13 @@ impl StatefulWidget for SpeedChart<'_> {
             .marker(symbols::Marker::Braille)
             .graph_type(GraphType::Line);
 
-        let mut datasets = vec![dataset_style
-            .clone()
-            .name("Write")
-            .style(Style::default().fg(Color::Yellow))
-            .data(&write_speeds)];
+        let mut datasets = vec![
+            dataset_style
+                .clone()
+                .name("Write")
+                .style(Style::default().fg(Color::Yellow))
+                .data(&write_speeds),
+        ];
 
         if let Some(vdata) = &verify_speeds {
             datasets.push(
@@ -193,7 +195,7 @@ impl WriterProgressBar {
         self.ratio.clamp(0.0, 1.0)
     }
 
-    pub fn render(&self) -> Gauge {
+    pub fn render(&self) -> Gauge<'_> {
         if let Some(max) = self.display_total_bytes {
             Gauge::default()
                 .label(format!(
