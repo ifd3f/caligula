@@ -11,7 +11,7 @@ use std::{
 };
 
 use aligned_vec::avec_rt;
-use interprocess::local_socket::{prelude::*, GenericFilePath};
+use interprocess::local_socket::{GenericFilePath, prelude::*};
 use tracing::{debug, info, trace};
 use tracing_unwrap::ResultExt;
 

@@ -3,7 +3,7 @@ use std::{
     io::{BufReader, Read, Seek, Write},
 };
 
-use crate::compression::{decompress, CompressionFormat, DecompressRead};
+use crate::compression::{CompressionFormat, DecompressRead, decompress};
 
 /// Wraps a reader and counts how many bytes we've read in total, without
 /// making any system calls.
