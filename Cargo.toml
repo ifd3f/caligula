@@ -70,5 +70,5 @@ codegen-units = 1
 libc = "0.2.139"
 
 [build-dependencies]
-bindgen = "0.64.0"
-cc = "1.0.79"
+bindgen = "0.72.1"
+cc = "1.2.41"
