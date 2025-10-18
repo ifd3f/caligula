@@ -6,18 +6,24 @@
 
 _Caligula_ is a user-friendly, lightweight TUI for imaging disks.
 
+<!-- BEGIN GENERATED HELP OUTPUT -->
+
 ```
-$ caligula burn -h
+$ caligula
 A lightweight, user-friendly disk imaging tool
 
-Usage: caligula burn [OPTIONS] <INPUT>
-
-Arguments:
-  <INPUT>  Input file to burn
+Usage: caligula
+       caligula burn [OPTIONS] <INPUT>
+       caligula help [COMMAND]...
 
 Options:
+  -h, --help     Print help
+  -V, --version  Print version
+
+caligula burn:
+A lightweight, user-friendly disk imaging tool
   -o <OUT>                         Where to write the output. If not supplied, we will search for possible disks and ask you for where you want to burn
-  -z, --compression <COMPRESSION>  What compression format the input file is in [default: ask] [possible values: ask, auto, none, gz, bz2, xz]
+  -z, --compression <COMPRESSION>  What compression format the input file is in [default: ask] [possible values: ask, auto, none, gz, bz2, xz, lz4, zst]
   -s, --hash <HASH>                The hash of the input file. For more information, see long help (--help) [default: ask]
       --hash-file <HASH_FILE>      Where to look for the hash of the input file
       --hash-of <HASH_OF>          Is the hash calculated from the raw file, or the compressed file? [possible values: raw, compressed]
@@ -27,7 +33,14 @@ Options:
       --root <ROOT>                If we don't have permissions on the output file, should we try to become root? [default: ask] [possible values: ask, always, never]
   -h, --help                       Print help (see more with '--help')
   -V, --version                    Print version
+  <INPUT>                          Input file to burn
+
+caligula help:
+Print this message or the help of the given subcommand(s)
+  [COMMAND]...  Print help for the subcommand(s)
 ```
+
+<!-- END GENERATED HELP OUTPUT -->
 
 ## Features
 

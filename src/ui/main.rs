@@ -11,7 +11,7 @@ use crate::{
     },
     util::ensure_state_dir,
 };
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use inquire::InquireError;
 use tracing::{debug, info};
 
@@ -53,7 +53,10 @@ fn handle_toplevel_error(err: anyhow::Error) {
 }
 
 async fn inner_main(state_dir: &Path, log_paths: LogPaths) -> anyhow::Result<()> {
-    let args = Args::parse();
+    let args: Args = match std::env::var("_CALIGULA_CONFIGURE_CLAP_FOR_README") {
+        Ok(var) if var == "1" => parse_args_for_readme_generation(),
+        _ => Args::parse(),
+    };
     let Command::Burn(args) = args.command;
 
     let log_paths = Arc::new(log_paths);
@@ -75,4 +78,29 @@ async fn inner_main(state_dir: &Path, log_paths: LogPaths) -> anyhow::Result<()>
 
     debug!("Done!");
     Ok(())
+}
+
+/// Parse [Args] from the provided args, but format the help in an easy way for generating
+/// the section in the README.md.
+fn parse_args_for_readme_generation() -> Args {
+    use clap::FromArgMatches;
+
+    let command = Args::command_for_update()
+        .color(clap::ColorChoice::Never)
+        .term_width(0);
+
+    // The rest of this function is lifted out of clap::Parser::parse().
+    let mut matches = command.get_matches();
+    let res = Args::from_arg_matches_mut(&mut matches).map_err(|err| {
+        let mut cmd = Args::command();
+        err.format(&mut cmd)
+    });
+    match res {
+        Ok(s) => s,
+        Err(e) => {
+            // Since this is more of a development-time error, we aren't doing as fancy of a quit
+            // as `get_matches`
+            e.exit()
+        }
+    }
 }
