@@ -31,15 +31,14 @@ Options:
 
 ## Features
 
-- **Small binary** (few megabytes)
-- **Cool graphs**
+- **Cool graphs** that show you how fast you're writing
 - **Listing attached disks**, and telling you their size and hardware model information
-- **Rich confirmation dialogs** so you don't accidentally nuke your filesystem
 - **Decompressing** your input file for a variety of formats, including gz, bz2, and xz
 - **Validating your input file against a hash before burning**, with support for md5, sha1, sha256, and more!
 - **Running sudo/doas/su** if you forgot to run as `root` earlier (it happens)
+- **Rich confirmation dialogs** so you don't accidentally nuke your filesystem
 - **Verifying your disk after writing** to make sure it was written correctly
-- **Statically-linked** on the Linux version
+- **Small binary size** of <5 megabytes, even when statically linked
 - Did I mention _**cool graphs**_?
 
 ## How to install
@@ -61,12 +60,12 @@ There are a couple of ways to install Caligula.
 
 ### Platform support matrix
 
-| Platform         | Automated tests | Automated builds | Published binaries |
-|------------------|-----------------|------------------|--------------------|
-| `x86_64-linux`   | ✅               | ✅                | ✅                  |
-| `x86_64-darwin`  | ✅               | ✅                | ✅                  |
-| `aarch64-linux`  | ❌               | ✅                | ✅                  |
-| `aarch64-darwin` | ✅               | ✅                | ✅                  |
+| OS    | Architecture | Automated tests | Automated builds | Published binaries |
+| ----- | ------------ | --------------- | ---------------- | ------------------ |
+| Linux | x86_64       | ✅              | ✅               | ✅                 |
+|       | aarch64      | ❌              | ✅               | ✅                 |
+| MacOS | x86_64       | ✅              | ✅               | ✅                 |
+|       | aarch64      | ✅              | ✅               | ✅                 |
 
 Linux for other architectures theoretically works, but we are not making any guarantees.
 
@@ -76,60 +75,119 @@ We plan on supporting Windows, FreeBSD, and OpenBSD Eventually™. If you would 
 
 ### Why did you make this?
 
-Because I wanted a nice, user-friendly wrapper around `dd` that wasn't like, a ~~90~~ 95 MB executable that packages Chromium and eats hundreds of MB of RAM like certain other disk etching software do.
+Because I had to image one too many USB drives and wanted a nice, user-friendly `dd` alternative that wasn't ~~90~~ ~~95~~ **413 MB.**
+
+No really. A certain other tool doing the same exact thing has ballooned to 413 MB now.
+
+```
+% unzip balenaEtcher-linux-x64-2.1.4.zip
+% du -sh balenaEtcher-linux-x64
+413M	balenaEtcher-linux-x64
+```
 
 ### Why is it called "Caligula"?
 
-Because there used to be a tool called Nero Burning ROM, so I chose another crazy Roman emperor to name this software after. It's a very uncreative name and I might rename it later.
+There used to be a tool called Nero Burning ROM, so I chose another crazy Roman emperor to name this software after. It's a very uncreative name. I was originally planning on changing it later, but it's stuck.
 
-### Why is `dd` not good enough for you?
+### Why is `dd` not good enough for you? Do you not know how to use it?
 
-I know how `dd` works. In fact, instead of using `caligula`, I could just do this:
+I know how `dd` works. In fact, to prove it, I have written a tutorial on it here, without using any AI.
 
-```
+#### How most people use `dd` to write ISOs to a USB drive or SD card
+
+First, take a hash of your file, just to make sure that it didn't get corrupted in transit or bitrotted while living on your disk, because that happens occasionally. Most people forget to do this step, or are too lazy to. Most tutorials neglect to mention this step as well.
+
+```sh
 $ sha256sum some-image-file.iso.gz
 ```
-> Then, I would have to pause here to confirm that the file has the right SHA.
-```
+
+After you have verified that the hashes match, you can finally unzip your file, if it came zipped.
+
+```sh
 $ gunzip some-image-file.iso.gz
-$ lsblk
 ```
-> I pause here to make sure my disk is indeed detected by the OS.
-```
+
+Once that's done, you can finally start typing out your `dd` command. Using `bs=4M` because someone online recommended it and you forgot why, you type:
+
+```sh
 $ dd bs=4M if=some-image-file.iso of=/dev/
 ```
-> I pause here to confirm from the output above that I am indeed typing in the correct disk.
+
+You get to this point in typing it out before realizing you forgot to consult `lsblk`!
+
+```sh
+$ lsblk
 ```
-$ dd bs=4M if=some-image-file.iso of=/dev/sdb
+
 ```
-> I pause here *one more time* to *double-confirm* that I am indeed typing in the correct disk and that I am *not going to nuke any important disks storing important data*.
+NAME        MAJ:MIN RM   SIZE RO TYPE MOUNTPOINTS
+sda           8:0    0   1.8T  0 disk
+└─sda1        8:1    0   1.8T  0 part
+sdb           8:16   1   3.6G  0 disk
+└─sdb1        8:17   1   3.6G  0 part
+sdc           8:32   1    60G  0 disk
+nvme0n1     259:0    0 931.5G  0 disk
+├─nvme0n1p1 259:1    0   550M  0 part /boot
+└─nvme0n1p2 259:2    0   931G  0 part
 ```
-dd: failed to open '/dev/sdb': Permission denied
+
+You probably want the disk here either called **sdc.** Make sure you _don't confuse it with any of the other disks plugged into your computer, removable or otherwise._ That would be bad, because you might overwrite important data.
+
+```sh
+$ dd bs=4M if=some-image-file.iso of=/dev/sdc
 ```
-> I forgot to type sudo.
+
+Pause here _one more time,_ cross referencing what you typed in with the output of `lsblk`, to _double-confirm_ that you are indeed typing in the **correct disk** and not the **wrong disk** so that you don't **nuke any important disks storing important data such as your /home or your OS.**
+
+Then, open a new terminal and type
+
+```sh
+$ lsblk
 ```
-$ sudo dd bs=4M if=some-image-file.iso of=/dev/sdb
+
+again to **triple-confirm** that you are indeed typing in the **correct disk** and not the **wrong disk** so that you don't **nuke any important disks storing important data such as your /home or your OS.** Doing so would **really ruin your day.**
+
+Once you have **quadruple-confirmed** that you are indeed typing in the **correct disk** and not the **wrong disk** so that you don't **nuke any important disks storing important data such as your /home or your OS**, you can hit the enter key and finally actually run `dd`.
+
 ```
-> There is no output, but I'd like to see the progress.
+dd: failed to open '/dev/sdc': Permission denied
 ```
+
+Of course, you probably forgot to type sudo. Make sure you do that.
+
+```sh
+$ sudo dd bs=4M if=some-image-file.iso of=/dev/sdc
+```
+
+By default, `dd` does not have any output. If you want to see the progress, you will need to cancel the command and add `status=progress` on.
+
+```sh
 ^C^C^C
-$ sudo dd bs=4M if=some-image-file.iso of=/dev/sdb status=progress
+$ sudo dd bs=4M if=some-image-file.iso of=/dev/sdc status=progress
+2684354560 bytes (2.7 GB, 2.5 GiB) copied, 1 s, 2.7 GB/s
 ```
-Finally it's written!
 
-At this point, I don't even bother to verify that the disk was written correctly because I don't know the command to do that, and — let's be real — I don't think many other people do either.
+Now, it's finally written!
 
-Of course, instead of that whole song and dance, I could just type
+At this point, it's probably a good idea to verify that the disk was written correctly. I personally don't know the command to do that. Do you know the command to do that? If you ask most pro sysadmins this, could they name the command? If you look at any tutorial online, do they list the command? **The answer to all of these is no, because nobody bothers do this.**
+
+While `dd` is nice for scripting, after doing this process manually hundreds of times with hundreds of files and tens of drives, why don't you try using a simpler, more user-friendly process?
+
+#### How most people use `caligula` to write ISOs to a USB drive or SD card
+
+Typically, you would run
 
 ```
 $ caligula burn some-image-file.iso.gz
 ```
 
-and have the computer fill in the blanks because computers are good at filling in blanks, that's why they're there. It's not that I don't know how to use `dd`, it's just that after flashing so many SD cards and USBs, I'd rather do something less error-prone.
+and follow prompts in the terminal to allow the computer to fill in the blanks. In general, computers are good at filling in blanks. In fact, that was a big part of why we invented them.
 
 ### Why Rust?
 
-Because it's 🚀🚀🚀 BLAZING FAST 🚀🚀🚀 and 💾💾💾 MEMORY SAFE 💾💾💾
+Because it's 🚀🚀🚀 BLAZING FAST 🚀🚀🚀 and 💾💾💾 MEMORY SAFE 💾💾💾 and 🦀🦀🦀 CRAB 🦀🦀🦀
+
+On a serious note, I just like the language.
 
 ### Why Nix?
 
@@ -139,10 +197,10 @@ It makes the CI more predictable.
 
 To be fair, Rust doesn't have a very comprehensive standard library, and I only use one or two functions in most of those dependencies. Thanks to dead code elimination, inlining, and other optimizations, they don't end up contributing much to the overall binary size.
 
-### Will the binary ever get bigger?
-
-I want to keep the binary very small, or at least as small as I can make it. My current soft limit is to keep the x86_64-linux version under 4MB. This value may change with time or as features are added, but I don't want the binary to be anywhere near what an average Electron app is at. As of v0.4.3, it's only 2.77MB, which is not too bad!
-
 ### Why do you have to type in `burn`? Will you add other subcommands later?
 
-Yes. I Eventually™ plan on adding Windows install disk support and that will likely be its own subcommand.
+Yes. I Eventually™ plan on adding other capabilities, like [Windows install disk support](https://github.com/ifd3f/caligula/issues/14) and [secure disk erasure](https://github.com/ifd3f/caligula/issues/195), and those will end up in their own subcommands.
+
+### Why does it take so long for new things to be added?
+
+I have a full-time job that is not working on Caligula. If you would like to help with this problem, [contributions are appreciated](./CONTRIBUTING.md).
