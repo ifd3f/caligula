@@ -9,9 +9,9 @@ use crate::{
     hash::{parse_hash_input, HashAlg},
 };
 
-/// A safe, user-friendly disk imager.
+/// A lightweight, user-friendly disk imaging tool
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about, long_about = None, flatten_help = true)]
 #[command(propagate_version = true)]
 pub struct Args {
     #[command(subcommand)]
