@@ -216,7 +216,6 @@ where
 
 /// Represents the full results of hashing.
 pub struct FileHashInfo {
-    pub file_bytes: u64,
     pub file_hash: Vec<u8>,
 }
 
@@ -243,7 +242,6 @@ where
         match self.error {
             Some(e) => Err(e),
             None => Ok(FileHashInfo {
-                file_bytes: self.len as u64,
                 file_hash: self.hash.finalize()[..].into(),
             }),
         }

@@ -53,7 +53,7 @@ impl EscalationMethod {
         }
     }
 
-    pub fn wrap_command(&self, cmd: &Command) -> Command {
+    pub fn wrap_command(&self, cmd: &Command) -> Command<'_> {
         let raw = cmd.to_string();
 
         match self {

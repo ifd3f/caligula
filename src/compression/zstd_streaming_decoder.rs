@@ -126,15 +126,7 @@ impl<READ: Read, DEC: BorrowMut<FrameDecoder>> Read for StreamingDecoder<READ, D
             ) {
                 Ok(_) => { /*Nothing to do*/ }
                 Err(e) => {
-                    let err;
-                    #[cfg(feature = "std")]
-                    {
-                        err = Error::new(ErrorKind::Other, e);
-                    }
-                    #[cfg(not(feature = "std"))]
-                    {
-                        err = Error::new(ErrorKind::Other, Box::new(e));
-                    }
+                    let err = Error::new(ErrorKind::Other, e);
                     return Err(err);
                 }
             }
