@@ -8,6 +8,7 @@ mod escalated_daemon;
 mod escalation;
 mod hash;
 mod hashfile;
+mod herding;
 mod ipc_common;
 mod logging;
 mod native;
@@ -16,6 +17,7 @@ mod tty;
 mod ui;
 mod util;
 mod writer_process;
+mod writer;
 
 fn main() {
     match RunMode::detect() {

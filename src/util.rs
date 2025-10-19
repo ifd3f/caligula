@@ -21,3 +21,4 @@ pub async fn ensure_state_dir() -> Result<PathBuf, futures_io::Error> {
 
     Ok(dir)
 }
+

@@ -1,0 +1,71 @@
+use std::{fmt::Display, time::SystemTime};
+
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WriterStateReport {
+    pub writer_id: Uuid,
+    pub phase: WriterPhaseReport,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum WriterPhaseReport {
+    Writing {
+        read_bytes: u64,
+        written_bytes: u64,
+        input_file_bytes: u64,
+        block_size: u64,
+    },
+    Verifying {
+        total_written_bytes: u64,
+        block_size: u64,
+    },
+    Finished {
+        finish_time: SystemTime,
+        error: Option<ErrorType>,
+        total_write_bytes: u64,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ErrorType {
+    EndOfOutput,
+    PermissionDenied,
+    VerificationFailed,
+    UnexpectedTermination,
+    UnknownChildProcError(String),
+    FailedToUnmount { message: String, exit_code: i32 },
+}
+
+impl From<std::io::Error> for ErrorType {
+    fn from(value: std::io::Error) -> Self {
+        match value.kind() {
+            std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
+            _ => Self::UnknownChildProcError(format!("{value:#}")),
+        }
+    }
+}
+
+impl Display for ErrorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ErrorType::EndOfOutput => write!(
+                f,
+                "Unexpected end of output file. Is your output file too small?"
+            ),
+            ErrorType::PermissionDenied => write!(f, "Permission denied while opening file"),
+            ErrorType::VerificationFailed => write!(f, "Disk verification failed!"),
+            ErrorType::UnexpectedTermination => {
+                write!(f, "The child process unexpectedly terminated!")
+            }
+            ErrorType::UnknownChildProcError(err) => {
+                write!(f, "Unknown error occurred in child process: {err}")
+            }
+            ErrorType::FailedToUnmount { message, exit_code } => write!(
+                f,
+                "Failed to unmount disk (exit code {exit_code})\n{message}"
+            ),
+        }
+    }
+}
