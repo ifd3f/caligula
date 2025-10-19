@@ -8,6 +8,7 @@ mod escalated_daemon;
 mod escalation;
 mod hash;
 mod hashfile;
+mod herding;
 mod ipc_common;
 mod logging;
 mod native;
