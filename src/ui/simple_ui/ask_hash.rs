@@ -21,7 +21,7 @@ use crate::{
 pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option<FileHashInfo>> {
     let hash_params = match (&args.hash, &args.hash_file) {
         (_, Some(hash_file)) => {
-            let Some((algs, _, expected_hash)) = find_hash_in_user_file(&args.input, hash_file)
+            let Some((algs, _, expected_hash)) = find_hash_in_user_file(&args.image, hash_file)
             else {
                 eprintln!(
                     "Could not parse {} as a valid hash file!",
@@ -42,7 +42,7 @@ pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option
         }
         (HashArg::Skip, _) => None,
         (HashArg::Ask, _) => {
-            match find_hash_in_standard_files(&args.input) {
+            match find_hash_in_standard_files(&args.image) {
                 Some((algs, expected_hashfile, expected_hash))
                     if Confirm::new(&format!(
                         "Detected hash file {expected_hashfile} in the directory. Do you want to use it?"
@@ -72,7 +72,7 @@ pub fn ask_hash(args: &BurnArgs, cf: CompressionFormat) -> anyhow::Result<Option
         return Ok(None);
     };
 
-    let hash_result = do_hashing(&args.input, &params)?;
+    let hash_result = do_hashing(&args.image, &params)?;
 
     if hash_result.file_hash == params.expected_hash {
         eprintln!("Disk image verified successfully!");

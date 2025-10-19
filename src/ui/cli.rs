@@ -27,13 +27,13 @@ pub enum Command {
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 pub struct BurnArgs {
-    /// Input file to burn.
-    #[arg(value_parser = parse_path_exists)]
-    pub input: PathBuf,
+    /// Input image to burn.
+    #[arg(value_parser = parse_path_exists, display_order = 0)]
+    pub image: PathBuf,
 
     /// Where to write the output. If not supplied, we will search for possible
     /// disks and ask you for where you want to burn.
-    #[arg(short)]
+    #[arg(short, display_order = 1)] // needs display_order = 1 or else it will go above image
     pub out: Option<PathBuf>,
 
     /// What compression format the input file is in.
