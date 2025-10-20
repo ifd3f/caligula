@@ -16,6 +16,7 @@ mod run_mode;
 mod tty;
 mod ui;
 mod util;
+mod verification;
 mod writer_process;
 
 fn main() {
