@@ -34,7 +34,7 @@ pub fn do_setup_wizard(args: &BurnArgs) -> Result<Option<BeginParams>, anyhow::E
         Some(f) => WriteTarget::try_from(f.as_ref())?,
         None => ask_outfile(args)?,
     };
-    let begin_params = BeginParams::new(args.input.clone(), compression, target)?;
+    let begin_params = BeginParams::new(args.image.clone(), compression, target)?;
     if !confirm_write(args, &begin_params)? {
         eprintln!("Aborting.");
         return Ok(None);

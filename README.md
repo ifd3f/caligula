@@ -13,7 +13,7 @@ $ caligula
 A lightweight, user-friendly disk imaging tool
 
 Usage: caligula
-       caligula burn [OPTIONS] <INPUT>
+       caligula burn [OPTIONS] <IMAGE>
        caligula help [COMMAND]...
 
 Options:
@@ -22,6 +22,7 @@ Options:
 
 caligula burn:
 A lightweight, user-friendly disk imaging tool
+  <IMAGE>                          Input image to burn
   -o <OUT>                         Where to write the output. If not supplied, we will search for possible disks and ask you for where you want to burn
   -z, --compression <COMPRESSION>  What compression format the input file is in [default: ask] [possible values: ask, auto, none, gz, bz2, xz, lz4, zst]
   -s, --hash <HASH>                The hash of the input file. For more information, see long help (--help) [default: ask]
@@ -33,7 +34,6 @@ A lightweight, user-friendly disk imaging tool
       --root <ROOT>                If we don't have permissions on the output file, should we try to become root? [default: ask] [possible values: ask, always, never]
   -h, --help                       Print help (see more with '--help')
   -V, --version                    Print version
-  <INPUT>                          Input file to burn
 
 caligula help:
 Print this message or the help of the given subcommand(s)
