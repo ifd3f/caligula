@@ -27,7 +27,18 @@ impl From<f64> for EstimatedTime {
 impl Display for EstimatedTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EstimatedTime::Known(x) => write!(f, "{x:.1}s"),
+            EstimatedTime::Known(x) => {
+                let rounded = x.round();
+                let secs = rounded % 60.0;
+                let mins = (rounded / 60.0) % 60.0;
+                let hours = rounded / 3600.0;
+
+                write!(
+                    f,
+                    "{:0>2}:{:0>2}:{:0>2}",
+                    hours as u64, mins as u8, secs as u8,
+                )
+            }
             EstimatedTime::Unknown => write!(f, "[unknown]"),
         }
     }
@@ -141,6 +152,7 @@ mod tests {
     use approx::assert_relative_eq;
 
     use super::ByteSeries;
+    use super::EstimatedTime;
     use test_case::test_case;
 
     fn example_2s() -> ByteSeries {
@@ -174,5 +186,17 @@ mod tests {
     fn interp_bytes(t: f64, expected: f64) {
         let actual = example_2s().interp(t);
         assert_relative_eq!(actual, expected);
+    }
+
+    #[test_case(f64::INFINITY, "[unknown]".into(); "non finite")]
+    #[test_case(10.0, "00:00:10".into(); "seconds")]
+    #[test_case(123.0, "00:02:03".into(); "minutes")]
+    #[test_case(39562.0, "10:59:22".into(); "less than a day")]
+    #[test_case(133800.0, "37:10:00".into(); "more than a day")]
+    #[test_case(60.5, "00:01:01".into(); "round decimals up")]
+    #[test_case(59.4, "00:00:59".into(); "round decimals down")]
+    fn estimated_time_display(t: f64, expected: String) {
+        let actual = EstimatedTime::from(t).to_string();
+        assert_eq!(expected, actual);
     }
 }
