@@ -17,6 +17,7 @@ bincode = "1.3.3"
 byteorder = "1.5.0"
 bytesize = "1.3.3"
 bzip2 = { version = "0.6.1", features = ["static"] }
+chrono = "0.4.42"
 clap = { version = "4.5.49", features = ["derive", "cargo", "wrap_help"] }
 crossterm = { version = "0.27.0", features = ["event-stream"] }
 derive_more = "0.99.20"
