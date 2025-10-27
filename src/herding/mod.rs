@@ -5,9 +5,11 @@ use tower::Service;
 use uuid::Uuid;
 
 pub use self::worker_factory::{WorkerFactory, WorkerSpawned};
+pub use self::writer::WriterFactory;
 
 mod local_herder;
 mod worker_factory;
+mod writer;
 
 /// A [Herder] is a [Service] that spawns and manages a set of workers spawned by a [WorkerFactory].
 ///
