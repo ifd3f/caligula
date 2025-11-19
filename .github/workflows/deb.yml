@@ -1,0 +1,27 @@
+name: Build Debian Package
+
+on:
+  push:
+    branches: [ main, feature/161-debian-packaging ]
+  pull_request:
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-deb
+        run: cargo install cargo-deb
+
+      - name: Build Debian package
+        run: cargo deb
+
+      - name: Upload Debian package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: caligula-deb
+          path: target/debian/*.deb
