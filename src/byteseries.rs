@@ -1,10 +1,16 @@
+use crate::ui::utils::ByteSpeed;
+use std::ops::Add;
 use std::{fmt::Display, time::Instant};
 
-use crate::ui::utils::ByteSpeed;
+#[derive(Debug, Clone, PartialEq)]
+pub struct EstimatedTimeInfo {
+    secs_left: f64,
+    now: chrono::DateTime<chrono::Local>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum EstimatedTime {
-    Known(f64),
+    Known(EstimatedTimeInfo),
     Unknown,
 }
 
@@ -14,9 +20,9 @@ pub struct ByteSeries {
     start: Instant,
 }
 
-impl From<f64> for EstimatedTime {
-    fn from(value: f64) -> Self {
-        if value.is_finite() {
+impl From<EstimatedTimeInfo> for EstimatedTime {
+    fn from(value: EstimatedTimeInfo) -> Self {
+        if value.secs_left.is_finite() {
             Self::Known(value)
         } else {
             Self::Unknown
@@ -27,7 +33,30 @@ impl From<f64> for EstimatedTime {
 impl Display for EstimatedTime {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EstimatedTime::Known(x) => write!(f, "{x:.1}s"),
+            EstimatedTime::Known(x) => {
+                let rounded = x.secs_left.round();
+                let secs = rounded % 60.0;
+                let mins = (rounded / 60.0) % 60.0;
+                let hours = rounded / 3600.0;
+
+                let completion_time = x.now.add(chrono::TimeDelta::seconds(rounded as i64));
+
+                // Show the whole date only if completion time is at least a day ahead of now
+                let completion_time_format = if hours >= 24.0 {
+                    "%Y-%m-%d %H:%M:%S"
+                } else {
+                    "%H:%M:%S"
+                };
+
+                write!(
+                    f,
+                    "{:0>2}:{:0>2}:{:0>2} (complete at {})",
+                    hours as u64,
+                    mins as u8,
+                    secs as u8,
+                    completion_time.format(completion_time_format)
+                )
+            }
             EstimatedTime::Unknown => write!(f, "[unknown]"),
         }
     }
@@ -66,7 +95,10 @@ impl ByteSeries {
         // than total bytes, due to the nature of block writing.
         let bytes_left = total_bytes.saturating_sub(self.bytes_encountered());
         let secs_left = bytes_left as f64 / speed;
-        EstimatedTime::from(secs_left)
+        EstimatedTime::from(EstimatedTimeInfo {
+            secs_left,
+            now: chrono::Local::now(),
+        })
     }
 
     pub fn start(&self) -> Instant {
@@ -138,9 +170,10 @@ impl ByteSeries {
 mod tests {
     use std::time::{Duration, Instant};
 
+    use super::EstimatedTime;
+    use super::{ByteSeries, EstimatedTimeInfo};
     use approx::assert_relative_eq;
-
-    use super::ByteSeries;
+    use chrono::{Local, TimeZone, Utc};
     use test_case::test_case;
 
     fn example_2s() -> ByteSeries {
@@ -174,5 +207,17 @@ mod tests {
     fn interp_bytes(t: f64, expected: f64) {
         let actual = example_2s().interp(t);
         assert_relative_eq!(actual, expected);
+    }
+
+    #[test_case(f64::INFINITY, "[unknown]"; "non finite")]
+    #[test_case(39_562.0, "10:59:22 (complete at 20:59:27)"; "less than a day")]
+    #[test_case(86_400.0, "24:00:00 (complete at 2025-10-22 10:00:05)"; "exactly a day")]
+    #[test_case(133_800.0, "37:10:00 (complete at 2025-10-22 23:10:05)"; "more than a day")]
+    #[test_case(60.5, "00:01:01 (complete at 10:01:06)"; "round decimals up")]
+    #[test_case(59.4, "00:00:59 (complete at 10:01:04)"; "round decimals down")]
+    fn estimated_time_display(secs_left: f64, expected: &str) {
+        let now = Local.with_ymd_and_hms(2025, 10, 21, 10, 0, 5).unwrap();
+        let actual = EstimatedTime::from(EstimatedTimeInfo { secs_left, now }).to_string();
+        assert_eq!(expected, actual);
     }
 }

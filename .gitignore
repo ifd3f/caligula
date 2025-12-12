@@ -1,5 +1,7 @@
 .direnv
 
+.idea/
+
 .vscode/*
 !.vscode/extensions.json
 
