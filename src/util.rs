@@ -1,3 +1,5 @@
+pub mod hyperpipe;
+
 use std::{env, path::PathBuf, process, time::SystemTime};
 
 use tokio::fs::DirBuilder;
