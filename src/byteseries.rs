@@ -1,5 +1,4 @@
 use crate::ui::utils::ByteSpeed;
-use chrono::Datelike;
 use std::ops::Add;
 use std::{fmt::Display, time::Instant};
 
