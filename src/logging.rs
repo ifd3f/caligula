@@ -84,5 +84,7 @@ fn init_tracing_subscriber(write_path: impl AsRef<Path>) {
                 .with_default_directive(FILE_LOG_LEVEL.into())
                 .from_env_lossy(),
         )
+        .with_file(true)
+        .with_line_number(true)
         .init();
 }
