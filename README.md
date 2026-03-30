@@ -182,7 +182,7 @@ $ sudo dd bs=4M if=some-image-file.iso of=/dev/sdc status=progress
 
 Now, it's finally written!
 
-At this point, it's probably a good idea to verify that the disk was written correctly. I personally don't know the command to do that. Do you know the command to do that? If you ask most pro sysadmins this, could they name the command? If you look at any tutorial online, do they list the command? **The answer to all of these is no, because nobody bothers do this.**
+At this point, it's probably a good idea to verify that the disk was written correctly. I personally don't know the command to do that. Do you know the command to do that? If you ask most pro sysadmins this, could they name the command? If you look at any tutorial online, do they list the command? **The answer to all of these is no, because nobody bothers to do this.**
 
 While `dd` is nice for scripting, after doing this process manually hundreds of times with hundreds of files and tens of drives, why don't you try using a simpler, more user-friendly process?
 
