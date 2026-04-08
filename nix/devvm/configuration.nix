@@ -37,7 +37,17 @@
     mountHostNixStore = true;
     useBootLoader = false;
 
-    qemu.options = ["-cpu" "host"];
+    qemu.options = [
+      # Expose host's CPU to guest as normal
+      "-cpu host"
+
+      # Expose VM's monitor console to a socket
+      "-monitor unix:/tmp/caligula-devvm-monitor.sock,server,nowait"
+
+      # Create a USB bus named xhci. We will be sticking devices
+      # onto this for testing purposes.
+      "-device nec-usb-xhci,id=xhci"
+    ];
     cores = 8;
     memorySize = 2048; # MiB
 

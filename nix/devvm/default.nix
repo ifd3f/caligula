@@ -41,5 +41,9 @@
     {
       packages.devvm-aarch64-linux = makeVMRunner "aarch64-linux";
       packages.devvm-x86_64-linux = makeVMRunner "x86_64-linux";
+      packages.devvm-usbhotplug = with pkgs; writeShellApplication {
+        name = "devvm-usbhotplug";
+        text = builtins.readFile ./usbhotplug.sh;
+      };
     };
 }

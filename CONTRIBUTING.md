@@ -8,6 +8,8 @@ Development of Caligula is done around the [Github repository](https://github.co
 
 [Nix](https://nixos.org/) is used to provision developer shells. You can run `nix develop` or use [direnv](https://direnv.net/) to get your shell. The pre-made Nix shell provides lots of useful features, including cross-compilation.
 
+Also using NixOS, we have a development VM system you can use for emulating other architectures, and to simulate attaching and removing USB drives! See [the relevant README](./nix/devvm/README.md) for more info.
+
 However, if you can't install, or don't want to install Nix, this is a relatively standard Cargo project so you can use the standard Rust tooling to edit it.
 
 To perform linting checks locally, you can run `scripts/lint.sh` or `nix run .#lint-script`.
