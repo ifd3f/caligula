@@ -22,6 +22,7 @@
       imports = [
         ./nix/build-helpers
         ./nix/aur
+        ./nix/devvm
         ./checks
       ];
       systems = [
