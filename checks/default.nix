@@ -1,42 +1,62 @@
-{ self, nixpkgs, ... }:
-system:
-let
-  pkgs = import nixpkgs {
-    inherit system;
-    overlays = [ self.overlays.default ];
-  };
-  lib = pkgs.lib;
-in with lib;
+{ self, lib, ... }:
 {
-  headless = pkgs.callPackage ./headless { };
-  smoke-test-simple = pkgs.callPackage ./smoke-test-simple { };
-} //
+  perSystem =
+    {
+      self',
+      system,
+      pkgs,
+      ...
+    }:
+    let
+      # need to put caligula into the pkgs instance
+      pkgs' = pkgs.extend (self.overlays.default);
 
-(if system == "x86_64-linux" then
-  {
-    autoescalate-doas =
-      pkgs.callPackage ./autoescalate { escalationTool = "doas"; };
-    autoescalate-sudo =
-      pkgs.callPackage ./autoescalate { escalationTool = "sudo"; };
-    autoescalate-run0 =
-      pkgs.callPackage ./autoescalate { escalationTool = "run0"; };
+      headless = pkgs'.callPackage ./headless { };
+      smoke-test-simple = pkgs'.callPackage ./smoke-test-simple { };
 
-    ui = pkgs.callPackage ./ui { };
-  } //
+      autoescalateTests =
+        map (escalationTool: pkgs'.callPackage ./autoescalate { inherit escalationTool; })
+          [
+            "doas"
+            "sudo"
+            "run0"
+          ];
 
-  # blocksize alignment tests
-  (let
-    MiB = 1048576;
-    parameters = cartesianProduct {
-      blockSize = [ 512 1024 2048 4096 8192 ];
-      imageSize = [ (10 * MiB) (10 * MiB + 51) ];
+      blocksizeTests =
+        let
+          MiB = 1048576;
+          parameters = lib.cartesianProduct {
+            blockSize = [
+              512
+              1024
+              2048
+              4096
+              8192
+            ];
+            imageSize = [
+              (10 * MiB)
+              (10 * MiB + 51)
+            ];
+          };
+        in
+        map (
+          { imageSize, blockSize }:
+          pkgs'.callPackage ./blocksize.nix {
+            inherit lib blockSize imageSize;
+            diskSizeMiB = 64;
+          }
+        ) parameters;
+
+    in
+    {
+      checks = builtins.listToAttrs (
+        map (p: lib.nameValuePair p.name p) (
+          [
+            headless
+            smoke-test-simple
+          ]
+          ++ lib.optionals (system == "x86_64-linux") (autoescalateTests ++ blocksizeTests)
+        )
+      );
     };
-  in listToAttrs (map ({ imageSize, blockSize }: rec {
-    name = value.name;
-    value = pkgs.callPackage ./blocksize.nix {
-      inherit lib blockSize imageSize;
-      diskSizeMiB = 64;
-    };
-  }) parameters))
-else
-  { })
+}

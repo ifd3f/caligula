@@ -1,5 +1,9 @@
 # runs on x86_64-linux only
-{ runCommand, caligula, pkgrel ? "1" }:
+{
+  runCommand,
+  caligula,
+  pkgrel ? "1",
+}:
 let
   sha256 = runCommand "caligula-sha256" { } ''
     sha256sum ${caligula}/bin/caligula | awk '{print $1}'
@@ -40,7 +44,8 @@ let
 
     pkgname = caligula-bin
   '';
-in runCommand "caligula-bin-aur" { inherit srcinfo pkgbuild; } ''
+in
+runCommand "caligula-bin-aur" { inherit srcinfo pkgbuild; } ''
   sha256=$(sha256sum ${caligula}/bin/caligula | awk '{print $1}')
 
   mkdir -p $out

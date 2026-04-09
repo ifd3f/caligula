@@ -2,8 +2,10 @@
 nixosTest {
   name = "ui-test";
 
-  nodes.machine = { pkgs, lib, ... }:
-    with lib; {
+  nodes.machine =
+    { pkgs, lib, ... }:
+    with lib;
+    {
       security.sudo = {
         enable = true;
         wheelNeedsPassword = false;

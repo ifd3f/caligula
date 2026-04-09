@@ -21,3 +21,5 @@ result-info
 result-man
 
 .nixos-test-history
+
+*.sock

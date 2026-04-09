@@ -1,8 +1,9 @@
 {
+  description = "Caligula flake";
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-parts.url = "github:hercules-ci/flake-parts";
 
     naersk = {
       url = "github:nix-community/naersk";
@@ -14,59 +15,64 @@
     };
   };
 
-  outputs = { self, nixpkgs, flake-utils, naersk, rust-overlay }@inputs:
-    {
-      lib = import ./nix inputs;
-      overlays.default = final: prev: {
-        caligula = self.packages.${prev.system}.caligula;
-      };
-    } //
+  outputs =
+    inputs@{ flake-parts, rust-overlay, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      debug = true;
+      imports = [
+        ./nix/build-helpers
+        ./nix/aur
+        ./nix/devvm
+        ./checks
+      ];
+      systems = [
+        "aarch64-darwin"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "x86_64-linux"
+      ];
 
-    (let
-      supportedSystems =
-        [ "aarch64-darwin" "aarch64-linux" "x86_64-darwin" "x86_64-linux" ];
-    in flake-utils.lib.eachSystem supportedSystems (system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
+      flake = {
+        lib.naersk = inputs.naersk;
+        overlays = {
+          # User-facing overlay
+          default = final: prev: {
+            caligula = inputs.self.packages.${prev.system}.caligula;
+          };
+
+          # Re-export of rust-overlay for internal use
+          rust-overlay = inputs.rust-overlay.overlays.default;
         };
+      };
 
-        lib = pkgs.lib;
+      perSystem =
+        {
+          config,
+          self',
+          pkgs,
+          system,
+          ...
+        }:
+        {
 
-        crossHelpers = self.lib.crossHelpers system;
-        crossHelpersSelf = crossHelpers.forTarget "x86_64-linux";
-      in {
-        checks = import ./checks inputs system;
+          # Instantiate a very basic and standard pkgs.
+          # Modules that need to tweak it must instantiate their own.
+          _module.args.pkgs = import inputs.nixpkgs {
+            inherit system;
+          };
 
-        packages = {
-          default = self.packages."${system}".caligula;
+          packages.default = self'.packages.caligula;
 
-          lint-script = with pkgs;
-            writeShellScriptBin "lint.sh" ''
-              #!/bin/sh
-              export PATH=${
-                lib.makeBinPath ([ bash crossHelpers.baseToolchain ]
-                  ++ crossHelpersSelf.buildInputs)
-              }
-              ${./scripts/lint.sh}
-            '';
-
-          caligula = self.packages."${system}"."caligula-${system}";
-        }
-
-          // crossHelpers.caligulaPackages
-
-          // (if system == "x86_64-linux" then {
-            caligula-bin-aur = pkgs.callPackage ./nix/aur.nix {
-              caligula = self.packages.x86_64-linux.caligula;
-            };
-          } else
-            { });
-
-        devShells.default = crossHelpers.crossCompileDevShell.overrideAttrs
-          (final: prev: {
-            buildInputs = prev.buildInputs ++ (with pkgs; [ nixfmt python3 ]);
-          });
-      }));
+          devShells.default = self'.devShells.cross.overrideAttrs (
+            final: prev: {
+              buildInputs =
+                prev.buildInputs
+                ++ (with pkgs; [
+                  nixfmt
+                  python3
+                ]);
+            }
+          );
+        };
+    };
 }
