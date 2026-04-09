@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/ifd3f/caligula/actions/workflows/ci.yml/badge.svg)](https://github.com/ifd3f/caligula/actions/workflows/ci.yml)
 
-![Screenshot of the Caligula TUI verifying a disk.](./images/verifying.png)
+![Screenshot of the Caligula TUI verifying a disk.](./images/caligula.png)
 
 _Caligula_ is a user-friendly, lightweight TUI for imaging disks.
 
