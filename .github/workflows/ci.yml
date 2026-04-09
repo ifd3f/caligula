@@ -37,8 +37,8 @@ jobs:
   ci-x86_64-darwin:
     uses: ./.github/workflows/ci-unix.yml
     with:
-      build_runner: macos-13
-      e2e_test_runner: macos-13
+      build_runner: macos-15-intel
+      e2e_test_runner: macos-15-intel
       target_triple: x86_64-darwin
       do_e2e_tests: true
       use_cachix: ${{ github.event_name == 'push' }}
