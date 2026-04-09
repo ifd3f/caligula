@@ -28,7 +28,7 @@ pub enum Command {
 #[command(author, version, about, long_about = None)]
 pub struct BurnArgs {
     /// Input image to burn.
-    #[arg(value_parser = parse_path_exists, display_order = 0)]
+    #[arg(value_parser = parse_image_path, display_order = 0)]
     pub image: PathBuf,
 
     /// Where to write the output. If not supplied, we will search for possible
@@ -135,6 +135,17 @@ fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
         return Err("path does not exist".to_string());
     }
     Ok(path)
+}
+
+fn parse_path_is_file(path: PathBuf) -> Result<PathBuf, String> {
+    if !path.is_file() {
+        return Err("path is not a file or symlink to a file".to_string());
+    }
+    Ok(path)
+}
+
+fn parse_image_path(p: &str) -> Result<PathBuf, String> {
+    parse_path_exists(p).and_then(parse_path_is_file)
 }
 
 fn parse_hash_arg(h: &str) -> Result<HashArg, String> {
