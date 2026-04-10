@@ -43,6 +43,10 @@ in
         isNormalUser = true;
         extraGroups = [ "wheel" ];
       };
+
+      # These are load-bearing. Otherwise, un-crossly-or-emulatedly-compilable packages may get closured.
+      documentation.enable = false;
+      boot.loader.grub.enable = false;
     }
 
     (mkIf (cfg.escalationTool == null) { security.sudo.enable = mkForce false; })
