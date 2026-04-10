@@ -44,6 +44,9 @@
       # Expose VM's monitor console to a socket
       "-monitor unix:/tmp/caligula-devvm-monitor.sock,server,nowait"
 
+      # Needed or else ctrl-c kills the VM
+      "-serial mon:stdio"
+
       # Create a USB bus named xhci. We will be sticking devices
       # onto this for testing purposes.
       "-device nec-usb-xhci,id=xhci"
