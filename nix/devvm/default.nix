@@ -24,15 +24,23 @@
           system = target;
           modules = [
             ./configuration.nix
-            {
-              # Needed so that the build results can be run by the host machine
-              virtualisation.host.pkgs = pkgs;
+            (
+              { pkgs, ... }:
+              {
+                # Needed so that the build results can be run by the host machine
+                virtualisation.host.pkgs = pkgs;
 
-              # Rename the VM to include the target name
-              networking.hostName = "caliguladev-${target}";
+                # Rename the VM to include the target name
+                networking.hostName = "caliguladev-${target}";
 
-              environment.systemPackages = self.devShells.${target}.default.buildInputs;
-            }
+                environment.systemPackages =
+                  self.devShells.${target}.default.buildInputs
+                  ++ (with pkgs; [
+                    curl
+                    wget
+                  ]);
+              }
+            )
           ];
         }).config.system.build.vm.overrideAttrs
           (_: {

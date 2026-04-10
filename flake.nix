@@ -67,8 +67,12 @@
               buildInputs =
                 prev.buildInputs
                 ++ (with pkgs; [
+                  coreutils
+                  gzip
+                  lz4
                   nixfmt
                   python3
+                  xz
                 ]);
             }
           );
