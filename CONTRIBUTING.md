@@ -6,9 +6,11 @@ Development of Caligula is done around the [Github repository](https://github.co
 
 ## Developer environment
 
-[Nix](https://nixos.org/) is used to provision developer shells. You can run `nix develop` or use [direnv](https://direnv.net/) to get your shell. The pre-made Nix shell provides lots of useful features, including cross-compilation.
-
-Also using NixOS, we have a development VM system you can use for emulating other architectures, and to simulate attaching and removing USB drives! See [the relevant README](./nix/devvm/README.md) for more info.
+Installing [Nix](https://nixos.org/) is generally recommended, but technically not necessary. It's used to provide various development niceties, such as:
+- **A developer shell!** It has cross-compilation support for all cross-compilation targets supported on a given system. You can run `nix develop` or use [direnv](https://direnv.net/) to get your shell.
+- **A developer VM!** It can be used for emulating other architectures, and to simulate attaching and removing USB drives! See [its README](./nix/devvm/README.md) for more info.
+- **Continuous integration test running!** Provided through [NixOS VM tests](https://wiki.nixos.org/wiki/NixOS_VM_tests).
+- **CI reproduction!** The CI invokes Nix as well, and we treat it as the single source of truth for what works and what doesn't.
 
 However, if you can't install, or don't want to install Nix, this is a relatively standard Cargo project so you can use the standard Rust tooling to edit it.
 
@@ -16,7 +18,7 @@ To perform linting checks locally, you can run `scripts/lint.sh` or `nix run .#l
 
 ## Pull request process
 
-Once you've made your changes and have submitted your PR, **please ensure all checks pass!** The CI invokes the Nix build, and that is the single source of truth for our builds. Installing Nix is generally recommended, but technically not necessary.
+Once you've made your changes and have submitted your PR, **please try to ensure all checks pass!** However, if it makes sense to merge something before all checks are green (for example, due to known CI failures), that's fine.
 
 You may merge the PR once you have the sign-off of a maintainer (most likely the the Malevolent Dictator for Life [@ifd3f](https://github.com/ifd3f)), or if you do not have permission to do that, you may request the reviewer to merge it for you.
 
@@ -26,9 +28,11 @@ Other suggestions:
 
 ## Branching and release methodology
 
-We currently use `main` as the development branch. Changes should generally be merged into `main`, except for hotfixes (security vulnerabilities, glaring bugs, stuff like that), which will be handled separately.
+We currently use `main` as the primary development branch.
 
-Anything merged into `main` must pass all checks and have a green CI, but it does not necessarily have to be a releasable version of the code. Releases are done periodically (though not necessarily with every PR).
+Anything merged into `main` should _ideally_ pass all checks and have a green CI. What's most critical is that things work when a release is made.
+
+Releases are done periodically (though not necessarily with every PR).
 
 ### Squashes or merges?
 

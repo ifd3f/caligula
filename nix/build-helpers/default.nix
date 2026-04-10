@@ -5,46 +5,24 @@
   lib,
   ...
 }:
-let
-  nixpkgs = inputs.nixpkgs;
-in
 {
   perSystem =
     { self', system, ... }:
     let
-      # Build host's pkgs instance
-      pkgs = import nixpkgs {
+      # Build new pkgs instance with rust overlay. Don't use the global pkgs.
+      pkgs = import inputs.nixpkgs {
         inherit system;
-        overlays = [ self.overlays.rust-overlay ];
+        overlays = [ self.overlays._rust-overlay ];
       };
 
-      hostInfo = pkgs.stdenv.hostPlatform.parsed;
-
-      # Calculate what we're able to build. This may be adjusted based on what's
-      # working and what's not.
-      supportedTargets =
-        if hostInfo.kernel.name == "linux" then
-          [
-            "aarch64-linux"
-            "x86_64-linux"
-          ]
-        else if system == "x86_64-darwin" then
-          [
-            # "aarch64-darwin" # Temporarily broken. TODO: fix
-            "x86_64-darwin"
-          ]
-        else if system == "aarch64-darwin" then
-          [ "aarch64-darwin" ]
-        else
-          throw "unsupported host system ${system}";
-
+      supportedTargets = self.lib.calculateSupportedTargets system;
       baseToolchain = pkgs.rust-bin.stable.latest.default;
 
       perTarget =
         target:
         pkgs.callPackage ./cross-helpers.nix {
           inherit target baseToolchain;
-          naersk = self.lib.naersk;
+          inherit (inputs) naersk;
         };
 
       # All caligulas that are buildable by this system.

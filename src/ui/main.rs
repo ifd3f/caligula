@@ -1,11 +1,11 @@
 use std::{fs::File, path::Path, sync::Arc};
 
 use crate::{
+    herder::{Herder, HerderSocket},
     logging::{LogPaths, init_logging_parent},
     tty::TermiosRestore,
     ui::{
         cli::{Args, Command},
-        herder::{Herder, HerderSocket},
         simple_ui::do_setup_wizard,
         start::{begin_writing, try_start_burn},
     },

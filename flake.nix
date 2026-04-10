@@ -16,10 +16,11 @@
   };
 
   outputs =
-    inputs@{ flake-parts, rust-overlay, ... }:
-    flake-parts.lib.mkFlake { inherit inputs; } {
+    inputs:
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } {
       debug = true;
       imports = [
+        ./nix/lib.nix
         ./nix/build-helpers
         ./nix/aur
         ./nix/devvm
@@ -33,7 +34,6 @@
       ];
 
       flake = {
-        lib.naersk = inputs.naersk;
         overlays = {
           # User-facing overlay
           default = final: prev: {
@@ -41,7 +41,7 @@
           };
 
           # Re-export of rust-overlay for internal use
-          rust-overlay = inputs.rust-overlay.overlays.default;
+          _rust-overlay = inputs.rust-overlay.overlays.default;
         };
       };
 
@@ -54,7 +54,6 @@
           ...
         }:
         {
-
           # Instantiate a very basic and standard pkgs.
           # Modules that need to tweak it must instantiate their own.
           _module.args.pkgs = import inputs.nixpkgs {
@@ -68,8 +67,12 @@
               buildInputs =
                 prev.buildInputs
                 ++ (with pkgs; [
+                  coreutils
+                  gzip
+                  lz4
                   nixfmt
                   python3
+                  xz
                 ]);
             }
           );

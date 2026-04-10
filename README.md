@@ -66,7 +66,7 @@ There are a couple of ways to install Caligula.
   - [caligula-git on archlinuxcn](https://github.com/archlinuxcn/repo/tree/master/archlinuxcn/caligula-git): Prebuilt binaries from latest commit on `main` branch
 - **Nix:**
   - [Nixpkgs](https://github.com/NixOS/nixpkgs/blob/master/pkgs/by-name/ca/caligula/package.nix): `nix-env -i caligula`
-  - Repository flake: If your system is flake-enabled, you can use `github:ifd3f/caligula` for bleeding-edge changes.
+  - Repository flake: If your system is flake-enabled, you can use `github:ifd3f/caligula`. You should probably pin to a version, though, because `main` can potentially break.
 - **Homebrew**: [philocalyst has made a homebrew tap for caligula](https://github.com/philocalyst/homebrew-tap): `brew tap philocalyst/tap && brew install caligula`
 - **Cargo:** Caligula is published on [crates.io](https://crates.io/crates/caligula). Just run `cargo install caligula`
 - **Build from source:** This is a relatively standard cargo project so you should be able to just `git clone` and `cargo build --release` it.
@@ -182,7 +182,7 @@ $ sudo dd bs=4M if=some-image-file.iso of=/dev/sdc status=progress
 
 Now, it's finally written!
 
-At this point, it's probably a good idea to verify that the disk was written correctly. I personally don't know the command to do that. Do you know the command to do that? If you ask most pro sysadmins this, could they name the command? If you look at any tutorial online, do they list the command? **The answer to all of these is no, because nobody bothers do this.**
+At this point, it's probably a good idea to verify that the disk was written correctly. I personally don't know the command to do that. Do you know the command to do that? If you ask most pro sysadmins this, could they name the command? If you look at any tutorial online, do they list the command? **The answer to all of these is no, because nobody bothers to do this.**
 
 While `dd` is nice for scripting, after doing this process manually hundreds of times with hundreds of files and tens of drives, why don't you try using a simpler, more user-friendly process?
 

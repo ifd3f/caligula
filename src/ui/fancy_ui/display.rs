@@ -11,8 +11,9 @@ use ratatui::{
 use tokio::{select, time};
 
 use crate::{
+    herder::WriterHandle,
     logging::LogPaths,
-    ui::{herder::WriterHandle, start::BeginParams, writer_tracking::WriterState},
+    ui::{start::BeginParams, writer_tracking::WriterState},
 };
 
 use super::{

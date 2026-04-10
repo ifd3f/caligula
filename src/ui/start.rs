@@ -7,11 +7,11 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::{self, WriteTarget},
+    herder::{Herder, StartWriterError, WriterHandle},
     logging::LogPaths,
     ui::{
         cli::{Interactive, UseSudo},
         fancy_ui::FancyUI,
-        herder::{Herder, StartWriterError, WriterHandle},
         simple_ui::run_simple_burning_ui,
         utils::TUICapture,
     },

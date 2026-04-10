@@ -15,35 +15,59 @@
       ...
     }:
     let
+      /**
+        Given a target system, builds a VM runner for that target system.
+      */
       makeVMRunner =
         target:
-        # Make a NixOS VM
         (inputs.nixpkgs.lib.nixosSystem {
           system = target;
           modules = [
             ./configuration.nix
-            {
-              # Needed so that the build results can be run by the host machine
-              virtualisation.host.pkgs = pkgs;
+            (
+              { pkgs, ... }:
+              {
+                # Needed so that the build results can be run by the host machine
+                virtualisation.host.pkgs = pkgs;
 
-              # Rename the VM to include the target name
-              networking.hostName = "caliguladev-${target}";
+                # Rename the VM to include the target name
+                networking.hostName = "caliguladev-${target}";
 
-              environment.systemPackages = self.devShells.${target}.default.buildInputs;
-            }
+                environment.systemPackages =
+                  self.devShells.${target}.default.buildInputs
+                  ++ (with pkgs; [
+                    curl
+                    wget
+                  ]);
+              }
+            )
           ];
         }).config.system.build.vm.overrideAttrs
           (_: {
             # Rename the package to something more descriptive
             name = "devvm-${target}";
+            pname = "devvm-${target}";
+
+            # Some of pairs require remote compilation, so mark them to be skipped in checks.
+            doCheck =
+              let
+                hostInfo = lib.systems.parse.mkSystemFromString system;
+              in
+              system == target || hostInfo.kernel.name == "linux";
           });
-    in
-    {
-      packages.devvm-aarch64-linux = makeVMRunner "aarch64-linux";
-      packages.devvm-x86_64-linux = makeVMRunner "x86_64-linux";
-      packages.devvm-usbhotplug = with pkgs; writeShellApplication {
+
+      supportedLinuxTargets = builtins.filter (
+        s: (lib.systems.parse.mkSystemFromString s).kernel.name == "linux"
+      ) (self.lib.calculateSupportedTargets system);
+
+      devvms = builtins.map makeVMRunner supportedLinuxTargets;
+
+      usbhotplug = pkgs.writeShellApplication {
         name = "devvm-usbhotplug";
         text = builtins.readFile ./usbhotplug.sh;
       };
+    in
+    {
+      packages = self.lib.packageListToAttrs ([ usbhotplug ] ++ devvms);
     };
 }

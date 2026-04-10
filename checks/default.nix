@@ -49,14 +49,12 @@
 
     in
     {
-      checks = builtins.listToAttrs (
-        map (p: lib.nameValuePair p.name p) (
-          [
-            headless
-            smoke-test-simple
-          ]
-          ++ lib.optionals (system == "x86_64-linux") (autoescalateTests ++ blocksizeTests)
-        )
+      checks = self.lib.packageListToAttrs (
+        [
+          headless
+          smoke-test-simple
+        ]
+        ++ lib.optionals (system == "x86_64-linux") (autoescalateTests ++ blocksizeTests)
       );
     };
 }

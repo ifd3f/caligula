@@ -32,7 +32,7 @@ interprocess = { version = "2.2.3", features = ["tokio"] }
 is-terminal = "0.4.16"
 itertools = "0.12.1"
 libc = "0.2.177"
-lz4_flex = "0.11.5"
+lz4_flex = "0.11.6"
 md-5 = "0.10.6"
 process_path = "0.1.4"
 ratatui = "0.26.3"
@@ -73,3 +73,18 @@ libc = "0.2.177"
 [build-dependencies]
 bindgen = "0.72.1"
 cc = "1.2.41"
+
+[package.metadata.deb]
+maintainer = "Astrid Yu <astrid@astrid.tech>"
+copyright = "2025, Astrid Yu <astrid@astrid.tech>"
+license-file = ["LICENSE", "4"]
+extended-description = """
+A lightweight, user-friendly disk imaging tool.
+"""
+depends = "$auto"
+section = "utility"
+priority = "optional"
+assets = [
+    ["target/release/caligula", "usr/bin/", "755"],
+    { source = "README.md", dest = "usr/share/doc/caligula/README", mode = "644" },
+]

@@ -1,13 +1,12 @@
 use std::sync::Arc;
 
+use super::{HerderSocket, WriterHandle, handle::ChildHandle};
 use crate::escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter};
 use crate::ipc_common::write_msg_async;
 use crate::logging::LogPaths;
 use crate::run_mode::make_escalated_daemon_spawn_command;
-use crate::ui::herder::handle::ChildHandle;
 use crate::{
-    ipc_common::read_msg_async, run_mode::make_writer_spawn_command,
-    ui::herder::socket::HerderSocket, writer_process::ipc::ErrorType,
+    ipc_common::read_msg_async, run_mode::make_writer_spawn_command, writer_process::ipc::ErrorType,
 };
 use anyhow::Context;
 use interprocess::local_socket::tokio::prelude::*;
@@ -15,8 +14,6 @@ use tracing::{debug, trace};
 
 use crate::escalation::run_escalate;
 use crate::writer_process::ipc::{StatusMessage, WriterProcessConfig};
-
-use super::handle::WriterHandle;
 
 /// Handles the herding of all child processes. This includes lifecycle management
 /// and communication.
