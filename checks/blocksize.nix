@@ -19,8 +19,10 @@ testers.runNixOSTest {
     virtualisation.qemu.options = [
       "-drive if=none,id=usbstick,format=raw,file=${diskFile}"
       "-usb"
-      "-device usb-ehci,id=ehci"
-      "-device usb-storage,bus=ehci.0,drive=usbstick,serial=${serial},physical_block_size=${toString blockSize}"
+
+      # xhci = USB 3.0. this makes tests go nyoom
+      "-device nec-usb-xhci,id=xhci"
+      "-device usb-storage,bus=xhci.0,drive=usbstick,serial=${serial},physical_block_size=${toString blockSize}"
     ];
   };
 

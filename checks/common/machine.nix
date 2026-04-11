@@ -43,6 +43,24 @@ in
         isNormalUser = true;
         extraGroups = [ "wheel" ];
       };
+
+      networking = {
+        # firewall makes vm setup slowwwwww
+        firewall.enable = false;
+
+        # dhcp also makes vm setup slowwwww so just statically configure that shit
+        dhcpcd.enable = false;
+        interfaces.eth0.ipv4.addresses = [
+          {
+            address = "10.0.2.15";
+            prefixLength = 24;
+          }
+        ];
+        defaultGateway = {
+          address = "10.0.2.1";
+          interface = "eth0";
+        };
+      };
     }
 
     (mkIf (cfg.escalationTool == null) { security.sudo.enable = mkForce false; })
