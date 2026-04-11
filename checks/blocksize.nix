@@ -13,34 +13,16 @@ in
 nixosTest {
   name = "blocksize-bs${toString blockSize}-image${toString imageSize}-diskMiB${toString diskSizeMiB}";
 
-  nodes.machine =
-    { pkgs, lib, ... }:
-    with lib;
-    {
-      imports = [ ];
+  nodes.machine = {
+    imports = [ ../common/machine.nix ];
 
-      users.users = {
-        admin = {
-          isNormalUser = true;
-          extraGroups = [ "wheel" ];
-        };
-      };
-
-      environment.systemPackages = with pkgs; [ caligula ];
-      virtualisation.qemu.options = [
-        "-drive"
-        "if=none,id=usbstick,format=raw,file=${diskFile}"
-      ]
-      ++ [ "-usb" ]
-      ++ [
-        "-device"
-        "usb-ehci,id=ehci"
-      ]
-      ++ [
-        "-device"
-        "usb-storage,bus=ehci.0,drive=usbstick,serial=${serial},physical_block_size=${toString blockSize}"
-      ];
-    };
+    virtualisation.qemu.options = [
+      "-drive if=none,id=usbstick,format=raw,file=${diskFile}"
+      "-usb"
+      "-device usb-ehci,id=ehci"
+      "-device usb-storage,bus=ehci.0,drive=usbstick,serial=${serial},physical_block_size=${toString blockSize}"
+    ];
+  };
 
   testScript = with lib; ''
     import os
@@ -48,7 +30,7 @@ nixosTest {
     print("Creating file image at ${diskFile}")
     os.system("dd bs=1M count=${toString diskSizeMiB} if=/dev/urandom of=${diskFile}")
 
-    ${readFile ./common.py}
+    ${builtins.readFile ../common/common.py}
 
     machine.start()
     machine.wait_for_unit('default.target')

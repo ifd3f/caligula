@@ -1,34 +1,20 @@
-{ nixosTest, caligula }:
+{ nixosTest }:
 nixosTest {
   name = "ui-test";
 
-  nodes.machine =
-    { pkgs, lib, ... }:
-    with lib;
-    {
-      security.sudo = {
-        enable = true;
-        wheelNeedsPassword = false;
-      };
+  nodes.machine = {
+    imports = [ ../common/machine.nix ];
 
-      users.users = {
-        admin = {
-          isNormalUser = true;
-          extraGroups = [ "wheel" ];
-        };
-      };
-
-      environment.systemPackages = with pkgs; [
-        caligula
-        (python3.withPackages (ps: with ps; [ pexpect ]))
-      ];
-    };
+    environment.systemPackages = with pkgs; [
+      (python3.withPackages (ps: with ps; [ pexpect ]))
+    ];
+  };
 
   testScript = ''
     ${builtins.readFile ../common.py}
 
     try:
-        machine.succeed('${./run-test-in-vm.sh} ${./.} ${caligula}/bin/caligula')
+        machine.succeed('${./run-test-in-vm.sh} ${./.} caligula')
     finally: 
         print_logs(machine)
   '';
