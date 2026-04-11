@@ -1,9 +1,10 @@
-{ nixosTest, escalationTool }:
-nixosTest {
+{ testers, escalationTool }:
+testers.runNixOSTest {
+  imports = [ ../common/test.nix ];
+
   name = "autoescalate-${escalationTool}";
 
   nodes.machine = {
-    imports = [ ../common/machine.nix ];
     config.caligula.escalationTool = escalationTool;
   };
 
