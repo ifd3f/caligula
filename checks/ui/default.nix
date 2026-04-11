@@ -1,17 +1,16 @@
-{ nixosTest }:
-nixosTest {
+{ testers }:
+testers.runNixOSTest {
+  imports = [ ../common/test.nix ];
   name = "ui-test";
 
   nodes.machine = {
-    imports = [ ../common/machine.nix ];
-
     environment.systemPackages = with pkgs; [
       (python3.withPackages (ps: with ps; [ pexpect ]))
     ];
   };
 
   testScript = ''
-    ${builtins.readFile ../common.py}
+    ${builtins.readFile ../common/common.py}
 
     try:
         machine.succeed('${./run-test-in-vm.sh} ${./.} caligula')

@@ -1,6 +1,6 @@
 {
   lib,
-  nixosTest,
+  testers,
   imageSize,
   blockSize,
   diskSizeMiB,
@@ -10,12 +10,12 @@ let
   diskFile = "/tmp/block-file.img";
   byDiskPath = "/dev/disk/by-id/usb-QEMU_QEMU_HARDDISK_${serial}-0:0";
 in
-nixosTest {
+testers.runNixOSTest {
+  imports = [ ./common/test.nix ];
+
   name = "blocksize-bs${toString blockSize}-image${toString imageSize}-diskMiB${toString diskSizeMiB}";
 
   nodes.machine = {
-    imports = [ ../common/machine.nix ];
-
     virtualisation.qemu.options = [
       "-drive if=none,id=usbstick,format=raw,file=${diskFile}"
       "-usb"
@@ -30,7 +30,7 @@ nixosTest {
     print("Creating file image at ${diskFile}")
     os.system("dd bs=1M count=${toString diskSizeMiB} if=/dev/urandom of=${diskFile}")
 
-    ${builtins.readFile ../common/common.py}
+    ${builtins.readFile ./common/common.py}
 
     machine.start()
     machine.wait_for_unit('default.target')
