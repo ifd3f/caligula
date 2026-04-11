@@ -11,71 +11,79 @@
     };
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
+    };
+    nix-github-actions = {
+      url = "github:nix-community/nix-github-actions";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
   outputs =
     inputs:
-    inputs.flake-parts.lib.mkFlake { inherit inputs; } {
-      debug = true;
-      imports = [
-        ./nix/lib.nix
-        ./nix/build-helpers
-        ./nix/aur
-        ./nix/devvm
-        ./checks
-      ];
-      systems = [
-        "aarch64-darwin"
-        "aarch64-linux"
-        "x86_64-darwin"
-        "x86_64-linux"
-      ];
+    inputs.flake-parts.lib.mkFlake { inherit inputs; } (
+      { self, ... }:
+      {
+        imports = [
+          ./nix/lib.nix
+          ./nix/build-helpers
+          ./nix/aur
+          ./nix/devvm
+          ./checks
+        ];
+        systems = [
+          "aarch64-darwin"
+          "aarch64-linux"
+          "x86_64-darwin"
+          "x86_64-linux"
+        ];
 
-      flake = {
-        overlays = {
-          # User-facing overlay
-          default = final: prev: {
-            caligula = inputs.self.packages.${prev.system}.caligula;
+        flake.githubActions = inputs.nix-github-actions.lib.mkGithubMatrix { checks = self.checks; };
+
+        flake = {
+          overlays = {
+            # User-facing overlay
+            default = final: prev: {
+              caligula = inputs.self.packages.${prev.system}.caligula;
+            };
+
+            # Re-export of rust-overlay for internal use
+            _rust-overlay = inputs.rust-overlay.overlays.default;
           };
-
-          # Re-export of rust-overlay for internal use
-          _rust-overlay = inputs.rust-overlay.overlays.default;
         };
-      };
 
-      perSystem =
-        {
-          config,
-          self',
-          pkgs,
-          system,
-          ...
-        }:
-        {
-          # Instantiate a very basic and standard pkgs.
-          # Modules that need to tweak it must instantiate their own.
-          _module.args.pkgs = import inputs.nixpkgs {
-            inherit system;
+        perSystem =
+          {
+            config,
+            self',
+            pkgs,
+            system,
+            ...
+          }:
+          {
+            # Instantiate a very basic and standard pkgs.
+            # Modules that need to tweak it must instantiate their own.
+            _module.args.pkgs = import inputs.nixpkgs {
+              inherit system;
+            };
+
+            checks = self'.packages;
+            packages.default = self'.packages.caligula;
+
+            devShells.default = self'.devShells.cross.overrideAttrs (
+              final: prev: {
+                buildInputs =
+                  prev.buildInputs
+                  ++ (with pkgs; [
+                    coreutils
+                    gzip
+                    lz4
+                    nixfmt
+                    python3
+                    xz
+                  ]);
+              }
+            );
           };
-
-          packages.default = self'.packages.caligula;
-
-          devShells.default = self'.devShells.cross.overrideAttrs (
-            final: prev: {
-              buildInputs =
-                prev.buildInputs
-                ++ (with pkgs; [
-                  coreutils
-                  gzip
-                  lz4
-                  nixfmt
-                  python3
-                  xz
-                ]);
-            }
-          );
-        };
-    };
+      }
+    );
 }
