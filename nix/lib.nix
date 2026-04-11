@@ -42,11 +42,6 @@
         in
         # Sort and uniquify the list of systems.
         lib.lists.sort (a: b: a < b) (lib.lists.uniqueStrings targets);
-
-      /**
-        Given xss and f, equivalent to map f (lib.cartesianProduct xss)
-      */
-      cartesianForEach = xss: f: builtins.map f (lib.cartesianProduct xss);
     };
   };
 }

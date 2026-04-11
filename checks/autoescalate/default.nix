@@ -1,17 +1,11 @@
-{
-  nixosTest,
-  escalationTool,
-  guestPkgs,
-}:
+{ nixosTest, escalationTool }:
 nixosTest {
-  name = "autoescalate-${escalationTool}-${guestPkgs.system}";
+  name = "autoescalate-${escalationTool}";
 
   nodes.machine =
     { pkgs, lib, ... }:
     with lib;
     {
-      nixpkgs.pkgs = guestPkgs;
-
       imports = [
         (
           if escalationTool == "sudo" then

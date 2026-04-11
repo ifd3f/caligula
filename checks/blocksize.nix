@@ -4,7 +4,6 @@
   imageSize,
   blockSize,
   diskSizeMiB,
-  guestPkgs,
 }:
 let
   serial = "awawawawawa";
@@ -18,7 +17,7 @@ nixosTest {
     { pkgs, lib, ... }:
     with lib;
     {
-      nixpkgs.pkgs = guestPkgs;
+      imports = [ ];
 
       users.users = {
         admin = {

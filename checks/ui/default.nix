@@ -1,17 +1,11 @@
-{
-  nixosTest,
-  caligula,
-  guestPkgs,
-}:
+{ nixosTest, caligula }:
 nixosTest {
-  name = "ui-test-${guestPkgs.system}";
+  name = "ui-test";
 
   nodes.machine =
     { pkgs, lib, ... }:
     with lib;
     {
-      nixpkgs.pkgs = guestPkgs;
-
       security.sudo = {
         enable = true;
         wheelNeedsPassword = false;
