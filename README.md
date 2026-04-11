@@ -71,18 +71,28 @@ There are a couple of ways to install Caligula.
 - **Cargo:** Caligula is published on [crates.io](https://crates.io/crates/caligula). Just run `cargo install caligula`
 - **Build from source:** This is a relatively standard cargo project so you should be able to just `git clone` and `cargo build --release` it.
 
-### Platform support matrix
+### Platform support
 
-| OS    | Architecture | Automated tests | Automated builds | Published binaries |
-| ----- | ------------ | --------------- | ---------------- | ------------------ |
-| Linux | x86_64       | ✅              | ✅               | ✅                 |
-|       | aarch64      | ❌              | ✅               | ✅                 |
-| MacOS | x86_64       | ✅              | ✅               | ✅                 |
-|       | aarch64      | ✅              | ✅               | ✅                 |
+| OS    | Architecture | Full tests | Basic tests | Automated builds | Published binaries |
+| ----- | ------------ | ---------- | ----------- | ---------------- | ------------------ |
+| Linux | x86_64       | ✅         | ✅          | ✅               | ✅                 |
+|       | aarch64      | ❌         | ❌          | ✅               | ✅                 |
+| MacOS | x86_64       | ❌         | ✅          | ✅               | ✅                 |
+|       | aarch64      | ❌         | ✅          | ✅               | ✅                 |
 
-Linux for other architectures theoretically works, but we are not making any guarantees.
+Notes on definitions:
 
-We plan on supporting Windows, FreeBSD, and OpenBSD Eventually™. If you would like support for other OSes and architectures, please file an issue!
+- **Basic tests** means we run unit tests, and we run `caligula --help` to make sure it outputs something.
+- **Full tests** means we run basic tests in addition to the complete end-to-end VM test suite battery defined in the [checks/](./checks) directory.
+- **Automated builds** means we ensure that the platform is able to build inside CI.
+- **Published binaries** means we publish a binary for the given platform on every release.
+
+#### Platform notes
+
+- In theory, Linux for non-x86_64 does work, and people have used it successfully. However, we are not making any guarantees right now. It is in the works, though -- see tracking issues for [aarch64 e2e tests](https://github.com/ifd3f/caligula/issues/220) and [riscv64 support](https://github.com/ifd3f/caligula/issues/221).
+- MacOS has a couple of known bugs and support for it is very limited. A big barrier is that setting up end-to-end testing for it is hard (see [tracking issue](https://github.com/ifd3f/caligula/issues/219)), and [automated escalation being broken is a known issue](https://github.com/ifd3f/caligula/issues/125). Help would be appreciated here!
+- We plan on supporting [Windows](https://github.com/ifd3f/caligula/issues/2) and [BSDs](https://github.com/ifd3f/caligula/issues/3) Eventually™.
+- If you would like support for other OSes and architectures not already mentioned, please file an issue!
 
 ## FAQ
 

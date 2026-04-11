@@ -1,6 +1,6 @@
 {
   lib,
-  nixosTest,
+  testers,
   imageSize,
   blockSize,
   diskSizeMiB,
@@ -10,37 +10,21 @@ let
   diskFile = "/tmp/block-file.img";
   byDiskPath = "/dev/disk/by-id/usb-QEMU_QEMU_HARDDISK_${serial}-0:0";
 in
-nixosTest {
+testers.runNixOSTest {
+  imports = [ ./common/test.nix ];
+
   name = "blocksize-bs${toString blockSize}-image${toString imageSize}-diskMiB${toString diskSizeMiB}";
 
-  nodes.machine =
-    { pkgs, lib, ... }:
-    with lib;
-    {
-      imports = [ ];
+  nodes.machine = {
+    virtualisation.qemu.options = [
+      "-drive if=none,id=usbstick,format=raw,file=${diskFile}"
+      "-usb"
 
-      users.users = {
-        admin = {
-          isNormalUser = true;
-          extraGroups = [ "wheel" ];
-        };
-      };
-
-      environment.systemPackages = with pkgs; [ caligula ];
-      virtualisation.qemu.options = [
-        "-drive"
-        "if=none,id=usbstick,format=raw,file=${diskFile}"
-      ]
-      ++ [ "-usb" ]
-      ++ [
-        "-device"
-        "usb-ehci,id=ehci"
-      ]
-      ++ [
-        "-device"
-        "usb-storage,bus=ehci.0,drive=usbstick,serial=${serial},physical_block_size=${toString blockSize}"
-      ];
-    };
+      # xhci = USB 3.0. this makes tests go nyoom
+      "-device nec-usb-xhci,id=xhci"
+      "-device usb-storage,bus=xhci.0,drive=usbstick,serial=${serial},physical_block_size=${toString blockSize}"
+    ];
+  };
 
   testScript = with lib; ''
     import os
@@ -48,7 +32,7 @@ nixosTest {
     print("Creating file image at ${diskFile}")
     os.system("dd bs=1M count=${toString diskSizeMiB} if=/dev/urandom of=${diskFile}")
 
-    ${readFile ./common.py}
+    ${builtins.readFile ./common/common.py}
 
     machine.start()
     machine.wait_for_unit('default.target')
