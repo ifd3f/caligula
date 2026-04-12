@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use crate::escalated_daemon::ipc::{SpawnWriter};
+use crate::herder_daemon::ipc::StartHerd;
 use crate::evdist::EventDemux;
 use crate::ipc_common::{read_msg_async, write_msg_async};
 use crate::logging::LogPaths;
@@ -187,12 +187,10 @@ impl EscDaemonHandle {
     ) -> Result<(), std::io::Error> {
         write_msg_async(
             &mut self.tx,
-            &(
+            &StartHerd {
                 id,
-                SpawnWriter {
-                    init_config: args.clone(),
-                },
-            ),
+                action: args.clone(),
+            },
         )
         .await
     }

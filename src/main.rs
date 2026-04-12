@@ -5,7 +5,7 @@ mod byteseries;
 mod childproc_common;
 mod compression;
 mod device;
-mod escalated_daemon;
+mod herder_daemon;
 mod escalation;
 mod evdist;
 mod hash;
@@ -36,8 +36,6 @@ pub enum Command {
     ///
     /// This is a backend entrypoint that is used in implementing automatic root escalation.
     /// There are ZERO stability guarantees. Do NOT rely on this interface for anything.
-    // Side note: Interestingly, this interface can theoretically be used to have caligula delegate
-    // writing to remote hosts over SSH. This may be a very strange but funny feature to implement.
     #[command(name = "_herder", hide = true)]
     HerderDaemon(HerderDaemonArgs),
 }
@@ -68,7 +66,7 @@ async fn main() {
         }
         Command::HerderDaemon(args) => {
             childproc_common::child_init::<()>(&args.log_file);
-            escalated_daemon::main().await;
+            herder_daemon::main().await;
         }
     }
 }
