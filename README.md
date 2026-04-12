@@ -73,19 +73,18 @@ There are a couple of ways to install Caligula.
 
 ### Platform support
 
-| OS    | Architecture | Full tests | Basic tests | Automated builds | Published binaries |
-| ----- | ------------ | ---------- | ----------- | ---------------- | ------------------ |
-| Linux | x86_64       | ✅         | ✅          | ✅               | ✅                 |
-|       | aarch64      | ❌         | ❌          | ✅               | ✅                 |
-| MacOS | x86_64       | ❌         | ✅          | ✅               | ✅                 |
-|       | aarch64      | ❌         | ✅          | ✅               | ✅                 |
+| OS    | Architecture | Automated builds | Basic tests | Full tests |
+| ----- | ------------ | ---------------- | ----------- | ---------- |
+| Linux | x86_64       | ✅               | ✅          | ✅         |
+|       | aarch64      | ✅               | ❌          | ❌         |
+| MacOS | x86_64       | ✅               | ✅          | ❌         |
+|       | aarch64      | ✅               | ✅          | ❌         |
 
 Notes on definitions:
 
-- **Basic tests** means we run unit tests, and we run `caligula --help` to make sure it outputs something.
-- **Full tests** means we run basic tests in addition to the complete end-to-end VM test suite battery defined in the [checks/](./checks) directory.
-- **Automated builds** means we ensure that the platform is able to build inside CI.
-- **Published binaries** means we publish a binary for the given platform on every release.
+- **Automated builds** means we ensure that the platform is able to build inside CI and we publish binaries for the platform. This does not guarantee that Caligula works at all!
+- **Basic tests** means we run unit tests, and test that `caligula --help` works. Caligula is _likely_ to work on this platform, but there is potential for uncaught issues between releases.
+- **Full tests** means that, in addition to the basic unit tests, we also run the complete end-to-end VM test suite battery defined in the [checks/](./checks) directory. Caligula is expected to fully work on this platform.
 
 #### Platform notes
 
