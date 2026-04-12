@@ -16,7 +16,7 @@ print_help() {
 }
 
 to_qemu() {
-    nc -U /tmp/caligula-devvm-monitor.sock
+    nc -NU /tmp/caligula-devvm-monitor.sock
 }
 
 add_usb() {
