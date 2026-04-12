@@ -1,11 +1,11 @@
+use std::borrow::Cow;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use crate::escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter};
+use crate::escalated_daemon::ipc::{SpawnWriter};
 use crate::evdist::EventDemux;
 use crate::ipc_common::{read_msg_async, write_msg_async};
 use crate::logging::LogPaths;
-use crate::run_mode::make_escalated_daemon_spawn_command;
 use crate::writer_process::ipc::ErrorType;
 use crate::writer_process::spawn_writer;
 use anyhow::Context;
@@ -50,10 +50,7 @@ impl Herder {
         // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
         if self.escalated_daemon.is_none() {
             let log_path = self.log_paths.escalated_daemon();
-            let cmd = make_escalated_daemon_spawn_command(
-                log_path.to_string_lossy(),
-                &EscalatedDaemonInitConfig {},
-            );
+            let cmd = make_escalated_daemon_spawn_command(log_path.to_string_lossy());
 
             debug!("Starting child process with command: {:?}", cmd);
             fn modify_cmd(cmd: &mut tokio::process::Command) {
@@ -204,5 +201,18 @@ impl EscDaemonHandle {
 impl core::fmt::Debug for EscDaemonHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Handle").field(&self.child).finish()
+    }
+}
+
+/// Build a [Command] that, when run, spawns a process with a specific configuration.
+pub fn make_escalated_daemon_spawn_command<'a>(
+    log_path: Cow<'a, str>,
+) -> crate::escalation::Command<'a> {
+    let proc = process_path::get_executable_path().unwrap();
+
+    crate::escalation::Command {
+        proc: proc.to_str().unwrap().to_owned().into(),
+        envs: vec![],
+        args: vec!["_herder".into(), log_path],
     }
 }

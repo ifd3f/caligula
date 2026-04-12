@@ -17,18 +17,14 @@ use tracing::info;
 use tracing_unwrap::ResultExt;
 
 use crate::{
-    childproc_common::child_init,
-    escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter},
+    escalated_daemon::ipc::SpawnWriter,
     ipc_common::{read_msg_async, write_msg},
     writer_process::spawn_writer,
 };
 
 pub mod ipc;
 
-#[tokio::main(flavor = "current_thread")]
 pub async fn main() {
-    let _ = child_init::<EscalatedDaemonInitConfig>();
-
     loop {
         let (id, msg) = match read_msg_async::<(u64, SpawnWriter)>(tokio::io::stdin()).await {
             Ok(d) => d,

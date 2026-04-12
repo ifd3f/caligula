@@ -2,26 +2,12 @@ use is_terminal::IsTerminal;
 use itertools::Itertools;
 use std::{fmt::Display, path::PathBuf};
 
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, ValueEnum};
 
 use crate::{
     compression::CompressionArg,
     hash::{HashAlg, parse_hash_input},
 };
-
-/// A lightweight, user-friendly disk imaging tool
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None, flatten_help = true)]
-#[command(propagate_version = true)]
-pub struct Args {
-    #[command(subcommand)]
-    pub command: Command,
-}
-
-#[derive(Subcommand, Debug)]
-pub enum Command {
-    Burn(BurnArgs),
-}
 
 /// Burn an image to a disk.
 #[derive(Parser, Debug)]

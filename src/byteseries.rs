@@ -1,4 +1,4 @@
-use crate::ui::utils::ByteSpeed;
+use crate::ui::ByteSpeed;
 use std::ops::Add;
 use std::{fmt::Display, time::Instant};
 

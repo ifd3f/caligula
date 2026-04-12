@@ -17,12 +17,9 @@ use crate::logging::init_logging_child;
 /// - Get the child-specific config from arg 3
 ///
 /// This returns the socket path and the child-specific config.
-pub fn child_init<C: DeserializeOwned + Debug>() -> C {
+pub fn child_init<C: DeserializeOwned + Debug>(log_file: &str) -> C {
     let cli_args: Vec<String> = env::args().collect();
 
-    // We will set up logging first because if any part of this godforsaken
-    // process fails, at the very least we'll have logging :)
-    let log_file = &cli_args[1];
     init_logging_child(log_file);
     std::panic::set_hook(Box::new(|p| {
         error!("{p:#?}");
