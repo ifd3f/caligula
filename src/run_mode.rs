@@ -3,10 +3,7 @@ use std::{borrow::Cow, fmt::Debug};
 use process_path::get_executable_path;
 use serde::Serialize;
 
-use crate::{
-    escalated_daemon::ipc::EscalatedDaemonInitConfig, escalation::Command,
-    writer_process::ipc::WriterProcessConfig,
-};
+use crate::{escalated_daemon::ipc::EscalatedDaemonInitConfig, escalation::Command};
 
 pub const RUN_MODE_ENV_NAME: &str = "__CALIGULA_RUN_MODE";
 
@@ -64,7 +61,6 @@ impl RunMode {
 
 /// Build a [Command] that, when run, spawns a process with a specific configuration.
 pub fn make_spawn_command<'a, C: Serialize + Debug>(
-    socket: Cow<'a, str>,
     log_path: Cow<'a, str>,
     run_mode: RunMode,
     init_config: C,
@@ -77,16 +73,14 @@ pub fn make_spawn_command<'a, C: Serialize + Debug>(
         // Arg order is documented in childproc_common.
         args: vec![
             log_path,
-            socket,
             serde_json::to_string(&init_config).unwrap().into(),
         ],
     }
 }
 
 pub fn make_escalated_daemon_spawn_command<'a>(
-    socket: Cow<'a, str>,
     log_path: Cow<'a, str>,
     init_config: &EscalatedDaemonInitConfig,
 ) -> Command<'a> {
-    make_spawn_command(socket, log_path, RunMode::EscalatedDaemon, init_config)
+    make_spawn_command(log_path, RunMode::EscalatedDaemon, init_config)
 }

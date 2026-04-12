@@ -1,7 +1,7 @@
 use std::{fs::File, path::Path, sync::Arc};
 
 use crate::{
-    herder::{Herder, HerderSocket},
+    herder::Herder,
     logging::{LogPaths, init_logging_parent},
     tty::TermiosRestore,
     ui::{
@@ -52,7 +52,7 @@ fn handle_toplevel_error(err: anyhow::Error) {
     }
 }
 
-async fn inner_main(state_dir: &Path, log_paths: LogPaths) -> anyhow::Result<()> {
+async fn inner_main(_state_dir: &Path, log_paths: LogPaths) -> anyhow::Result<()> {
     let args: Args = match std::env::var("_CALIGULA_CONFIGURE_CLAP_FOR_README") {
         Ok(var) if var == "1" => parse_args_for_readme_generation(),
         _ => Args::parse(),
@@ -65,8 +65,7 @@ async fn inner_main(state_dir: &Path, log_paths: LogPaths) -> anyhow::Result<()>
         return Ok(());
     };
 
-    let socket = HerderSocket::new(state_dir).await?;
-    let mut herder = Herder::new(socket, log_paths.clone());
+    let mut herder = Herder::new(log_paths.clone());
     let handle = try_start_burn(
         &mut herder,
         &begin_params.make_child_config(),

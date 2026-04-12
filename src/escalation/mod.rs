@@ -27,7 +27,6 @@ pub async fn run_escalate(
 
         let mut cmd: tokio::process::Command = EscalationMethod::detect()?.wrap_command(cmd).into();
         modify(&mut cmd);
-        cmd.stdin(Stdio::null());
         Ok(cmd.spawn()?)
     }
 

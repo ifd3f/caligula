@@ -33,10 +33,6 @@ impl LogPaths {
         self.log_dir.join("escalated.log")
     }
 
-    pub fn writer(&self, id: u64) -> PathBuf {
-        self.log_dir.join(format!("writer-{id}.log"))
-    }
-
     pub fn get_bug_report_msg(&self) -> String {
         format!(
             "Please report bugs to https://github.com/ifd3f/caligula/issues and attach the \

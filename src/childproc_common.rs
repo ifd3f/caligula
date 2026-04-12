@@ -17,7 +17,7 @@ use crate::logging::init_logging_child;
 /// - Get the child-specific config from arg 3
 ///
 /// This returns the socket path and the child-specific config.
-pub fn child_init<C: DeserializeOwned + Debug>() -> (String, C) {
+pub fn child_init<C: DeserializeOwned + Debug>() -> C {
     let cli_args: Vec<String> = env::args().collect();
 
     // We will set up logging first because if any part of this godforsaken
@@ -28,9 +28,8 @@ pub fn child_init<C: DeserializeOwned + Debug>() -> (String, C) {
         error!("{p:#?}");
     }));
 
-    let socket_path = &cli_args[2];
-    let args = serde_json::from_str::<C>(&cli_args[3]).unwrap_or_log();
-    info!(?socket_path, ?args, "We are in child process mode");
+    let args = serde_json::from_str::<C>(&cli_args[2]).unwrap_or_log();
+    info!(?args, "We are in child process mode");
 
-    (socket_path.clone(), args)
+    args
 }

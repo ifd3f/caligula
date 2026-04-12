@@ -28,7 +28,6 @@ futures = "0.3.31"
 futures-io = "0.3.31"
 indicatif = "0.17.11"
 inquire = "0.7.5"
-interprocess = { version = "2.2.3", features = ["tokio"] }
 is-terminal = "0.4.16"
 itertools = "0.12.1"
 libc = "0.2.177"

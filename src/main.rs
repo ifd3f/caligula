@@ -6,6 +6,7 @@ mod compression;
 mod device;
 mod escalated_daemon;
 mod escalation;
+mod evdist;
 mod hash;
 mod hashfile;
 mod herder;

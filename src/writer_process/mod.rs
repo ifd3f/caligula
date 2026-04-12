@@ -4,7 +4,6 @@
 
 use std::fs::OpenOptions;
 use std::os::unix::process::ExitStatusExt;
-use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread::JoinHandle;
 use std::{
@@ -13,14 +12,11 @@ use std::{
 };
 
 use aligned_vec::avec_rt;
-use interprocess::local_socket::{GenericFilePath, prelude::*};
 use tracing::{debug, info, trace};
 use tracing_unwrap::ResultExt;
 
-use crate::childproc_common::child_init;
 use crate::compression::CompressionFormat;
 use crate::device;
-use crate::ipc_common::write_msg;
 
 use crate::writer_process::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
 use crate::writer_process::xplat::open_blockdev;
@@ -39,18 +35,12 @@ const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
 /// How many bytes should be written before we perform a checkpoint (aka report progress).
 const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
-pub fn spawn_writer(sock: PathBuf, init_config: WriterProcessConfig) -> JoinHandle<()> {
+pub fn spawn_writer(
+    mut tx: impl FnMut(StatusMessage) + Send + 'static,
+    init_config: WriterProcessConfig,
+) -> JoinHandle<()> {
     std::thread::spawn(move || {
         debug!("Spawned child thread {:?}", std::thread::current().id());
-        info!("Opening socket {sock:?}");
-        let mut stream =
-            LocalSocketStream::connect(sock.to_fs_name::<GenericFilePath>().unwrap_or_log())
-                .unwrap_or_log();
-
-        let mut tx = move |msg: StatusMessage| {
-            write_msg(&mut stream, &msg).expect("Failed to write message");
-            stream.flush().expect("Failed to flush stream");
-        };
 
         let final_msg = match run(&mut tx, &init_config) {
             Ok(_) => StatusMessage::Success,

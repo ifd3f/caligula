@@ -1,6 +1,5 @@
 use std::io::Write;
 
-use anyhow::Context;
 use bincode::Options;
 use byteorder::{BigEndian, WriteBytesExt};
 use serde::{Serialize, de::DeserializeOwned};
@@ -15,8 +14,10 @@ pub fn bincode_options() -> impl bincode::Options {
         .with_limit(1024)
 }
 
-pub fn write_msg<T: Serialize>(mut w: impl Write, msg: &T) -> anyhow::Result<()> {
-    let buf = bincode_options().serialize(msg)?;
+pub fn write_msg<T: Serialize>(mut w: impl Write, msg: &T) -> std::io::Result<()> {
+    let buf = bincode_options()
+        .serialize(msg)
+        .expect("Serialization error is impossible");
     w.write_u32::<BigEndian>(buf.len() as u32)?;
     w.write_all(&buf)?;
     w.flush()?;
@@ -26,8 +27,10 @@ pub fn write_msg<T: Serialize>(mut w: impl Write, msg: &T) -> anyhow::Result<()>
 pub async fn write_msg_async<T: Serialize>(
     mut w: impl AsyncWrite + Unpin,
     msg: &T,
-) -> anyhow::Result<()> {
-    let buf = bincode_options().serialize(msg)?;
+) -> std::io::Result<()> {
+    let buf = bincode_options()
+        .serialize(msg)
+        .expect("Serialization error is impossible");
     w.write_u32(buf.len() as u32).await?;
     w.write_all(&buf).await?;
     w.flush().await?;
@@ -36,14 +39,14 @@ pub async fn write_msg_async<T: Serialize>(
 
 pub async fn read_msg_async<T: DeserializeOwned>(
     mut r: impl AsyncRead + Unpin,
-) -> anyhow::Result<T> {
+) -> std::io::Result<T> {
     let size = r.read_u32().await?;
     let mut buf = vec![0; size as usize];
     r.read_exact(&mut buf).await?;
 
     let msg: T = bincode_options()
         .deserialize(&buf)
-        .context("Failed to parse bincode from stream")?;
+        .expect("Deserialization error is impossible");
     Ok(msg)
 }
 

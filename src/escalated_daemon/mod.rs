@@ -13,15 +13,13 @@
 //!
 //! IT IS NOT TO BE USED DIRECTLY BY THE USER! ITS API HAS NO STABILITY GUARANTEES!
 
-use interprocess::local_socket::{GenericFilePath, tokio::prelude::*};
-use tokio::io::{AsyncBufRead, BufReader};
 use tracing::info;
 use tracing_unwrap::ResultExt;
 
 use crate::{
     childproc_common::child_init,
     escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter},
-    ipc_common::read_msg_async,
+    ipc_common::{read_msg_async, write_msg},
     writer_process::spawn_writer,
 };
 
@@ -29,29 +27,24 @@ pub mod ipc;
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn main() {
-    let (sock, _) = child_init::<EscalatedDaemonInitConfig>();
+    let _ = child_init::<EscalatedDaemonInitConfig>();
 
-    info!("Opening socket {sock}");
-    let stream = LocalSocketStream::connect(
-        sock.as_str()
-            .to_fs_name::<GenericFilePath>()
-            .unwrap_or_log(),
-    )
-    .await
-    .unwrap_or_log();
-
-    event_loop(&sock, BufReader::new(stream))
-        .await
-        .unwrap_or_log();
-}
-
-#[tracing::instrument(skip_all)]
-async fn event_loop(socket: &str, mut stream: impl AsyncBufRead + Unpin) -> anyhow::Result<()> {
     loop {
-        let msg = read_msg_async::<SpawnWriter>(&mut stream).await?;
+        let (id, msg) = match read_msg_async::<(u64, SpawnWriter)>(tokio::io::stdin()).await {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::info!("Error received on stdin, quitting: {e}");
+                return;
+            }
+        };
         info!(?msg, "Received SpawnWriter request");
 
-        let child = spawn_writer(socket.into(), msg.init_config);
+        let child = spawn_writer(
+            move |m| {
+                write_msg(std::io::stdout(), &(id, m)).ok_or_log();
+            },
+            msg.init_config,
+        );
         info!(?child, "Spawned writer thread");
     }
 }

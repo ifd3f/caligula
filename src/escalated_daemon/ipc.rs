@@ -9,6 +9,5 @@ pub struct EscalatedDaemonInitConfig {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpawnWriter {
-    pub log_file: String,
     pub init_config: WriterProcessConfig,
 }
