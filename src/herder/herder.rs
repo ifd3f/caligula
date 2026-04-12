@@ -5,9 +5,8 @@ use crate::escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter};
 use crate::ipc_common::write_msg_async;
 use crate::logging::LogPaths;
 use crate::run_mode::make_escalated_daemon_spawn_command;
-use crate::{
-    ipc_common::read_msg_async, run_mode::make_writer_spawn_command, writer_process::ipc::ErrorType,
-};
+use crate::writer_process::spawn_writer;
+use crate::{ipc_common::read_msg_async, writer_process::ipc::ErrorType};
 use anyhow::Context;
 use interprocess::local_socket::tokio::prelude::*;
 use tracing::{debug, trace};
@@ -75,7 +74,7 @@ impl Herder {
         let log_path = self.log_paths.writer(self.next_writer_id);
         self.next_writer_id += 1;
 
-        let child = if escalate {
+        let _child = if escalate {
             let daemon = self.ensure_escalated_daemon().await?;
             write_msg_async(
                 &mut daemon.tx,
@@ -87,21 +86,14 @@ impl Herder {
             .await?;
             None
         } else {
-            let cmd = make_writer_spawn_command(
-                self.socket.socket_name().to_string_lossy(),
-                log_path.to_string_lossy(),
-                args,
-            );
-            debug!("Directly spawning child process with command: {:?}", cmd);
+            let cmd = spawn_writer(self.socket.socket_name().to_owned(), args.clone());
 
-            let mut cmd = tokio::process::Command::from(cmd);
-            cmd.kill_on_drop(true);
-            Some(cmd.spawn().context("Failed to spawn child process")?)
+            Some(cmd)
         };
 
         debug!("Waiting for pipe to be opened...");
         let stream: LocalSocketStream = self.socket.accept().await?;
-        let mut handle = ChildHandle::new(child, stream);
+        let mut handle = ChildHandle::new(None, stream);
 
         trace!("Reading results from child");
         let first_msg = read_msg_async::<StatusMessage>(&mut handle.rx).await?;

@@ -13,17 +13,16 @@
 //!
 //! IT IS NOT TO BE USED DIRECTLY BY THE USER! ITS API HAS NO STABILITY GUARANTEES!
 
-use anyhow::Context;
 use interprocess::local_socket::{GenericFilePath, tokio::prelude::*};
 use tokio::io::{AsyncBufRead, BufReader};
-use tracing::{Instrument, error, info, info_span};
+use tracing::info;
 use tracing_unwrap::ResultExt;
 
 use crate::{
     childproc_common::child_init,
     escalated_daemon::ipc::{EscalatedDaemonInitConfig, SpawnWriter},
     ipc_common::read_msg_async,
-    run_mode::make_writer_spawn_command,
+    writer_process::spawn_writer,
 };
 
 pub mod ipc;
@@ -52,23 +51,7 @@ async fn event_loop(socket: &str, mut stream: impl AsyncBufRead + Unpin) -> anyh
         let msg = read_msg_async::<SpawnWriter>(&mut stream).await?;
         info!(?msg, "Received SpawnWriter request");
 
-        let command =
-            make_writer_spawn_command(socket.into(), msg.log_file.into(), &msg.init_config);
-        let mut cmd = tokio::process::Command::from(command);
-        cmd.kill_on_drop(true);
-        let mut child = cmd.spawn().context("Failed to spawn writer process")?;
-        info!(?child, "Spawned writer process");
-
-        // Wait on child processes to reap them when they're done.
-        let pid = child.id();
-        tokio::spawn(
-            async move {
-                match child.wait().await {
-                    Ok(r) => info!("Child exited with exit code {r}"),
-                    Err(e) => error!("Failed to wait on child: {e}"),
-                }
-            }
-            .instrument(info_span!("childwait", child_pid = pid)),
-        );
+        let child = spawn_writer(socket.into(), msg.init_config);
+        info!(?child, "Spawned writer thread");
     }
 }

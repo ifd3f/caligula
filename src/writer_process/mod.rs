@@ -4,7 +4,9 @@
 
 use std::fs::OpenOptions;
 use std::os::unix::process::ExitStatusExt;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::thread::JoinHandle;
 use std::{
     fs::File,
     io::{self, Read, Seek, Write},
@@ -37,28 +39,27 @@ const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
 /// How many bytes should be written before we perform a checkpoint (aka report progress).
 const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
-/// This is intended to be run in a forked child process, possibly with
-/// escalated permissions.
-pub fn main() {
-    let (sock, args) = child_init::<WriterProcessConfig>();
+pub fn spawn_writer(sock: PathBuf, init_config: WriterProcessConfig) -> JoinHandle<()> {
+    std::thread::spawn(move || {
+        debug!("Spawned child thread {:?}", std::thread::current().id());
+        info!("Opening socket {sock:?}");
+        let mut stream =
+            LocalSocketStream::connect(sock.to_fs_name::<GenericFilePath>().unwrap_or_log())
+                .unwrap_or_log();
 
-    info!("Opening socket {sock}");
-    let mut stream =
-        LocalSocketStream::connect(sock.to_fs_name::<GenericFilePath>().unwrap_or_log())
-            .unwrap_or_log();
+        let mut tx = move |msg: StatusMessage| {
+            write_msg(&mut stream, &msg).expect("Failed to write message");
+            stream.flush().expect("Failed to flush stream");
+        };
 
-    let mut tx = move |msg: StatusMessage| {
-        write_msg(&mut stream, &msg).expect("Failed to write message");
-        stream.flush().expect("Failed to flush stream");
-    };
+        let final_msg = match run(&mut tx, &init_config) {
+            Ok(_) => StatusMessage::Success,
+            Err(e) => StatusMessage::Error(e),
+        };
 
-    let final_msg = match run(&mut tx, &args) {
-        Ok(_) => StatusMessage::Success,
-        Err(e) => StatusMessage::Error(e),
-    };
-
-    info!(?final_msg, "Completed");
-    tx(final_msg);
+        info!(?final_msg, "Completed");
+        tx(final_msg);
+    })
 }
 
 fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<(), ErrorType> {
