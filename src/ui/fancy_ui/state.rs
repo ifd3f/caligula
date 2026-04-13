@@ -5,7 +5,7 @@ use tracing::info;
 
 use crate::{
     ui::{start::BeginParams, writer_tracking::WriterState},
-    writer_process::ipc::StatusMessage,
+    herder_daemon::ipc::StatusMessage,
 };
 
 use super::widgets::{QuitModal, QuitModalResult, SpeedChartState};

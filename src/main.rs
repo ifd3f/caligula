@@ -15,7 +15,6 @@ mod native;
 mod tty;
 mod ui;
 mod util;
-mod writer_process;
 
 /// A lightweight, user-friendly disk imaging tool
 #[derive(clap::Parser, Debug)]

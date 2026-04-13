@@ -18,8 +18,8 @@ use tracing_unwrap::ResultExt;
 use crate::compression::CompressionFormat;
 use crate::device;
 
-use crate::writer_process::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
-use crate::writer_process::xplat::open_blockdev;
+use self::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
+use self::xplat::open_blockdev;
 
 use ipc::*;
 

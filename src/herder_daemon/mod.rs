@@ -7,12 +7,10 @@
 use tracing::info;
 use tracing_unwrap::ResultExt;
 
-use crate::{
-    ipc_common::{read_msg_async, write_msg},
-    writer_process::spawn_writer,
-};
+use crate::ipc_common::{read_msg_async, write_msg};
 
 pub mod ipc;
+mod writer_process;
 
 pub async fn main() {
     loop {
@@ -25,7 +23,7 @@ pub async fn main() {
         };
         info!(?msg, "Received StartAction request");
 
-        let child = spawn_writer(
+        let child = writer_process::spawn_writer(
             msg.id,
             move |m| {
                 write_msg(std::io::stdout(), &(msg.id, m)).ok_or_log();

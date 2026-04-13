@@ -15,7 +15,7 @@ use crate::{
         simple_ui::run_simple_burning_ui,
         utils::TUICapture,
     },
-    writer_process::ipc::{ErrorType, WriterProcessConfig},
+    herder_daemon::ipc::{ErrorType, WriterProcessConfig},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone)]

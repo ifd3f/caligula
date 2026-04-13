@@ -1,18 +1,16 @@
-use std::process::Stdio;
-
 use super::evdist::EventDemux;
+use crate::escalation::run_escalate;
+use crate::herder_daemon::ipc::ErrorType;
 use crate::herder_daemon::ipc::StartHerd;
+use crate::herder_daemon::ipc::{InitialInfo, StatusMessage, WriterProcessConfig};
 use crate::ipc_common::{read_msg_async, write_msg_async};
-use crate::writer_process::ipc::ErrorType;
 use futures::StreamExt;
 use futures::stream::BoxStream;
+use std::process::Stdio;
 use tokio::io::BufWriter;
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::mpsc;
 use tracing::{debug, trace};
-
-use crate::escalation::run_escalate;
-use crate::writer_process::ipc::{InitialInfo, StatusMessage, WriterProcessConfig};
 
 type RawEventHandler = Box<dyn Fn((u64, StatusMessage)) + Send + 'static>;
 

@@ -4,7 +4,7 @@ use tracing::{info, trace};
 
 use crate::{
     byteseries::{ByteSeries, EstimatedTime},
-    writer_process::ipc::{ErrorType, StatusMessage},
+    herder_daemon::ipc::{ErrorType, StatusMessage},
 };
 
 /// A state machine for tracking the state of the writer, based on received
@@ -194,7 +194,7 @@ mod tests {
 
     use crate::{
         byteseries::ByteSeries,
-        writer_process::ipc::{ErrorType, StatusMessage},
+        herder_daemon::ipc::{ErrorType, StatusMessage},
     };
 
     use super::WriterState;

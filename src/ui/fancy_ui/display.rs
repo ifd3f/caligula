@@ -14,7 +14,7 @@ use crate::{
     herder_facade::WriterHandle,
     logging::LogPaths,
     ui::{start::BeginParams, writer_tracking::WriterState},
-    writer_process::ipc::StatusMessage,
+    herder_daemon::ipc::StatusMessage,
 };
 
 use super::{
