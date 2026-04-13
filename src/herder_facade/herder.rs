@@ -18,12 +18,22 @@ use tracing_unwrap::ResultExt;
 use crate::escalation::run_escalate;
 use crate::writer_process::ipc::{InitialInfo, StatusMessage, WriterProcessConfig};
 
-/// Handles the herding of all child processes. This includes lifecycle management
-/// and communication.
+/// Simple facade to an object that handles the herding of all child processes and subherds.
+/// This includes lifecycle management and communication.
 ///
-/// Why "Herder"? Caligula liked his horse, and horses are herded. I think. I'm not
-/// a farmer.
-pub struct HerderFacade {
+/// Why "Herder"? Caligula liked his horse, and horses are herded. I think. I'm not a farmer.
+/// 
+/// This is done so that we can easily test the UI as a separate component from the backend.
+pub trait HerderFacade {
+    fn start_writer(
+        &mut self,
+        args: &WriterProcessConfig,
+        escalated: bool,
+    ) -> impl Future<Output = Result<WriterHandle, StartWriterError>>;
+}
+
+/// The actual [HerderFacade] used by Caligula.
+pub struct HerderFacadeImpl {
     event_demux: EventDemux<u64, StatusMessage>,
     writer_tx: mpsc::UnboundedSender<(u64, StatusMessage)>,
     log_paths: Arc<LogPaths>,
@@ -31,7 +41,7 @@ pub struct HerderFacade {
     next_writer_id: u64,
 }
 
-impl HerderFacade {
+impl HerderFacadeImpl {
     pub fn new(log_paths: Arc<LogPaths>) -> Self {
         let (writer_tx, writer_rx) = mpsc::unbounded_channel();
         Self {
@@ -60,50 +70,54 @@ impl HerderFacade {
 
         Ok(self.escalated_daemon.as_mut().unwrap())
     }
+}
 
+impl HerderFacade for HerderFacadeImpl {
     #[tracing::instrument(skip_all, fields(escalate))]
-    pub async fn start_writer(
+    fn start_writer(
         &mut self,
         args: &WriterProcessConfig,
         escalated: bool,
-    ) -> Result<WriterHandle, StartWriterError> {
-        let id = self.next_writer_id;
-        self.next_writer_id += 1;
+    ) -> impl Future<Output = Result<WriterHandle, StartWriterError>> {
+        async {
+            let id = self.next_writer_id;
+            self.next_writer_id += 1;
 
-        if escalated {
-            let daemon = self.ensure_escalated_daemon().await?;
-            daemon.request_new_writer(id, args).await?;
-            None
-        } else {
-            let tx = self.writer_tx.clone();
-            let cmd = spawn_writer(
-                id,
-                move |m| {
-                    tx.send((id, m)).ok_or_log();
-                },
-                args.clone(),
-            );
+            if escalated {
+                let daemon = self.ensure_escalated_daemon().await?;
+                daemon.request_new_writer(id, args).await?;
+                None
+            } else {
+                let tx = self.writer_tx.clone();
+                let cmd = spawn_writer(
+                    id,
+                    move |m| {
+                        tx.send((id, m)).ok_or_log();
+                    },
+                    args.clone(),
+                );
 
-            Some(cmd)
-        };
+                Some(cmd)
+            };
 
-        trace!("Reading results from child");
-        let mut event_rx = self.event_demux.select_key(id).unwrap();
+            trace!("Reading results from child");
+            let mut event_rx = self.event_demux.select_key(id).unwrap();
 
-        let first_msg = event_rx.next().await;
-        debug!(?first_msg, "Read raw result from child");
+            let first_msg = event_rx.next().await;
+            debug!(?first_msg, "Read raw result from child");
 
-        let initial_info = match first_msg {
-            Some(StatusMessage::InitSuccess(i)) => Ok(i),
-            Some(StatusMessage::Error(t)) => Err(StartWriterError::Failed(Some(t))),
-            Some(other) => Err(StartWriterError::UnexpectedFirstStatus(other)),
-            None => Err(StartWriterError::UnexpectedDisconnect),
-        }?;
+            let initial_info = match first_msg {
+                Some(StatusMessage::InitSuccess(i)) => Ok(i),
+                Some(StatusMessage::Error(t)) => Err(StartWriterError::Failed(Some(t))),
+                Some(other) => Err(StartWriterError::UnexpectedFirstStatus(other)),
+                None => Err(StartWriterError::UnexpectedDisconnect),
+            }?;
 
-        Ok(WriterHandle {
-            events: event_rx,
-            initial_info,
-        })
+            Ok(WriterHandle {
+                events: event_rx,
+                initial_info,
+            })
+        }
     }
 }
 

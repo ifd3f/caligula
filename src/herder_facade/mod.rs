@@ -3,4 +3,4 @@
 mod evdist;
 mod herder;
 
-pub use herder::{HerderFacade, StartWriterError, WriterHandle};
+pub use herder::{HerderFacade, HerderFacadeImpl, StartWriterError, WriterHandle};
