@@ -2,16 +2,16 @@ use super::client::MaybeHerder;
 use super::{HerderFacade, StartWriterError, WriterHandle};
 use crate::herder_daemon::ipc::{StatusMessage, WriterProcessConfig};
 use futures::StreamExt;
-use futures::stream::{self, BoxStream};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
-use tokio::sync::mpsc::{self, error::TryRecvError};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, trace};
 
 /// The actual [HerderFacade] used by Caligula.
 pub struct HerderFacadeImpl {
-    event_demux: EventDemux<u64, StatusMessage>,
+    event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, StatusMessage>>>,
     next_writer_id: u64,
 
     standard_daemon: MaybeHerder,
@@ -20,27 +20,28 @@ pub struct HerderFacadeImpl {
 
 impl HerderFacadeImpl {
     pub fn new(log_path: &str) -> Self {
-        let (writer_tx, writer_rx) = mpsc::unbounded_channel();
+        let event_demux = Arc::new(std::sync::Mutex::new(EventDemuxMap::new()));
 
-        let cloned = writer_tx.clone();
+        let cloned = event_demux.clone();
         let standard_daemon = MaybeHerder::new(
             log_path.to_owned(),
             false,
             Box::new(move |e| {
-                cloned.send(e).unwrap();
+                cloned.lock().unwrap().handle_event(e);
             }),
         );
 
+        let cloned = event_demux.clone();
         let escalated_daemon = MaybeHerder::new(
             log_path.to_owned(),
             true,
             Box::new(move |e| {
-                writer_tx.send(e).unwrap();
+                cloned.lock().unwrap().handle_event(e);
             }),
         );
 
         Self {
-            event_demux: EventDemux::new(writer_rx),
+            event_demux,
             next_writer_id: 0,
             standard_daemon,
             escalated_daemon,
@@ -66,7 +67,13 @@ impl HerderFacade for HerderFacadeImpl {
             d.start_writer(id, args).await?;
 
             trace!("Reading results from child");
-            let mut event_rx = self.event_demux.select_key(id).unwrap();
+            let mut event_rx = UnboundedReceiverStream::new(
+                self.event_demux
+                    .lock()
+                    .unwrap()
+                    .take_receiver(id)
+                    .expect("illegal state: receiver does not exist"),
+            );
 
             let first_msg = event_rx.next().await;
             debug!(?first_msg, "Read raw result from child");
@@ -79,7 +86,7 @@ impl HerderFacade for HerderFacadeImpl {
             }?;
 
             Ok(WriterHandle {
-                events: event_rx,
+                events: Box::pin(event_rx),
                 initial_info,
             })
         }
@@ -87,80 +94,18 @@ impl HerderFacade for HerderFacadeImpl {
 }
 
 #[derive(Debug)]
-pub struct EventDemux<K: Hash + Eq + Send, T: Send> {
-    inner: Arc<std::sync::Mutex<EventDistributorInner<K, T>>>,
-    rx: Arc<tokio::sync::Mutex<mpsc::UnboundedReceiver<(K, T)>>>,
-}
-
-impl<K: Hash + Eq + Send, T: Send> Clone for EventDemux<K, T> {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-            rx: self.rx.clone(),
-        }
-    }
-}
-
-impl<K: Hash + Eq + Send + 'static, T: Send + 'static> EventDemux<K, T> {
-    pub fn new(rx: mpsc::UnboundedReceiver<(K, T)>) -> Self {
-        Self {
-            rx: Arc::new(tokio::sync::Mutex::new(rx)),
-            inner: Arc::new(std::sync::Mutex::new(EventDistributorInner {
-                map: HashMap::new(),
-            })),
-        }
-    }
-
-    pub fn select_key(&self, k: K) -> Option<BoxStream<'static, T>> {
-        let Some(rx) = self.inner.lock().unwrap().get_receiver(k) else {
-            return None;
-        };
-
-        let stream = stream::unfold((rx, self.clone()), move |(mut rx, this)| async move {
-            loop {
-                tokio::select! {
-                    r = rx.recv() => {
-                        let Some(m) = r else {
-                            return None;
-                        };
-                        return Some((m, (rx, this)));
-                    }
-                    r = this.poll() => {
-                        if !r {
-                            return None;
-                        }
-                    }
-                }
-            }
-        });
-
-        Some(Box::pin(stream))
-    }
-
-    /// returns whether or not there are still events to listen to
-    async fn poll(&self) -> bool {
-        // wait until the next recv() occurs
-        let mut rx = self.rx.lock().await;
-        let Some(m) = rx.recv().await else {
-            return false;
-        };
-
-        // fill the inner
-        let mut inner = self.inner.lock().unwrap();
-        inner.handle_event(m);
-        inner.distribute_events(&mut rx);
-
-        true
-    }
-}
-
-#[derive(Debug)]
-struct EventDistributorInner<K, T> {
+struct EventDemuxMap<K, T> {
     map: HashMap<K, (mpsc::UnboundedSender<T>, Option<mpsc::UnboundedReceiver<T>>)>,
 }
 
-impl<K: Hash + Eq, T> EventDistributorInner<K, T> {
-    fn get_receiver(&mut self, id: K) -> Option<mpsc::UnboundedReceiver<T>> {
+impl<K: Hash + Eq, T> EventDemuxMap<K, T> {
+    fn new() -> Self {
+        Self {
+            map: Default::default(),
+        }
+    }
+
+    fn take_receiver(&mut self, id: K) -> Option<mpsc::UnboundedReceiver<T>> {
         self.map
             .entry(id)
             .or_insert_with(|| {
@@ -169,16 +114,6 @@ impl<K: Hash + Eq, T> EventDistributorInner<K, T> {
             })
             .1
             .take()
-    }
-
-    fn distribute_events(&mut self, rx: &mut mpsc::UnboundedReceiver<(K, T)>) -> bool {
-        loop {
-            match rx.try_recv() {
-                Ok(m) => self.handle_event(m),
-                Err(TryRecvError::Empty) => return true,
-                Err(TryRecvError::Disconnected) => return false,
-            };
-        }
     }
 
     fn handle_event(&mut self, (k, t): (K, T)) {
