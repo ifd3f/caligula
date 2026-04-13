@@ -37,8 +37,8 @@ const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
 pub fn spawn_writer(
     id: u64,
-    mut tx: impl FnMut(StatusMessage) + Send + 'static,
-    init_config: WriterProcessConfig,
+    mut tx: impl FnMut(WriteVerifyEvent) + Send + 'static,
+    init_config: WriteVerifyAction,
 ) -> JoinHandle<()> {
     std::thread::Builder::new()
         .name(format!("writer/{id}"))
@@ -46,8 +46,8 @@ pub fn spawn_writer(
             debug!("Spawned child thread {:?}", std::thread::current().id());
 
             let final_msg = match run(&mut tx, &init_config) {
-                Ok(_) => StatusMessage::Success,
-                Err(e) => StatusMessage::Error(e),
+                Ok(_) => WriteVerifyEvent::Success,
+                Err(e) => WriteVerifyEvent::Error(e),
             };
 
             info!(?final_msg, "Completed");
@@ -56,7 +56,10 @@ pub fn spawn_writer(
         .unwrap()
 }
 
-fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<(), ErrorType> {
+fn run(
+    mut tx: impl FnMut(WriteVerifyEvent),
+    args: &WriteVerifyAction,
+) -> Result<(), WriteVerifyError> {
     if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
         let mut command = Command::new("diskutil");
         command
@@ -80,7 +83,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
 
         let exit_code = exit.into_raw();
         if !exit.success() {
-            return Err(ErrorType::FailedToUnmount {
+            return Err(WriteVerifyError::FailedToUnmount {
                 message: format!("stderr: {stderr}\nstdout: {stdout}"),
                 exit_code,
             });
@@ -108,7 +111,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
         }
     });
 
-    tx(StatusMessage::InitSuccess(InitialInfo {
+    tx(WriteVerifyEvent::InitSuccess(WriteVerifyStart {
         input_file_bytes: size,
     }));
 
@@ -133,7 +136,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
     }
     .execute(&mut tx)?;
 
-    tx(StatusMessage::FinishedWriting {
+    tx(WriteVerifyEvent::FinishedWriting {
         verifying: args.verify,
     });
 
@@ -194,14 +197,14 @@ struct WriteOp<S: Read, D: Write> {
 impl<S: Read, D: Write> WriteOp<S, D> {
     /// Execute the write operation. Returns total number of bytes written.
     #[inline(always)]
-    fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<u64, ErrorType> {
+    fn execute(&mut self, mut tx: impl FnMut(WriteVerifyEvent)) -> Result<u64, WriteVerifyError> {
         let mut file = FileSourceReader::new(self.cf, self.file_read_buf_size, &mut self.file);
         let mut disk = CountWrite::new(&mut self.disk);
         let mut buf = avec_rt![[self.disk_block_size] | 0u8; self.buf_size];
 
         macro_rules! checkpoint {
             () => {
-                tx(StatusMessage::TotalBytes {
+                tx(WriteVerifyEvent::TotalBytes {
                     src: file.read_file_bytes(),
                     dest: disk.count(),
                 });
@@ -224,7 +227,7 @@ impl<S: Read, D: Write> WriteOp<S, D> {
                 let written_bytes = disk.write(&buf[..])?;
                 if written_bytes == 0 {
                     checkpoint!();
-                    return Err(ErrorType::EndOfOutput);
+                    return Err(WriteVerifyError::EndOfOutput);
                 }
             }
             checkpoint!();
@@ -275,7 +278,7 @@ struct VerifyOp<S: Read, D: Read> {
 
 impl<S: Read, D: Read> VerifyOp<S, D> {
     #[inline(always)]
-    fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<(), ErrorType> {
+    fn execute(&mut self, mut tx: impl FnMut(WriteVerifyEvent)) -> Result<(), WriteVerifyError> {
         let mut file = FileSourceReader::new(self.cf, self.file_read_buf_size, &mut self.file);
         let mut disk = CountRead::new(&mut self.disk);
 
@@ -284,7 +287,7 @@ impl<S: Read, D: Read> VerifyOp<S, D> {
 
         macro_rules! checkpoint {
             () => {
-                tx(StatusMessage::TotalBytes {
+                tx(WriteVerifyEvent::TotalBytes {
                     src: file.read_file_bytes(),
                     dest: disk.count(),
                 });
@@ -303,7 +306,7 @@ impl<S: Read, D: Read> VerifyOp<S, D> {
 
                 if file_buf[..file_read_bytes] != disk_buf[..file_read_bytes] {
                     trace!(file_read_bytes, "verification failed");
-                    return Err(ErrorType::VerificationFailed);
+                    return Err(WriteVerifyError::VerificationFailed);
                 }
             }
             checkpoint!();

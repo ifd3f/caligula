@@ -11,8 +11,8 @@ use ratatui::{
 use tokio::{select, time};
 
 use crate::{
-    herder_daemon::ipc::StatusMessage,
-    herder_facade::WriterHandle,
+    herder_daemon::ipc::WriteVerifyEvent,
+    herder_facade::HerdHandle,
     logging::LogPaths,
     ui::{start::BeginParams, writer_tracking::WriterState},
 };
@@ -28,7 +28,7 @@ where
 {
     terminal: &'a mut Terminal<B>,
     events: EventStream,
-    handle: Option<WriterHandle>,
+    handle: Option<HerdHandle<WriteVerifyEvent>>,
     state: State,
     log_paths: Arc<LogPaths>,
 }
@@ -40,7 +40,7 @@ where
     #[tracing::instrument(skip_all)]
     pub fn new(
         params: &BeginParams,
-        handle: WriterHandle,
+        handle: HerdHandle<WriteVerifyEvent>,
         terminal: &'a mut Terminal<B>,
         log_paths: Arc<LogPaths>,
     ) -> Self {
@@ -95,7 +95,7 @@ async fn get_event_child_dead(ui_events: &mut EventStream) -> anyhow::Result<UIE
 #[tracing::instrument(skip_all, level = "trace")]
 async fn get_event_child_active(
     ui_events: &mut EventStream,
-    child_events: &mut BoxStream<'static, StatusMessage>,
+    child_events: &mut BoxStream<'static, WriteVerifyEvent>,
 ) -> anyhow::Result<UIEvent> {
     let sleep = tokio::time::sleep(time::Duration::from_millis(250));
     select! {

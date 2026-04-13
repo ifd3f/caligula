@@ -12,6 +12,7 @@ use indicatif::ProgressStyle;
 
 use crate::compression::CompressionFormat;
 use crate::device::WriteTarget;
+use crate::herder_daemon::ipc::WriteVerifyEvent;
 use crate::ui::writer_tracking::WriterState;
 
 use self::ask_hash::ask_hash;
@@ -21,7 +22,7 @@ use self::ask_outfile::confirm_write;
 
 use super::cli::BurnArgs;
 use super::start::BeginParams;
-use crate::herder_facade::WriterHandle;
+use crate::herder_facade::HerdHandle;
 
 mod ask_hash;
 mod ask_outfile;
@@ -45,7 +46,7 @@ pub fn do_setup_wizard(args: &BurnArgs) -> Result<Option<BeginParams>, anyhow::E
 
 #[tracing::instrument(skip_all)]
 pub async fn run_simple_burning_ui(
-    mut handle: WriterHandle,
+    mut handle: HerdHandle<WriteVerifyEvent>,
     cf: CompressionFormat,
 ) -> anyhow::Result<()> {
     let input_file_bytes = handle.initial_info.input_file_bytes;

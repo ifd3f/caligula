@@ -4,7 +4,7 @@ use tracing::{info, trace};
 
 use crate::{
     byteseries::{ByteSeries, EstimatedTime},
-    herder_daemon::ipc::{ErrorType, StatusMessage},
+    herder_daemon::ipc::{WriteVerifyError, WriteVerifyEvent},
 };
 
 /// A state machine for tracking the state of the writer, based on received
@@ -19,7 +19,7 @@ pub enum WriterState {
     },
     Finished {
         finish_time: Instant,
-        error: Option<ErrorType>,
+        error: Option<WriteVerifyError>,
         write_hist: ByteSeries,
         verify_hist: Option<ByteSeries>,
         total_write_bytes: u64,
@@ -33,31 +33,31 @@ impl WriterState {
     }
 
     #[tracing::instrument(skip_all, fields(msg), level = "debug")]
-    pub fn on_status(mut self, now: Instant, msg: Option<StatusMessage>) -> Self {
+    pub fn on_status(mut self, now: Instant, msg: Option<WriteVerifyEvent>) -> Self {
         match msg {
-            Some(StatusMessage::TotalBytes { src, dest }) => {
+            Some(WriteVerifyEvent::TotalBytes { src, dest }) => {
                 trace!("Received total bytes notification");
                 self.on_total_bytes(now, src, dest);
                 self
             }
-            Some(StatusMessage::FinishedWriting { verifying }) => {
+            Some(WriteVerifyEvent::FinishedWriting { verifying }) => {
                 info!("Received finished writing notification");
                 match self {
                     WriterState::Writing(st) => st.into_finished(now, verifying),
                     c => c,
                 }
             }
-            Some(StatusMessage::Error(reason)) => {
+            Some(WriteVerifyEvent::Error(reason)) => {
                 info!("Received error notification");
                 self.into_finished(now, Some(reason))
             }
-            Some(StatusMessage::Success) => {
+            Some(WriteVerifyEvent::Success) => {
                 info!("Received success notification");
                 self.into_finished(now, None)
             }
             None => {
                 info!("Messages terminated unexpectedly");
-                self.into_finished(now, Some(ErrorType::UnexpectedTermination))
+                self.into_finished(now, Some(WriteVerifyError::UnexpectedTermination))
             }
             other => panic!(
                 "Received nexpected child status {:#?}\nCurrent state: {:#?}",
@@ -93,7 +93,7 @@ impl WriterState {
         };
     }
 
-    fn into_finished(self, now: Instant, error: Option<ErrorType>) -> WriterState {
+    fn into_finished(self, now: Instant, error: Option<WriteVerifyError>) -> WriterState {
         match self {
             WriterState::Writing(st) => {
                 let total_write_bytes = st.write_hist.bytes_encountered();
@@ -194,7 +194,7 @@ mod tests {
 
     use crate::{
         byteseries::ByteSeries,
-        herder_daemon::ipc::{ErrorType, StatusMessage},
+        herder_daemon::ipc::{WriteVerifyError, WriteVerifyEvent},
     };
 
     use super::WriterState;
@@ -205,15 +205,15 @@ mod tests {
         let s = WriterState::initial(t0, false, 80)
             .on_status(
                 t0 + Duration::from_secs(1),
-                Some(StatusMessage::TotalBytes { src: 20, dest: 10 }),
+                Some(WriteVerifyEvent::TotalBytes { src: 20, dest: 10 }),
             )
             .on_status(
                 t0 + Duration::from_secs(2),
-                Some(StatusMessage::TotalBytes { src: 30, dest: 30 }),
+                Some(WriteVerifyEvent::TotalBytes { src: 30, dest: 30 }),
             )
             .on_status(
                 t0 + Duration::from_secs(3),
-                Some(StatusMessage::TotalBytes { src: 60, dest: 50 }),
+                Some(WriteVerifyEvent::TotalBytes { src: 60, dest: 50 }),
             );
 
         let s = match s {
@@ -229,7 +229,7 @@ mod tests {
         let t0 = Instant::now();
         let s = WriterState::initial(t0, false, 400).on_status(
             t0 + Duration::from_secs(1),
-            Some(StatusMessage::TotalBytes { src: 15, dest: 40 }),
+            Some(WriteVerifyEvent::TotalBytes { src: 15, dest: 40 }),
         );
 
         let s = match s {
@@ -244,7 +244,7 @@ mod tests {
         let t0 = Instant::now();
         let s = WriterState::initial(t0, true, 80).on_status(
             t0 + Duration::from_secs(1),
-            Some(StatusMessage::TotalBytes {
+            Some(WriteVerifyEvent::TotalBytes {
                 src: 20,
                 dest: 100000, // very big number to make errors obvious
             }),
@@ -263,7 +263,7 @@ mod tests {
         let s = WriterState::initial(t0, true, 80)
             .on_status(
                 t0 + Duration::from_secs(1),
-                Some(StatusMessage::TotalBytes { src: 20, dest: 20 }),
+                Some(WriteVerifyEvent::TotalBytes { src: 20, dest: 20 }),
             )
             .on_status(t0 + Duration::from_secs(2), None);
 
@@ -272,7 +272,7 @@ mod tests {
                 finish_time, error, ..
             } => {
                 assert_eq!(finish_time - t0, Duration::from_secs(2));
-                assert_eq!(error, Some(ErrorType::UnexpectedTermination));
+                assert_eq!(error, Some(WriteVerifyError::UnexpectedTermination));
             }
             s => panic!("Unexpected {s:#?}"),
         }
@@ -309,7 +309,7 @@ mod tests {
         };
         let s1 = s0.clone().on_status(
             finish_time + Duration::from_secs(2),
-            Some(StatusMessage::FinishedWriting { verifying: false }),
+            Some(WriteVerifyEvent::FinishedWriting { verifying: false }),
         );
 
         assert_eq!(s1, s0);

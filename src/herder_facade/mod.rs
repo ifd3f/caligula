@@ -5,7 +5,7 @@ mod facade;
 
 use futures::stream::BoxStream;
 
-use crate::herder_daemon::ipc::{self, WriterProcessConfig};
+use crate::herder_daemon::ipc::{HerdAction, HerdEvent, TopLevelHerdEvent};
 
 pub use facade::make_herder_facade_impl;
 
@@ -16,31 +16,39 @@ pub use facade::make_herder_facade_impl;
 ///
 /// Making it a trait is so that we can easily test the UI as a separate component from the backend.
 pub trait HerderFacade {
-    fn start_writer(
+    async fn start_herd<A: HerdAction>(
         &mut self,
-        args: &WriterProcessConfig,
+        action: A,
         escalated: bool,
-    ) -> impl Future<Output = Result<WriterHandle, StartWriterError>>;
+    ) -> Result<HerdHandle<A::Event>, StartWriterError<A::Event>>;
 }
 
-/// A wrapper around the events and information associated with a single writer
+/// A wrapper around the events and information associated with a single herd
 /// running inside a herder daemon.
-pub struct WriterHandle {
-    pub initial_info: ipc::InitialInfo,
+pub struct HerdHandle<E: HerdEvent> {
+    pub initial_info: E::StartInfo,
     /// The stream of events from this daemon.
-    pub events: BoxStream<'static, ipc::StatusMessage>,
+    pub events: BoxStream<'static, E>,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum StartWriterError {
+pub enum StartWriterError<E: HerdEvent> {
     #[error("Unexpected first status: {0:?}")]
-    UnexpectedFirstStatus(ipc::StatusMessage),
+    UnexpectedFirstStatus(E),
+    #[error("Explicit error signaled: {0}")]
+    Failed(E::Failure),
+    #[error("Daemon management error: {0}")]
+    DaemonError(#[from] DaemonError),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DaemonError {
     #[error("Unexpectedly disconnected from writer")]
     UnexpectedDisconnect,
-    #[error("Failed to spawn daemon (escalated={0:?}): {1:?}")]
+    #[error("Failed to spawn daemon (escalated={0:?}): {1}")]
     DaemonSpawnFailure(bool, anyhow::Error),
-    #[error("Explicit failure signaled: {0:?}")]
-    Failed(Option<ipc::ErrorType>),
     #[error("Error in transport: {0:?}")]
     TransportFailure(std::io::Error),
+    #[error("Unexpected event type: {0:?}")]
+    UnexpectedEventType(TopLevelHerdEvent),
 }

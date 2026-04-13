@@ -1,6 +1,7 @@
 use super::client::LazyHerderClient;
-use super::{HerderFacade, StartWriterError, WriterHandle};
-use crate::herder_daemon::ipc::{StatusMessage, WriterProcessConfig};
+use super::{HerdHandle, HerderFacade, StartWriterError};
+use crate::herder_daemon::ipc::{HerdAction, HerdEvent, TopLevelHerdEvent};
+use crate::herder_facade::DaemonError;
 use crate::herder_facade::client::{HerderClient, HerderClientFactory, RawHerderClient};
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, trace};
+use tracing_unwrap::ResultExt;
 
 /// Make the actual prod-used [HerderFacade].
 ///
@@ -20,14 +22,14 @@ pub fn make_herder_facade_impl(log_path: &str) -> impl HerderFacade + 'static {
     /// Simple implementor of [HerderClientFactory].
     struct ImplFactory {
         log_path: String,
-        event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, StatusMessage>>>,
+        event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, TopLevelHerdEvent>>>,
         escalated: bool,
     }
 
     impl HerderClientFactory for ImplFactory {
         type Output = RawHerderClient;
 
-        async fn make(self) -> Result<Self::Output, StartWriterError> {
+        async fn make(self) -> Result<Self::Output, DaemonError> {
             Ok(RawHerderClient::spawn_herder(
                 &self.log_path,
                 self.escalated,
@@ -59,7 +61,7 @@ pub fn make_herder_facade_impl(log_path: &str) -> impl HerderFacade + 'static {
 
 /// Implementation of the actual [HerderFacade] used by Caligula.
 struct HerderFacadeImpl<Std, Esc> {
-    event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, StatusMessage>>>,
+    event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, TopLevelHerdEvent>>>,
     next_writer_id: u64,
 
     standard_daemon: Std,
@@ -71,44 +73,52 @@ where
     Std: HerderClient,
     Esc: HerderClient,
 {
-    fn start_writer(
+    async fn start_herd<A: HerdAction>(
         &mut self,
-        args: &WriterProcessConfig,
+        args: A,
         escalated: bool,
-    ) -> impl Future<Output = Result<WriterHandle, StartWriterError>> {
-        async move {
-            let id = self.next_writer_id;
-            self.next_writer_id += 1;
+    ) -> Result<HerdHandle<A::Event>, StartWriterError<A::Event>> {
+        let id = self.next_writer_id;
+        self.next_writer_id += 1;
 
-            match escalated {
-                true => self.escalated_daemon.start_writer(id, args).await?,
-                false => self.standard_daemon.start_writer(id, args).await?,
-            }
-
-            trace!("Reading results from child");
-            let mut event_rx = UnboundedReceiverStream::new(
-                self.event_demux
-                    .lock()
-                    .unwrap()
-                    .take_receiver(id)
-                    .expect("illegal state: receiver does not exist"),
-            );
-
-            let first_msg = event_rx.next().await;
-            debug!(?first_msg, "Read raw result from child");
-
-            let initial_info = match first_msg {
-                Some(StatusMessage::InitSuccess(i)) => Ok(i),
-                Some(StatusMessage::Error(t)) => Err(StartWriterError::Failed(Some(t))),
-                Some(other) => Err(StartWriterError::UnexpectedFirstStatus(other)),
-                None => Err(StartWriterError::UnexpectedDisconnect),
-            }?;
-
-            Ok(WriterHandle {
-                events: Box::pin(event_rx),
-                initial_info,
-            })
+        match escalated {
+            true => self.escalated_daemon.start_writer(id, args).await?,
+            false => self.standard_daemon.start_writer(id, args).await?,
         }
+
+        trace!("Reading results from child");
+        let mut event_rx = UnboundedReceiverStream::new(
+            self.event_demux
+                .lock()
+                .unwrap()
+                .take_receiver(id)
+                .expect("illegal state: receiver does not exist"),
+        )
+        .filter_map(|event| {
+            std::future::ready(
+                A::Event::try_from(event)
+                    .map_err(DaemonError::UnexpectedEventType)
+                    .ok_or_log(),
+            )
+        });
+
+        let first_msg = event_rx
+            .next()
+            .await
+            .ok_or(DaemonError::UnexpectedDisconnect)?;
+        debug!(?first_msg, "Read raw result from child");
+
+        let initial_info = first_msg.downcast_as_initial_info().map_err(|other| {
+            match other.downcast_as_failure() {
+                Ok(error) => StartWriterError::Failed(error),
+                Err(other) => StartWriterError::UnexpectedFirstStatus(other),
+            }
+        })?;
+
+        Ok(HerdHandle {
+            events: Box::pin(event_rx),
+            initial_info,
+        })
     }
 }
 
