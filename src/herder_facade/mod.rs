@@ -3,10 +3,11 @@
 mod client;
 mod facade;
 
-pub use facade::HerderFacadeImpl;
 use futures::stream::BoxStream;
 
 use crate::herder_daemon::ipc::{self, WriterProcessConfig};
+
+pub use facade::make_herder_facade_impl;
 
 /// Simple facade to an object that handles the herding of all child processes and subherds.
 /// This includes lifecycle management and communication.

@@ -1,7 +1,7 @@
 use super::client::LazyHerderClient;
 use super::{HerderFacade, StartWriterError, WriterHandle};
 use crate::herder_daemon::ipc::{StatusMessage, WriterProcessConfig};
-use crate::herder_facade::client::HerderClient as _;
+use crate::herder_facade::client::{HerderClient, HerderClientFactory, RawHerderClient};
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -10,47 +10,67 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, trace};
 
-/// The actual [HerderFacade] used by Caligula.
-pub struct HerderFacadeImpl {
-    event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, StatusMessage>>>,
-    next_writer_id: u64,
+/// Make the actual prod-used [HerderFacade].
+///
+/// Doing it this way with a function is so that we can hide all of those ugly ugly ugly
+/// type signatures under a nice `impl HerderFacade + 'static`!
+pub fn make_herder_facade_impl(log_path: &str) -> impl HerderFacade + 'static {
+    let event_demux = Arc::new(std::sync::Mutex::new(EventDemuxMap::new()));
 
-    standard_daemon: LazyHerderClient,
-    escalated_daemon: LazyHerderClient,
-}
+    /// Simple implementor of [HerderClientFactory].
+    struct ImplFactory {
+        log_path: String,
+        event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, StatusMessage>>>,
+        escalated: bool,
+    }
 
-impl HerderFacadeImpl {
-    pub fn new(log_path: &str) -> Self {
-        let event_demux = Arc::new(std::sync::Mutex::new(EventDemuxMap::new()));
+    impl HerderClientFactory for ImplFactory {
+        type Output = RawHerderClient;
 
-        let cloned = event_demux.clone();
-        let standard_daemon = LazyHerderClient::new(
-            log_path.to_owned(),
-            false,
-            Box::new(move |e| {
-                cloned.lock().unwrap().handle_event(e);
-            }),
-        );
-
-        let cloned = event_demux.clone();
-        let escalated_daemon = LazyHerderClient::new(
-            log_path.to_owned(),
-            true,
-            Box::new(move |e| {
-                cloned.lock().unwrap().handle_event(e);
-            }),
-        );
-
-        Self {
-            event_demux,
-            next_writer_id: 0,
-            standard_daemon,
-            escalated_daemon,
+        async fn make(self) -> Result<Self::Output, StartWriterError> {
+            Ok(RawHerderClient::spawn_herder(
+                &self.log_path,
+                self.escalated,
+                Box::new(move |e| {
+                    self.event_demux.lock().unwrap().handle_event(e);
+                }),
+            )
+            .await?)
         }
+    }
+    let standard_daemon = LazyHerderClient::new(ImplFactory {
+        log_path: log_path.to_owned(),
+        event_demux: event_demux.clone(),
+        escalated: false,
+    });
+    let escalated_daemon = LazyHerderClient::new(ImplFactory {
+        log_path: log_path.to_owned(),
+        event_demux: event_demux.clone(),
+        escalated: true,
+    });
+
+    HerderFacadeImpl {
+        event_demux,
+        next_writer_id: 0,
+        standard_daemon,
+        escalated_daemon,
     }
 }
 
-impl HerderFacade for HerderFacadeImpl {
+/// Implementation of the actual [HerderFacade] used by Caligula.
+struct HerderFacadeImpl<Std, Esc> {
+    event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, StatusMessage>>>,
+    next_writer_id: u64,
+
+    standard_daemon: Std,
+    escalated_daemon: Esc,
+}
+
+impl<Std, Esc> HerderFacade for HerderFacadeImpl<Std, Esc>
+where
+    Std: HerderClient,
+    Esc: HerderClient,
+{
     fn start_writer(
         &mut self,
         args: &WriterProcessConfig,
@@ -60,12 +80,10 @@ impl HerderFacade for HerderFacadeImpl {
             let id = self.next_writer_id;
             self.next_writer_id += 1;
 
-            let d = match escalated {
-                true => &mut self.escalated_daemon,
-                false => &mut self.standard_daemon,
-            };
-
-            d.start_writer(id, args).await?;
+            match escalated {
+                true => self.escalated_daemon.start_writer(id, args).await?,
+                false => self.standard_daemon.start_writer(id, args).await?,
+            }
 
             trace!("Reading results from child");
             let mut event_rx = UnboundedReceiverStream::new(

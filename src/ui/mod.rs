@@ -10,7 +10,7 @@ use std::{fs::File, path::Path, sync::Arc};
 pub use self::cli::BurnArgs;
 pub use self::utils::ByteSpeed;
 use crate::{
-    herder_facade::HerderFacadeImpl,
+    herder_facade::make_herder_facade_impl,
     logging::LogPaths,
     tty::TermiosRestore,
     ui::{
@@ -40,7 +40,7 @@ pub async fn main(
         return Ok(());
     };
 
-    let mut herder = HerderFacadeImpl::new(log_paths.main());
+    let mut herder = make_herder_facade_impl(log_paths.main());
     let handle = try_start_burn(
         &mut herder,
         &begin_params.make_child_config(),

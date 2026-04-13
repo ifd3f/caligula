@@ -8,11 +8,9 @@ use tokio::io::BufWriter;
 use tokio::process::{Child, ChildStdin};
 use tracing::debug;
 
-type RawEventHandler = Box<dyn Fn((u64, StatusMessage)) + Send + 'static>;
-
 /// A very raw, low-level, write-only interface to the herder daemon.
 /// Literally doesn't even implement responses.
-pub trait HerderClient {
+pub(super) trait HerderClient {
     async fn start_writer(
         &mut self,
         id: u64,
@@ -22,36 +20,53 @@ pub trait HerderClient {
 
 /// A [HerderClient] that doesn't actually spawn the real [HerderClient] until it
 /// gets the first request.
-pub(super) struct LazyHerderClient {
-    log_path: String,
-    escalated: bool,
-
+pub(super) struct LazyHerderClient<H, F>
+where
+    H: HerderClient,
+    F: HerderClientFactory<Output = H>,
+{
     // very ugly but because of Polonius(tm) we have to implement this state machine as
-    // taking eh and passing into daemon constructor
-    eh: Option<RawEventHandler>,
-    daemon: Option<RawHerderClient>,
+    // taking factory and passing into daemon constructor
+    factory: Option<F>,
+    daemon: Option<H>,
 }
 
-impl LazyHerderClient {
-    pub fn new(log_path: String, escalated: bool, eh: RawEventHandler) -> Self {
+/// For constructing [HerderClient]s.
+///
+/// Unfortunately I can't use an AsyncFnOnce because then I'll have so many ugly ugly ugly
+/// explicit type holes and shit to patch in [LazyHerderClient] so this is the less bad option.
+pub(super) trait HerderClientFactory {
+    type Output: HerderClient;
+    async fn make(self) -> Result<Self::Output, StartWriterError>;
+}
+
+impl<H, F> LazyHerderClient<H, F>
+where
+    H: HerderClient,
+    F: HerderClientFactory<Output = H>,
+{
+    pub fn new(factory: F) -> Self {
         Self {
-            log_path,
-            escalated,
-            eh: Some(eh),
+            factory: Some(factory),
             daemon: None,
         }
     }
 
     #[tracing::instrument(skip_all)]
-    async fn ensure_daemon(&mut self) -> Result<&mut RawHerderClient, StartWriterError> {
-        if let Some(eh) = self.eh.take() {
-            self.daemon = Some(RawHerderClient::new(&self.log_path, self.escalated, eh).await?);
+    async fn ensure_daemon(&mut self) -> Result<&mut H, StartWriterError> {
+        if let Some(factory) = self.factory.take() {
+            let daemon = factory.make().await?;
+            self.daemon = Some(daemon);
         }
         Ok(self.daemon.as_mut().expect("This is an impossible state"))
     }
 }
 
-impl HerderClient for LazyHerderClient {
+impl<H, F> HerderClient for LazyHerderClient<H, F>
+where
+    H: HerderClient,
+    F: HerderClientFactory<Output = H>,
+{
     async fn start_writer(
         &mut self,
         id: u64,
@@ -73,7 +88,7 @@ pub(super) struct RawHerderClient {
 }
 
 impl RawHerderClient {
-    async fn new(
+    pub(super) async fn spawn_herder(
         log_path: &str,
         escalated: bool,
         handle_event: impl Fn((u64, StatusMessage)) + Send + 'static,
