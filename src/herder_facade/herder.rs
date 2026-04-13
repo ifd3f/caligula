@@ -1,28 +1,26 @@
 use std::process::Stdio;
-use std::sync::Arc;
 
 use super::evdist::EventDemux;
 use crate::herder_daemon::ipc::StartHerd;
 use crate::ipc_common::{read_msg_async, write_msg_async};
-use crate::logging::LogPaths;
 use crate::writer_process::ipc::ErrorType;
-use crate::writer_process::spawn_writer;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use tokio::io::BufWriter;
 use tokio::process::{Child, ChildStdin};
 use tokio::sync::mpsc;
 use tracing::{debug, trace};
-use tracing_unwrap::ResultExt;
 
 use crate::escalation::run_escalate;
 use crate::writer_process::ipc::{InitialInfo, StatusMessage, WriterProcessConfig};
+
+type RawEventHandler = Box<dyn Fn((u64, StatusMessage)) + Send + 'static>;
 
 /// Simple facade to an object that handles the herding of all child processes and subherds.
 /// This includes lifecycle management and communication.
 ///
 /// Why "Herder"? Caligula liked his horse, and horses are herded. I think. I'm not a farmer.
-/// 
+///
 /// This is done so that we can easily test the UI as a separate component from the backend.
 pub trait HerderFacade {
     fn start_writer(
@@ -35,70 +33,58 @@ pub trait HerderFacade {
 /// The actual [HerderFacade] used by Caligula.
 pub struct HerderFacadeImpl {
     event_demux: EventDemux<u64, StatusMessage>,
-    writer_tx: mpsc::UnboundedSender<(u64, StatusMessage)>,
-    log_paths: Arc<LogPaths>,
-    escalated_daemon: Option<HerderDaemonHandle>,
     next_writer_id: u64,
+
+    standard_daemon: MaybeHerder,
+    escalated_daemon: MaybeHerder,
 }
 
 impl HerderFacadeImpl {
-    pub fn new(log_paths: Arc<LogPaths>) -> Self {
+    pub fn new(log_path: &str) -> Self {
         let (writer_tx, writer_rx) = mpsc::unbounded_channel();
+
+        let cloned = writer_tx.clone();
+        let standard_daemon = MaybeHerder::new(
+            log_path.to_owned(),
+            false,
+            Box::new(move |e| {
+                cloned.send(e).unwrap();
+            }),
+        );
+
+        let escalated_daemon = MaybeHerder::new(
+            log_path.to_owned(),
+            true,
+            Box::new(move |e| {
+                writer_tx.send(e).unwrap();
+            }),
+        );
+
         Self {
-            escalated_daemon: None,
-            log_paths,
-            next_writer_id: 0,
             event_demux: EventDemux::new(writer_rx),
-            writer_tx,
+            next_writer_id: 0,
+            standard_daemon,
+            escalated_daemon,
         }
-    }
-
-    #[tracing::instrument(skip_all)]
-    async fn ensure_escalated_daemon(
-        &mut self,
-    ) -> Result<&mut HerderDaemonHandle, StartWriterError> {
-        // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
-        if self.escalated_daemon.is_none() {
-            let tx = self.writer_tx.clone();
-            self.escalated_daemon = Some(
-                HerderDaemonHandle::new(self.log_paths.main(), true, move |e| {
-                    tx.send(e).ok_or_log();
-                })
-                .await?,
-            );
-        }
-
-        Ok(self.escalated_daemon.as_mut().unwrap())
     }
 }
 
 impl HerderFacade for HerderFacadeImpl {
-    #[tracing::instrument(skip_all, fields(escalate))]
     fn start_writer(
         &mut self,
         args: &WriterProcessConfig,
         escalated: bool,
     ) -> impl Future<Output = Result<WriterHandle, StartWriterError>> {
-        async {
+        async move {
             let id = self.next_writer_id;
             self.next_writer_id += 1;
 
-            if escalated {
-                let daemon = self.ensure_escalated_daemon().await?;
-                daemon.request_new_writer(id, args).await?;
-                None
-            } else {
-                let tx = self.writer_tx.clone();
-                let cmd = spawn_writer(
-                    id,
-                    move |m| {
-                        tx.send((id, m)).ok_or_log();
-                    },
-                    args.clone(),
-                );
-
-                Some(cmd)
+            let d = match escalated {
+                true => &mut self.escalated_daemon,
+                false => &mut self.standard_daemon,
             };
+
+            d.start_writer(id, args).await?;
 
             trace!("Reading results from child");
             let mut event_rx = self.event_demux.select_key(id).unwrap();
@@ -117,6 +103,50 @@ impl HerderFacade for HerderFacadeImpl {
                 events: event_rx,
                 initial_info,
             })
+        }
+    }
+}
+
+/// The actual [HerderFacade] used by Caligula.
+struct MaybeHerder {
+    log_path: String,
+    escalated: bool,
+
+    // very ugly but because of Polonius(tm) we have to implement this state machine as
+    // taking eh and passing into daemon constructor
+    eh: Option<RawEventHandler>,
+    daemon: Option<HerderDaemonHandle>,
+}
+
+impl MaybeHerder {
+    pub fn new(log_path: String, escalated: bool, eh: RawEventHandler) -> Self {
+        Self {
+            log_path,
+            escalated,
+            eh: Some(eh),
+            daemon: None,
+        }
+    }
+
+    #[tracing::instrument(skip_all)]
+    async fn ensure_daemon(&mut self) -> Result<&mut HerderDaemonHandle, StartWriterError> {
+        if let Some(eh) = self.eh.take() {
+            self.daemon = Some(HerderDaemonHandle::new(&self.log_path, self.escalated, eh).await?);
+        }
+        Ok(self.daemon.as_mut().expect("This is an impossible state"))
+    }
+
+    fn start_writer(
+        &mut self,
+        id: u64,
+        args: &WriterProcessConfig,
+    ) -> impl Future<Output = Result<(), StartWriterError>> {
+        async move {
+            self.ensure_daemon()
+                .await?
+                .request_new_writer(id, args)
+                .await?;
+            Ok(())
         }
     }
 }

@@ -40,7 +40,7 @@ pub async fn main(
         return Ok(());
     };
 
-    let mut herder = HerderFacadeImpl::new(log_paths.clone());
+    let mut herder = HerderFacadeImpl::new(log_paths.main());
     let handle = try_start_burn(
         &mut herder,
         &begin_params.make_child_config(),
