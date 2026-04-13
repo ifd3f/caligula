@@ -7,7 +7,7 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::{self, WriteTarget},
-    herder_facade::{Herder, StartWriterError, WriterHandle},
+    herder_facade::{HerderFacade, StartWriterError, WriterHandle},
     logging::LogPaths,
     ui::{
         cli::{Interactive, UseSudo},
@@ -55,7 +55,7 @@ impl BeginParams {
 
 #[tracing::instrument(skip_all, fields(root, interactive))]
 pub async fn try_start_burn(
-    herder: &mut Herder,
+    herder: &mut HerderFacade,
     args: &WriterProcessConfig,
     root: UseSudo,
     interactive: bool,

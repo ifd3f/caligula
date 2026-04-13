@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::process::Stdio;
 use std::sync::Arc;
 
@@ -25,15 +24,15 @@ use crate::writer_process::ipc::{InitialInfo, StatusMessage, WriterProcessConfig
 ///
 /// Why "Herder"? Caligula liked his horse, and horses are herded. I think. I'm not
 /// a farmer.
-pub struct Herder {
+pub struct HerderFacade {
     event_demux: EventDemux<u64, StatusMessage>,
     writer_tx: mpsc::UnboundedSender<(u64, StatusMessage)>,
     log_paths: Arc<LogPaths>,
-    escalated_daemon: Option<EscDaemonHandle>,
+    escalated_daemon: Option<HerderDaemonHandle>,
     next_writer_id: u64,
 }
 
-impl Herder {
+impl HerderFacade {
     pub fn new(log_paths: Arc<LogPaths>) -> Self {
         let (writer_tx, writer_rx) = mpsc::unbounded_channel();
         Self {
@@ -46,42 +45,16 @@ impl Herder {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn ensure_escalated_daemon(&mut self) -> anyhow::Result<&mut EscDaemonHandle> {
+    async fn ensure_escalated_daemon(&mut self) -> anyhow::Result<&mut HerderDaemonHandle> {
         // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
         if self.escalated_daemon.is_none() {
-            let log_path = self.log_paths.main();
-            let cmd = make_escalated_daemon_spawn_command(log_path.into());
-
-            debug!("Starting child process with command: {:?}", cmd);
-            fn modify_cmd(cmd: &mut tokio::process::Command) {
-                cmd.kill_on_drop(true)
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped());
-            }
-            let mut child = run_escalate(&cmd, modify_cmd)
-                .await
-                .context("Failed to spawn escalated daemon process")?;
-
-            // make the input pusher
-            let child_rx = child.stdout.take().unwrap();
-            let event_tx = self.writer_tx.clone();
-            tokio::spawn(async move {
-                let mut child_rx = child_rx;
-                loop {
-                    // TODO dont error here
-                    let msg = read_msg_async::<(u64, StatusMessage)>(&mut child_rx)
-                        .await
-                        .unwrap();
-                    event_tx.send(msg).unwrap();
-                }
-            });
-
-            debug!(?child, "Process spawned, waiting for pipe to be opened...");
-            let child_tx = child.stdin.take().unwrap();
-            let handle = EscDaemonHandle::new(Some(child), child_tx);
-
-            self.escalated_daemon = Some(handle);
+            let tx = self.writer_tx.clone();
+            self.escalated_daemon = Some(
+                HerderDaemonHandle::new(self.log_paths.main(), true, move |e| {
+                    tx.send(e).ok_or_log();
+                })
+                .await?,
+            );
         }
 
         Ok(self.escalated_daemon.as_mut().unwrap())
@@ -146,7 +119,7 @@ pub enum StartWriterError {
     Failed(Option<ErrorType>),
 }
 
-/// A wrapper around a [ChildHandle].
+/// A wrapper around a single writer running inside a herder daemon.
 pub struct WriterHandle {
     pub(super) event_rx: BoxStream<'static, StatusMessage>,
     pub(super) initial_info: InitialInfo,
@@ -163,25 +136,71 @@ impl WriterHandle {
     }
 }
 
-/// A very low-level handle for interacting with a child process connected to our socket.
+/// A handle to a child process herder daemon.
 ///
 /// If this is dropped, the child process inside is killed, if it manages one.
-struct EscDaemonHandle {
+struct HerderDaemonHandle {
     /// We would like to kill the process on drop, if we are the direct parent of the
     /// process. So, we own a handle to it.
     pub(super) child: Option<Child>,
     pub(super) tx: BufWriter<ChildStdin>,
 }
 
-impl EscDaemonHandle {
-    pub fn new(child: Option<Child>, tx: ChildStdin) -> EscDaemonHandle {
-        Self {
-            child,
-            tx: BufWriter::new(tx),
+impl HerderDaemonHandle {
+    async fn new(
+        log_path: &str,
+        escalated: bool,
+        handle_event: impl Fn((u64, StatusMessage)) + Send + 'static,
+    ) -> anyhow::Result<Self> {
+        let proc = process_path::get_executable_path().unwrap();
+        let cmd = crate::escalation::Command {
+            proc: proc.to_str().unwrap().to_owned().into(),
+            envs: vec![],
+            args: vec!["_herder".into(), log_path.into()],
+        };
+
+        debug!("Starting child process with command: {:?}", cmd);
+        fn modify_cmd(cmd: &mut tokio::process::Command) {
+            cmd.kill_on_drop(true)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
         }
+        let mut child = match escalated {
+            true => run_escalate(&cmd, modify_cmd)
+                .await
+                .context("Failed to spawn escalated daemon process")?,
+            false => {
+                let mut c = tokio::process::Command::from(cmd);
+                modify_cmd(&mut c);
+                c.spawn()
+                    .context("Failed to spawn non-escalated daemon process")?
+            }
+        };
+
+        // make the input pusher
+        let child_rx = child.stdout.take().unwrap();
+        tokio::spawn(async move {
+            let mut child_rx = child_rx;
+            loop {
+                // TODO dont error here
+                let msg = read_msg_async::<(u64, StatusMessage)>(&mut child_rx)
+                    .await
+                    .unwrap();
+                handle_event(msg);
+            }
+        });
+
+        debug!(?child, "Process spawned, waiting for pipe to be opened...");
+        let child_tx = child.stdin.take().unwrap();
+
+        Ok(Self {
+            child: Some(child),
+            tx: BufWriter::new(child_tx),
+        })
     }
 
-    pub async fn request_new_writer(
+    async fn request_new_writer(
         &mut self,
         id: u64,
         args: &WriterProcessConfig,
@@ -197,21 +216,8 @@ impl EscDaemonHandle {
     }
 }
 
-impl core::fmt::Debug for EscDaemonHandle {
+impl core::fmt::Debug for HerderDaemonHandle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Handle").field(&self.child).finish()
-    }
-}
-
-/// Build a [Command] that, when run, spawns a process with a specific configuration.
-fn make_escalated_daemon_spawn_command<'a>(
-    log_path: Cow<'a, str>,
-) -> crate::escalation::Command<'a> {
-    let proc = process_path::get_executable_path().unwrap();
-
-    crate::escalation::Command {
-        proc: proc.to_str().unwrap().to_owned().into(),
-        envs: vec![],
-        args: vec!["_herder".into(), log_path],
     }
 }
