@@ -67,9 +67,7 @@ pub async fn try_start_burn(
         Err(e) => e,
     };
 
-    let dc = err.downcast::<StartWriterError>()?;
-
-    if let StartWriterError::Failed(Some(ErrorType::PermissionDenied)) = &dc {
+    if let StartWriterError::Failed(Some(ErrorType::PermissionDenied)) = &err {
         match (root, interactive) {
             (UseSudo::Ask, true) => {
                 debug!("Failure due to insufficient perms, asking user to escalate");
@@ -85,17 +83,17 @@ pub async fn try_start_burn(
                 .prompt()?;
 
                 if response {
-                    return herder.start_writer(args, true).await;
+                    return Ok(herder.start_writer(args, true).await?);
                 }
             }
             (UseSudo::Always, _) => {
-                return herder.start_writer(args, true).await;
+                return Ok(herder.start_writer(args, true).await?);
             }
             _ => {}
         }
     }
 
-    Err(dc.into())
+    Err(err.into())
 }
 
 pub async fn begin_writing(

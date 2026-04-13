@@ -7,7 +7,6 @@ use crate::ipc_common::{read_msg_async, write_msg_async};
 use crate::logging::LogPaths;
 use crate::writer_process::ipc::ErrorType;
 use crate::writer_process::spawn_writer;
-use anyhow::Context;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use tokio::io::BufWriter;
@@ -45,7 +44,9 @@ impl HerderFacade {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn ensure_escalated_daemon(&mut self) -> anyhow::Result<&mut HerderDaemonHandle> {
+    async fn ensure_escalated_daemon(
+        &mut self,
+    ) -> Result<&mut HerderDaemonHandle, StartWriterError> {
         // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
         if self.escalated_daemon.is_none() {
             let tx = self.writer_tx.clone();
@@ -65,16 +66,13 @@ impl HerderFacade {
         &mut self,
         args: &WriterProcessConfig,
         escalated: bool,
-    ) -> anyhow::Result<WriterHandle> {
+    ) -> Result<WriterHandle, StartWriterError> {
         let id = self.next_writer_id;
         self.next_writer_id += 1;
 
         if escalated {
             let daemon = self.ensure_escalated_daemon().await?;
-            daemon
-                .request_new_writer(id, args)
-                .await
-                .context("Failed to send while requesting new writer")?;
+            daemon.request_new_writer(id, args).await?;
             None
         } else {
             let tx = self.writer_tx.clone();
@@ -109,14 +107,18 @@ impl HerderFacade {
     }
 }
 
-#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+#[derive(Debug, thiserror::Error)]
 pub enum StartWriterError {
     #[error("Unexpected first status: {0:?}")]
     UnexpectedFirstStatus(StatusMessage),
     #[error("Unexpectedly disconnected from writer")]
     UnexpectedDisconnect,
+    #[error("Failed to spawn daemon (escalated={0:?}): {1:?}")]
+    DaemonSpawnFailure(bool, anyhow::Error),
     #[error("Explicit failure signaled: {0:?}")]
     Failed(Option<ErrorType>),
+    #[error("Error in transport: {0:?}")]
+    TransportFailure(std::io::Error),
 }
 
 /// A wrapper around the events and information associated with a single writer
@@ -142,7 +144,7 @@ impl HerderDaemonHandle {
         log_path: &str,
         escalated: bool,
         handle_event: impl Fn((u64, StatusMessage)) + Send + 'static,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self, StartWriterError> {
         let proc = process_path::get_executable_path().unwrap();
         let cmd = crate::escalation::Command {
             proc: proc.to_str().unwrap().to_owned().into(),
@@ -160,12 +162,12 @@ impl HerderDaemonHandle {
         let mut child = match escalated {
             true => run_escalate(&cmd, modify_cmd)
                 .await
-                .context("Failed to spawn escalated daemon process")?,
+                .map_err(|e| StartWriterError::DaemonSpawnFailure(true, e.into()))?,
             false => {
                 let mut c = tokio::process::Command::from(cmd);
                 modify_cmd(&mut c);
                 c.spawn()
-                    .context("Failed to spawn non-escalated daemon process")?
+                    .map_err(|e| StartWriterError::DaemonSpawnFailure(false, e.into()))?
             }
         };
 
@@ -195,7 +197,7 @@ impl HerderDaemonHandle {
         &mut self,
         id: u64,
         args: &WriterProcessConfig,
-    ) -> Result<(), std::io::Error> {
+    ) -> Result<(), StartWriterError> {
         write_msg_async(
             &mut self.tx,
             &StartHerd {
@@ -204,6 +206,7 @@ impl HerderDaemonHandle {
             },
         )
         .await
+        .map_err(StartWriterError::TransportFailure)
     }
 }
 

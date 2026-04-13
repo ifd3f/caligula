@@ -8,7 +8,10 @@ use std::process::Stdio;
 pub use self::unix::Command;
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum EscalationError {
+    #[error("Failed to spawn process: {0}")]
+    SpawnFailure(std::io::Error),
+
     #[error("Could not become root! Searched for sudo, doas, su")]
     UnixNotDetected,
 
@@ -20,14 +23,14 @@ pub enum Error {
 pub async fn run_escalate(
     cmd: &Command<'_>,
     modify: impl FnOnce(&mut tokio::process::Command),
-) -> anyhow::Result<tokio::process::Child> {
+) -> Result<tokio::process::Child, EscalationError> {
     #[cfg(target_os = "linux")]
     {
         use self::unix::EscalationMethod;
 
         let mut cmd: tokio::process::Command = EscalationMethod::detect()?.wrap_command(cmd).into();
         modify(&mut cmd);
-        Ok(cmd.spawn()?)
+        Ok(cmd.spawn().map_err(EscalationError::SpawnFailure)?)
     }
 
     #[cfg(target_os = "macos")]
