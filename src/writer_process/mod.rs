@@ -36,20 +36,24 @@ const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
 const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
 pub fn spawn_writer(
+    id: u64,
     mut tx: impl FnMut(StatusMessage) + Send + 'static,
     init_config: WriterProcessConfig,
 ) -> JoinHandle<()> {
-    std::thread::spawn(move || {
-        debug!("Spawned child thread {:?}", std::thread::current().id());
+    std::thread::Builder::new()
+        .name(format!("writer/{id}"))
+        .spawn(move || {
+            debug!("Spawned child thread {:?}", std::thread::current().id());
 
-        let final_msg = match run(&mut tx, &init_config) {
-            Ok(_) => StatusMessage::Success,
-            Err(e) => StatusMessage::Error(e),
-        };
+            let final_msg = match run(&mut tx, &init_config) {
+                Ok(_) => StatusMessage::Success,
+                Err(e) => StatusMessage::Error(e),
+            };
 
-        info!(?final_msg, "Completed");
-        tx(final_msg);
-    })
+            info!(?final_msg, "Completed");
+            tx(final_msg);
+        })
+        .unwrap()
 }
 
 fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<(), ErrorType> {

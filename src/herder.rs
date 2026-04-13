@@ -2,8 +2,8 @@ use std::borrow::Cow;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use crate::herder_daemon::ipc::StartHerd;
 use crate::evdist::EventDemux;
+use crate::herder_daemon::ipc::StartHerd;
 use crate::ipc_common::{read_msg_async, write_msg_async};
 use crate::logging::LogPaths;
 use crate::writer_process::ipc::ErrorType;
@@ -49,8 +49,8 @@ impl Herder {
     async fn ensure_escalated_daemon(&mut self) -> anyhow::Result<&mut EscDaemonHandle> {
         // Can't use if let here because of polonius! so we gotta do this ugly-ass workaround
         if self.escalated_daemon.is_none() {
-            let log_path = self.log_paths.escalated_daemon();
-            let cmd = make_escalated_daemon_spawn_command(log_path.to_string_lossy());
+            let log_path = self.log_paths.main();
+            let cmd = make_escalated_daemon_spawn_command(log_path.into());
 
             debug!("Starting child process with command: {:?}", cmd);
             fn modify_cmd(cmd: &mut tokio::process::Command) {
@@ -106,6 +106,7 @@ impl Herder {
         } else {
             let tx = self.writer_tx.clone();
             let cmd = spawn_writer(
+                id,
                 move |m| {
                     tx.send((id, m)).ok_or_log();
                 },

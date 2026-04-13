@@ -26,6 +26,7 @@ pub async fn main() {
         info!(?msg, "Received StartAction request");
 
         let child = spawn_writer(
+            msg.id,
             move |m| {
                 write_msg(std::io::stdout(), &(msg.id, m)).ok_or_log();
             },

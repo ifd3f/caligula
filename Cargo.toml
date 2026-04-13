@@ -48,6 +48,7 @@ tracing = { version = "0.1.41", features = [
     "log",
     "release_max_level_debug",
 ] }
+tracing-panic = "0.1.2"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 tracing-unwrap = "1.0.1"
 which = "6.0.3"

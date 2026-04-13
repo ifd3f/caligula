@@ -2,15 +2,14 @@ use clap::{CommandFactory as _, Parser};
 use tracing::debug;
 
 mod byteseries;
-mod childproc_common;
 mod compression;
 mod device;
-mod herder_daemon;
 mod escalation;
 mod evdist;
 mod hash;
 mod hashfile;
 mod herder;
+mod herder_daemon;
 mod ipc_common;
 mod logging;
 mod native;
@@ -65,7 +64,7 @@ async fn main() {
             }
         }
         Command::HerderDaemon(args) => {
-            childproc_common::child_init::<()>(&args.log_file);
+            logging::init_logging_child(args.log_file);
             herder_daemon::main().await;
         }
     }
