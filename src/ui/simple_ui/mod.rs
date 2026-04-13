@@ -20,7 +20,7 @@ use self::ask_outfile::confirm_write;
 
 use super::cli::BurnArgs;
 use super::start::BeginParams;
-use crate::herder::WriterHandle;
+use crate::herder_facade::WriterHandle;
 
 mod ask_hash;
 mod ask_outfile;

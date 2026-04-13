@@ -10,7 +10,7 @@ use std::{fs::File, path::Path, sync::Arc};
 pub use self::cli::BurnArgs;
 pub use self::utils::ByteSpeed;
 use crate::{
-    herder::Herder,
+    herder_facade::Herder,
     logging::LogPaths,
     tty::TermiosRestore,
     ui::{

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use crate::evdist::EventDemux;
+use super::evdist::EventDemux;
 use crate::herder_daemon::ipc::StartHerd;
 use crate::ipc_common::{read_msg_async, write_msg_async};
 use crate::logging::LogPaths;
@@ -204,7 +204,7 @@ impl core::fmt::Debug for EscDaemonHandle {
 }
 
 /// Build a [Command] that, when run, spawns a process with a specific configuration.
-pub fn make_escalated_daemon_spawn_command<'a>(
+fn make_escalated_daemon_spawn_command<'a>(
     log_path: Cow<'a, str>,
 ) -> crate::escalation::Command<'a> {
     let proc = process_path::get_executable_path().unwrap();

@@ -7,7 +7,7 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::{self, WriteTarget},
-    herder::{Herder, StartWriterError, WriterHandle},
+    herder_facade::{Herder, StartWriterError, WriterHandle},
     logging::LogPaths,
     ui::{
         cli::{Interactive, UseSudo},
