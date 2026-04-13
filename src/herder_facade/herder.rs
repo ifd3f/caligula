@@ -64,12 +64,12 @@ impl HerderFacade {
     pub async fn start_writer(
         &mut self,
         args: &WriterProcessConfig,
-        escalate: bool,
+        escalated: bool,
     ) -> anyhow::Result<WriterHandle> {
         let id = self.next_writer_id;
         self.next_writer_id += 1;
 
-        if escalate {
+        if escalated {
             let daemon = self.ensure_escalated_daemon().await?;
             daemon
                 .request_new_writer(id, args)
@@ -103,7 +103,7 @@ impl HerderFacade {
         }?;
 
         Ok(WriterHandle {
-            event_rx,
+            events: event_rx,
             initial_info,
         })
     }
@@ -119,21 +119,12 @@ pub enum StartWriterError {
     Failed(Option<ErrorType>),
 }
 
-/// A wrapper around a single writer running inside a herder daemon.
+/// A wrapper around the events and information associated with a single writer
+/// running inside a herder daemon.
 pub struct WriterHandle {
-    pub(super) event_rx: BoxStream<'static, StatusMessage>,
-    pub(super) initial_info: InitialInfo,
-}
-
-impl WriterHandle {
-    pub async fn next_message(&mut self) -> anyhow::Result<Option<StatusMessage>> {
-        // TODO: is this Result even necessary????
-        Ok(self.event_rx.next().await)
-    }
-
-    pub fn initial_info(&self) -> &InitialInfo {
-        &self.initial_info
-    }
+    pub initial_info: InitialInfo,
+    /// The stream of events from this daemon.
+    pub events: BoxStream<'static, StatusMessage>,
 }
 
 /// A handle to a child process herder daemon.
