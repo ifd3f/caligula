@@ -345,7 +345,7 @@ mod helpers {
     }
 
     pub struct WriteTestResult {
-        pub requested_reads: Vec<usize>,
+        pub _requested_reads: Vec<usize>,
         pub requested_writes: Vec<Vec<u8>>,
         pub file: Vec<u8>,
         pub disk: Vec<u8>,
@@ -384,7 +384,7 @@ mod helpers {
             }
 
             WriteTestResult {
-                requested_reads: file.requested_reads,
+                _requested_reads: file.requested_reads,
                 requested_writes: disk.requested_writes,
                 file: file_data,
                 disk: disk_data,
@@ -404,9 +404,9 @@ mod helpers {
     }
 
     pub struct VerifyTestResult {
-        pub requested_file_reads: Vec<usize>,
-        pub requested_disk_reads: Vec<usize>,
-        pub events: Vec<WriteVerifyEvent>,
+        pub _requested_file_reads: Vec<usize>,
+        pub _requested_disk_reads: Vec<usize>,
+        pub _events: Vec<WriteVerifyEvent>,
         pub return_val: Result<(), WriteVerifyError>,
     }
 
@@ -429,9 +429,9 @@ mod helpers {
             .execute(|e| events.push(e));
 
             VerifyTestResult {
-                requested_file_reads: file.requested_reads,
-                requested_disk_reads: disk.requested_reads,
-                events,
+                _requested_file_reads: file.requested_reads,
+                _requested_disk_reads: disk.requested_reads,
+                _events: events,
                 return_val: verification_result,
             }
         }

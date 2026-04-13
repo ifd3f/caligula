@@ -49,14 +49,14 @@ impl ipc::HerdEvent for WriteVerifyEvent {
     fn downcast_as_initial_info(self) -> Result<Self::StartInfo, Self> {
         match self {
             WriteVerifyEvent::InitSuccess(e) => Ok(e),
-            other => Err(other)
+            other => Err(other),
         }
     }
 
     fn downcast_as_failure(self) -> Result<Self::Failure, Self> {
         match self {
             WriteVerifyEvent::Error(e) => Ok(e),
-            other => Err(other)
+            other => Err(other),
         }
     }
 }
