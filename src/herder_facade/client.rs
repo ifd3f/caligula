@@ -10,18 +10,29 @@ use tracing::debug;
 
 type RawEventHandler = Box<dyn Fn((u64, StatusMessage)) + Send + 'static>;
 
-/// The actual [HerderFacade] used by Caligula.
-pub(super) struct MaybeHerder {
+/// A very raw, low-level, write-only interface to the herder daemon.
+/// Literally doesn't even implement responses.
+pub trait HerderClient {
+    async fn start_writer(
+        &mut self,
+        id: u64,
+        args: &WriterProcessConfig,
+    ) -> Result<(), StartWriterError>;
+}
+
+/// A [HerderClient] that doesn't actually spawn the real [HerderClient] until it
+/// gets the first request.
+pub(super) struct LazyHerderClient {
     log_path: String,
     escalated: bool,
 
     // very ugly but because of Polonius(tm) we have to implement this state machine as
     // taking eh and passing into daemon constructor
     eh: Option<RawEventHandler>,
-    daemon: Option<HerderDaemonHandle>,
+    daemon: Option<RawHerderClient>,
 }
 
-impl MaybeHerder {
+impl LazyHerderClient {
     pub fn new(log_path: String, escalated: bool, eh: RawEventHandler) -> Self {
         Self {
             log_path,
@@ -32,39 +43,36 @@ impl MaybeHerder {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn ensure_daemon(&mut self) -> Result<&mut HerderDaemonHandle, StartWriterError> {
+    async fn ensure_daemon(&mut self) -> Result<&mut RawHerderClient, StartWriterError> {
         if let Some(eh) = self.eh.take() {
-            self.daemon = Some(HerderDaemonHandle::new(&self.log_path, self.escalated, eh).await?);
+            self.daemon = Some(RawHerderClient::new(&self.log_path, self.escalated, eh).await?);
         }
         Ok(self.daemon.as_mut().expect("This is an impossible state"))
     }
+}
 
-    pub fn start_writer(
+impl HerderClient for LazyHerderClient {
+    async fn start_writer(
         &mut self,
         id: u64,
         args: &WriterProcessConfig,
-    ) -> impl Future<Output = Result<(), StartWriterError>> {
-        async move {
-            self.ensure_daemon()
-                .await?
-                .request_new_writer(id, args)
-                .await?;
-            Ok(())
-        }
+    ) -> Result<(), StartWriterError> {
+        self.ensure_daemon().await?.start_writer(id, args).await?;
+        Ok(())
     }
 }
 
-/// A handle to a child process herder daemon.
+/// A low-level handle to a child process herder daemon.
 ///
 /// If this is dropped, the child process inside is killed, if it manages one.
-pub(super) struct HerderDaemonHandle {
+pub(super) struct RawHerderClient {
     /// We would like to kill the process on drop, if we are the direct parent of the
     /// process. So, we own a handle to it.
     pub(super) _child: Option<Child>,
     pub(super) tx: BufWriter<ChildStdin>,
 }
 
-impl HerderDaemonHandle {
+impl RawHerderClient {
     async fn new(
         log_path: &str,
         escalated: bool,
@@ -117,8 +125,10 @@ impl HerderDaemonHandle {
             tx: BufWriter::new(child_tx),
         })
     }
+}
 
-    async fn request_new_writer(
+impl HerderClient for RawHerderClient {
+    async fn start_writer(
         &mut self,
         id: u64,
         args: &WriterProcessConfig,

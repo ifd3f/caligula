@@ -1,6 +1,7 @@
-use super::client::MaybeHerder;
+use super::client::LazyHerderClient;
 use super::{HerderFacade, StartWriterError, WriterHandle};
 use crate::herder_daemon::ipc::{StatusMessage, WriterProcessConfig};
+use crate::herder_facade::client::HerderClient as _;
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::hash::Hash;
@@ -14,8 +15,8 @@ pub struct HerderFacadeImpl {
     event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, StatusMessage>>>,
     next_writer_id: u64,
 
-    standard_daemon: MaybeHerder,
-    escalated_daemon: MaybeHerder,
+    standard_daemon: LazyHerderClient,
+    escalated_daemon: LazyHerderClient,
 }
 
 impl HerderFacadeImpl {
@@ -23,7 +24,7 @@ impl HerderFacadeImpl {
         let event_demux = Arc::new(std::sync::Mutex::new(EventDemuxMap::new()));
 
         let cloned = event_demux.clone();
-        let standard_daemon = MaybeHerder::new(
+        let standard_daemon = LazyHerderClient::new(
             log_path.to_owned(),
             false,
             Box::new(move |e| {
@@ -32,7 +33,7 @@ impl HerderFacadeImpl {
         );
 
         let cloned = event_demux.clone();
-        let escalated_daemon = MaybeHerder::new(
+        let escalated_daemon = LazyHerderClient::new(
             log_path.to_owned(),
             true,
             Box::new(move |e| {
