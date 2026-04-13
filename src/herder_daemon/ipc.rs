@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-pub use super::writer_process::ipc::{
-    ErrorType, InitialInfo, StatusMessage, WriterProcessConfig,
-};
+pub use super::writer_process::ipc::{ErrorType, InitialInfo, StatusMessage, WriterProcessConfig};
 
 /// Tell the herder to start a herd for performing an arbitrary action.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

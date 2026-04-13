@@ -7,6 +7,7 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::{self, WriteTarget},
+    herder_daemon::ipc::{ErrorType, WriterProcessConfig},
     herder_facade::{HerderFacade, StartWriterError, WriterHandle},
     logging::LogPaths,
     ui::{
@@ -15,7 +16,6 @@ use crate::{
         simple_ui::run_simple_burning_ui,
         utils::TUICapture,
     },
-    herder_daemon::ipc::{ErrorType, WriterProcessConfig},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone)]

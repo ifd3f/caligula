@@ -4,8 +4,8 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::info;
 
 use crate::{
-    ui::{start::BeginParams, writer_tracking::WriterState},
     herder_daemon::ipc::StatusMessage,
+    ui::{start::BeginParams, writer_tracking::WriterState},
 };
 
 use super::widgets::{QuitModal, QuitModalResult, SpeedChartState};

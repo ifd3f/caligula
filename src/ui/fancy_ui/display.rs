@@ -11,10 +11,10 @@ use ratatui::{
 use tokio::{select, time};
 
 use crate::{
+    herder_daemon::ipc::StatusMessage,
     herder_facade::WriterHandle,
     logging::LogPaths,
     ui::{start::BeginParams, writer_tracking::WriterState},
-    herder_daemon::ipc::StatusMessage,
 };
 
 use super::{
