@@ -19,15 +19,11 @@ pub(super) trait HerderClient {
 
 /// A [HerderClient] that doesn't actually spawn the real [HerderClient] until it
 /// gets the first request.
-pub(super) struct LazyHerderClient<H, F>
-where
-    H: HerderClient,
-    F: HerderClientFactory<Output = H>,
-{
+pub(super) struct LazyHerderClient<F: HerderClientFactory> {
     // very ugly but because of Polonius(tm) we have to implement this state machine as
     // taking factory and passing into daemon constructor
     factory: Option<F>,
-    daemon: Option<H>,
+    daemon: Option<F::Output>,
 }
 
 /// For constructing [HerderClient]s.
@@ -36,14 +32,11 @@ where
 /// explicit type holes and shit to patch in [LazyHerderClient] so this is the less bad option.
 pub(super) trait HerderClientFactory {
     type Output: HerderClient;
+
     async fn make(self) -> Result<Self::Output, DaemonError>;
 }
 
-impl<H, F> LazyHerderClient<H, F>
-where
-    H: HerderClient,
-    F: HerderClientFactory<Output = H>,
-{
+impl<F: HerderClientFactory> LazyHerderClient<F> {
     pub fn new(factory: F) -> Self {
         Self {
             factory: Some(factory),
@@ -52,7 +45,7 @@ where
     }
 
     #[tracing::instrument(skip_all)]
-    async fn ensure_daemon(&mut self) -> Result<&mut H, DaemonError> {
+    async fn ensure_daemon(&mut self) -> Result<&mut F::Output, DaemonError> {
         if let Some(factory) = self.factory.take() {
             let daemon = factory.make().await?;
             self.daemon = Some(daemon);
@@ -61,11 +54,7 @@ where
     }
 }
 
-impl<H, F> HerderClient for LazyHerderClient<H, F>
-where
-    H: HerderClient,
-    F: HerderClientFactory<Output = H>,
-{
+impl<F: HerderClientFactory> HerderClient for LazyHerderClient<F> {
     async fn start_writer<A: HerdAction>(
         &mut self,
         id: u64,
