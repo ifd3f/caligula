@@ -6,11 +6,13 @@
 
 use std::time::Instant;
 
+use futures::StreamExt;
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 
 use crate::compression::CompressionFormat;
 use crate::device::WriteTarget;
+use crate::herder_daemon::ipc::WriteVerifyEvent;
 use crate::ui::writer_tracking::WriterState;
 
 use self::ask_hash::ask_hash;
@@ -20,7 +22,7 @@ use self::ask_outfile::confirm_write;
 
 use super::cli::BurnArgs;
 use super::start::BeginParams;
-use crate::herder::WriterHandle;
+use crate::herder_facade::HerdHandle;
 
 mod ask_hash;
 mod ask_outfile;
@@ -44,10 +46,10 @@ pub fn do_setup_wizard(args: &BurnArgs) -> Result<Option<BeginParams>, anyhow::E
 
 #[tracing::instrument(skip_all)]
 pub async fn run_simple_burning_ui(
-    mut handle: WriterHandle,
+    mut handle: HerdHandle<WriteVerifyEvent>,
     cf: CompressionFormat,
 ) -> anyhow::Result<()> {
-    let input_file_bytes = handle.initial_info().input_file_bytes;
+    let input_file_bytes = handle.initial_info.input_file_bytes;
     let write_progress = ProgressBar::new(100).with_message("Burning").with_style(
         ProgressStyle::with_template(
             "[{elapsed_precise}] {msg:>10} {wide_bar:.green/black} {percent:>3}%",
@@ -64,7 +66,7 @@ pub async fn run_simple_burning_ui(
     let mut child_state = WriterState::initial(Instant::now(), !cf.is_identity(), input_file_bytes);
 
     loop {
-        let x = handle.next_message().await?;
+        let x = handle.events.next().await;
         child_state = child_state.on_status(Instant::now(), x);
         match &child_state {
             WriterState::Writing(b) => {

@@ -7,7 +7,8 @@ use tracing::debug;
 use crate::{
     compression::CompressionFormat,
     device::{self, WriteTarget},
-    herder::{Herder, StartWriterError, WriterHandle},
+    herder_daemon::ipc::{WriteVerifyAction, WriteVerifyError, WriteVerifyEvent},
+    herder_facade::{HerdHandle, HerderFacade, StartWriterError},
     logging::LogPaths,
     ui::{
         cli::{Interactive, UseSudo},
@@ -15,7 +16,6 @@ use crate::{
         simple_ui::run_simple_burning_ui,
         utils::TUICapture,
     },
-    writer_process::ipc::{ErrorType, WriterProcessConfig},
 };
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -41,8 +41,8 @@ impl BeginParams {
         })
     }
 
-    pub fn make_child_config(&self) -> WriterProcessConfig {
-        WriterProcessConfig {
+    pub fn make_child_config(&self) -> WriteVerifyAction {
+        WriteVerifyAction {
             dest: self.target.devnode.clone(),
             src: self.input_file.clone(),
             verify: true,
@@ -55,21 +55,19 @@ impl BeginParams {
 
 #[tracing::instrument(skip_all, fields(root, interactive))]
 pub async fn try_start_burn(
-    herder: &mut Herder,
-    args: &WriterProcessConfig,
+    herder: &mut impl HerderFacade,
+    args: &WriteVerifyAction,
     root: UseSudo,
     interactive: bool,
-) -> anyhow::Result<WriterHandle> {
-    let err = match herder.start_writer(args, false).await {
+) -> anyhow::Result<HerdHandle<WriteVerifyEvent>> {
+    let err = match herder.start_herd(args.clone(), false).await {
         Ok(p) => {
             return Ok(p);
         }
         Err(e) => e,
     };
 
-    let dc = err.downcast::<StartWriterError>()?;
-
-    if let StartWriterError::Failed(Some(ErrorType::PermissionDenied)) = &dc {
+    if let StartWriterError::Failed(WriteVerifyError::PermissionDenied) = &err {
         match (root, interactive) {
             (UseSudo::Ask, true) => {
                 debug!("Failure due to insufficient perms, asking user to escalate");
@@ -85,23 +83,23 @@ pub async fn try_start_burn(
                 .prompt()?;
 
                 if response {
-                    return herder.start_writer(args, true).await;
+                    return Ok(herder.start_herd(args.clone(), true).await?);
                 }
             }
             (UseSudo::Always, _) => {
-                return herder.start_writer(args, true).await;
+                return Ok(herder.start_herd(args.clone(), true).await?);
             }
             _ => {}
         }
     }
 
-    Err(dc.into())
+    Err(err.into())
 }
 
 pub async fn begin_writing(
     interactive: Interactive,
     params: BeginParams,
-    handle: WriterHandle,
+    handle: HerdHandle<WriteVerifyEvent>,
     log_paths: Arc<LogPaths>,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");

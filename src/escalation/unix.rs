@@ -4,7 +4,7 @@ use itertools::Itertools;
 use shell_words::{join, quote};
 use which::which;
 
-use super::Error;
+use super::EscalationError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, derive_more::Display)]
 pub enum EscalationMethod {
@@ -31,13 +31,13 @@ impl EscalationMethod {
     // The first esalation found tool will be used
     const ALL: [EscalationMethod; 4] = [Self::Sudo, Self::Doas, Self::Run0, Self::Su];
 
-    pub fn detect() -> Result<Self, Error> {
+    pub fn detect() -> Result<Self, EscalationError> {
         for m in Self::ALL {
             if m.is_supported() {
                 return Ok(m);
             }
         }
-        Err(Error::UnixNotDetected)
+        Err(EscalationError::UnixNotDetected)
     }
 
     fn is_supported(&self) -> bool {

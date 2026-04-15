@@ -1,9 +1,10 @@
+use super::EscalationError;
 use super::unix::{Command, EscalationMethod};
 
 pub async fn wrap_osascript_escalation(
     raw: &Command<'_>,
     modify: impl FnOnce(&mut tokio::process::Command) -> (),
-) -> anyhow::Result<tokio::process::Child> {
+) -> Result<tokio::process::Child, EscalationError> {
     for _ in 0..3 {
         // User-friendly thing that lets you use touch ID if you wanted.
         // https://apple.stackexchange.com/questions/23494/what-option-should-i-give-the-sudo-command-to-have-the-password-asked-through-a
@@ -13,9 +14,11 @@ pub async fn wrap_osascript_escalation(
             .arg("-e")
             .arg("do shell script \"mkdir -p /var/db/sudo/$USER; touch /var/db/sudo/$USER\" with administrator privileges")
             .kill_on_drop(true)
-            .spawn()?
+            .spawn()
+            .map_err(|_| EscalationError::MacOSDenial)?
             .wait()
-            .await?;
+            .await
+            .map_err(EscalationError::SpawnFailure)?;
 
         if result.success() {
             break;
@@ -24,5 +27,5 @@ pub async fn wrap_osascript_escalation(
 
     let mut cmd: tokio::process::Command = EscalationMethod::Sudo.wrap_command(raw).into();
     modify(&mut cmd);
-    Ok(cmd.spawn()?)
+    Ok(cmd.spawn().map_err(EscalationError::SpawnFailure)?)
 }

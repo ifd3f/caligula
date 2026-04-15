@@ -1,4 +1,4 @@
-use crate::ui::utils::ByteSpeed;
+use crate::ui::ByteSpeed;
 use std::ops::Add;
 use std::{fmt::Display, time::Instant};
 
@@ -173,7 +173,7 @@ mod tests {
     use super::EstimatedTime;
     use super::{ByteSeries, EstimatedTimeInfo};
     use approx::assert_relative_eq;
-    use chrono::{Local, TimeZone, Utc};
+    use chrono::{Local, TimeZone};
     use test_case::test_case;
 
     fn example_2s() -> ByteSeries {

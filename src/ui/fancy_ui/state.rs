@@ -4,8 +4,8 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::info;
 
 use crate::{
+    herder_daemon::ipc::WriteVerifyEvent,
     ui::{start::BeginParams, writer_tracking::WriterState},
-    writer_process::ipc::StatusMessage,
 };
 
 use super::widgets::{QuitModal, QuitModalResult, SpeedChartState};
@@ -13,7 +13,7 @@ use super::widgets::{QuitModal, QuitModalResult, SpeedChartState};
 #[derive(Debug, PartialEq, Clone)]
 pub enum UIEvent {
     SleepTimeout,
-    RecvChildStatus(Instant, Option<StatusMessage>),
+    RecvChildStatus(Instant, Option<WriteVerifyEvent>),
     RecvTermEvent(Event),
 }
 

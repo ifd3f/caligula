@@ -5,23 +5,21 @@
 use std::fs::OpenOptions;
 use std::os::unix::process::ExitStatusExt;
 use std::process::{Command, Stdio};
+use std::thread::JoinHandle;
 use std::{
     fs::File,
     io::{self, Read, Seek, Write},
 };
 
 use aligned_vec::avec_rt;
-use interprocess::local_socket::{GenericFilePath, prelude::*};
 use tracing::{debug, info, trace};
 use tracing_unwrap::ResultExt;
 
-use crate::childproc_common::child_init;
 use crate::compression::CompressionFormat;
 use crate::device;
-use crate::ipc_common::write_msg;
 
-use crate::writer_process::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
-use crate::writer_process::xplat::open_blockdev;
+use self::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
+use self::xplat::open_blockdev;
 
 use ipc::*;
 
@@ -37,31 +35,31 @@ const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
 /// How many bytes should be written before we perform a checkpoint (aka report progress).
 const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
-/// This is intended to be run in a forked child process, possibly with
-/// escalated permissions.
-pub fn main() {
-    let (sock, args) = child_init::<WriterProcessConfig>();
+pub fn spawn_writer(
+    id: u64,
+    mut tx: impl FnMut(WriteVerifyEvent) + Send + 'static,
+    init_config: WriteVerifyAction,
+) -> JoinHandle<()> {
+    std::thread::Builder::new()
+        .name(format!("writer/{id}"))
+        .spawn(move || {
+            debug!("Spawned child thread {:?}", std::thread::current().id());
 
-    info!("Opening socket {sock}");
-    let mut stream =
-        LocalSocketStream::connect(sock.to_fs_name::<GenericFilePath>().unwrap_or_log())
-            .unwrap_or_log();
+            let final_msg = match run(&mut tx, &init_config) {
+                Ok(_) => WriteVerifyEvent::Success,
+                Err(e) => WriteVerifyEvent::Error(e),
+            };
 
-    let mut tx = move |msg: StatusMessage| {
-        write_msg(&mut stream, &msg).expect("Failed to write message");
-        stream.flush().expect("Failed to flush stream");
-    };
-
-    let final_msg = match run(&mut tx, &args) {
-        Ok(_) => StatusMessage::Success,
-        Err(e) => StatusMessage::Error(e),
-    };
-
-    info!(?final_msg, "Completed");
-    tx(final_msg);
+            info!(?final_msg, "Completed");
+            tx(final_msg);
+        })
+        .unwrap()
 }
 
-fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<(), ErrorType> {
+fn run(
+    mut tx: impl FnMut(WriteVerifyEvent),
+    args: &WriteVerifyAction,
+) -> Result<(), WriteVerifyError> {
     if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
         let mut command = Command::new("diskutil");
         command
@@ -85,7 +83,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
 
         let exit_code = exit.into_raw();
         if !exit.success() {
-            return Err(ErrorType::FailedToUnmount {
+            return Err(WriteVerifyError::FailedToUnmount {
                 message: format!("stderr: {stderr}\nstdout: {stdout}"),
                 exit_code,
             });
@@ -113,7 +111,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
         }
     });
 
-    tx(StatusMessage::InitSuccess(InitialInfo {
+    tx(WriteVerifyEvent::InitSuccess(WriteVerifyStart {
         input_file_bytes: size,
     }));
 
@@ -138,7 +136,7 @@ fn run(mut tx: impl FnMut(StatusMessage), args: &WriterProcessConfig) -> Result<
     }
     .execute(&mut tx)?;
 
-    tx(StatusMessage::FinishedWriting {
+    tx(WriteVerifyEvent::FinishedWriting {
         verifying: args.verify,
     });
 
@@ -199,14 +197,14 @@ struct WriteOp<S: Read, D: Write> {
 impl<S: Read, D: Write> WriteOp<S, D> {
     /// Execute the write operation. Returns total number of bytes written.
     #[inline(always)]
-    fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<u64, ErrorType> {
+    fn execute(&mut self, mut tx: impl FnMut(WriteVerifyEvent)) -> Result<u64, WriteVerifyError> {
         let mut file = FileSourceReader::new(self.cf, self.file_read_buf_size, &mut self.file);
         let mut disk = CountWrite::new(&mut self.disk);
         let mut buf = avec_rt![[self.disk_block_size] | 0u8; self.buf_size];
 
         macro_rules! checkpoint {
             () => {
-                tx(StatusMessage::TotalBytes {
+                tx(WriteVerifyEvent::TotalBytes {
                     src: file.read_file_bytes(),
                     dest: disk.count(),
                 });
@@ -229,7 +227,7 @@ impl<S: Read, D: Write> WriteOp<S, D> {
                 let written_bytes = disk.write(&buf[..])?;
                 if written_bytes == 0 {
                     checkpoint!();
-                    return Err(ErrorType::EndOfOutput);
+                    return Err(WriteVerifyError::EndOfOutput);
                 }
             }
             checkpoint!();
@@ -280,7 +278,7 @@ struct VerifyOp<S: Read, D: Read> {
 
 impl<S: Read, D: Read> VerifyOp<S, D> {
     #[inline(always)]
-    fn execute(&mut self, mut tx: impl FnMut(StatusMessage)) -> Result<(), ErrorType> {
+    fn execute(&mut self, mut tx: impl FnMut(WriteVerifyEvent)) -> Result<(), WriteVerifyError> {
         let mut file = FileSourceReader::new(self.cf, self.file_read_buf_size, &mut self.file);
         let mut disk = CountRead::new(&mut self.disk);
 
@@ -289,7 +287,7 @@ impl<S: Read, D: Read> VerifyOp<S, D> {
 
         macro_rules! checkpoint {
             () => {
-                tx(StatusMessage::TotalBytes {
+                tx(WriteVerifyEvent::TotalBytes {
                     src: file.read_file_bytes(),
                     dest: disk.count(),
                 });
@@ -308,7 +306,7 @@ impl<S: Read, D: Read> VerifyOp<S, D> {
 
                 if file_buf[..file_read_bytes] != disk_buf[..file_read_bytes] {
                     trace!(file_read_bytes, "verification failed");
-                    return Err(ErrorType::VerificationFailed);
+                    return Err(WriteVerifyError::VerificationFailed);
                 }
             }
             checkpoint!();

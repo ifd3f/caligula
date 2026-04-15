@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Instant};
 
 use crossterm::event::EventStream;
-use futures::StreamExt;
+use futures::{StreamExt, stream::BoxStream};
 use ratatui::{
     Terminal,
     backend::Backend,
@@ -11,7 +11,8 @@ use ratatui::{
 use tokio::{select, time};
 
 use crate::{
-    herder::WriterHandle,
+    herder_daemon::ipc::WriteVerifyEvent,
+    herder_facade::HerdHandle,
     logging::LogPaths,
     ui::{start::BeginParams, writer_tracking::WriterState},
 };
@@ -27,7 +28,7 @@ where
 {
     terminal: &'a mut Terminal<B>,
     events: EventStream,
-    handle: Option<WriterHandle>,
+    handle: Option<HerdHandle<WriteVerifyEvent>>,
     state: State,
     log_paths: Arc<LogPaths>,
 }
@@ -39,11 +40,11 @@ where
     #[tracing::instrument(skip_all)]
     pub fn new(
         params: &BeginParams,
-        handle: WriterHandle,
+        handle: HerdHandle<WriteVerifyEvent>,
         terminal: &'a mut Terminal<B>,
         log_paths: Arc<LogPaths>,
     ) -> Self {
-        let input_file_bytes = handle.initial_info().input_file_bytes;
+        let input_file_bytes = handle.initial_info.input_file_bytes;
         Self {
             terminal,
             handle: Some(handle),
@@ -70,7 +71,7 @@ where
     async fn get_and_handle_events(mut self) -> anyhow::Result<FancyUI<'a, B>> {
         let msg = {
             if let Some(handle) = &mut self.handle {
-                get_event_child_active(&mut self.events, handle).await
+                get_event_child_active(&mut self.events, &mut handle.events).await
             } else {
                 get_event_child_dead(&mut self.events).await
             }?
@@ -94,15 +95,15 @@ async fn get_event_child_dead(ui_events: &mut EventStream) -> anyhow::Result<UIE
 #[tracing::instrument(skip_all, level = "trace")]
 async fn get_event_child_active(
     ui_events: &mut EventStream,
-    child_events: &mut WriterHandle,
+    child_events: &mut BoxStream<'static, WriteVerifyEvent>,
 ) -> anyhow::Result<UIEvent> {
     let sleep = tokio::time::sleep(time::Duration::from_millis(250));
     select! {
         _ = sleep => {
             return Ok(UIEvent::SleepTimeout);
         }
-        msg = child_events.next_message() => {
-            return Ok(UIEvent::RecvChildStatus(Instant::now(), msg?));
+        msg = child_events.next() => {
+            return Ok(UIEvent::RecvChildStatus(Instant::now(), msg));
         }
         event = ui_events.next() => {
             return Ok(UIEvent::RecvTermEvent(event.unwrap()?));

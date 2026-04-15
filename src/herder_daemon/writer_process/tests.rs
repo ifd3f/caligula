@@ -29,23 +29,23 @@ fn write_op_works_with_emitted_events() {
     assert_eq!(
         &result.events,
         &[
-            StatusMessage::TotalBytes {
+            WriteVerifyEvent::TotalBytes {
                 src: 1024,
                 dest: 256
             },
-            StatusMessage::TotalBytes {
+            WriteVerifyEvent::TotalBytes {
                 src: 1024,
                 dest: 512
             },
-            StatusMessage::TotalBytes {
+            WriteVerifyEvent::TotalBytes {
                 src: 1024,
                 dest: 768
             },
-            StatusMessage::TotalBytes {
+            WriteVerifyEvent::TotalBytes {
                 src: 1024,
                 dest: 1024
             },
-            StatusMessage::TotalBytes {
+            WriteVerifyEvent::TotalBytes {
                 src: 1024,
                 dest: 1024
             },
@@ -86,7 +86,7 @@ fn write_file_larger_than_disk(#[values(1032, 2000, 6000, 7000)] file_size: usiz
     };
     let result = test.execute(false);
 
-    assert_matches!(result.execute_result, Err(ErrorType::EndOfOutput));
+    assert_matches!(result.execute_result, Err(WriteVerifyError::EndOfOutput));
     assert_eq!(&result.disk, &result.file[..test.disk_size]);
 }
 
@@ -194,7 +194,7 @@ fn verify_sad_case_works() {
     };
     let result = test.execute();
 
-    assert_eq!(result.return_val, Err(ErrorType::VerificationFailed));
+    assert_eq!(result.return_val, Err(WriteVerifyError::VerificationFailed));
 }
 
 #[rstest]
@@ -241,7 +241,7 @@ fn verify_misaligned_case_sad_path_works(#[case] file_size: usize, #[case] flip_
     };
     let result = test.execute();
 
-    assert_eq!(result.return_val, Err(ErrorType::VerificationFailed));
+    assert_eq!(result.return_val, Err(WriteVerifyError::VerificationFailed));
 }
 
 /// Helpers for these tests. These go in their own little module to enforce
@@ -253,7 +253,7 @@ mod helpers {
 
     use super::{
         CompressionFormat, VerifyOp, WriteOp,
-        ipc::{ErrorType, StatusMessage},
+        ipc::{WriteVerifyError, WriteVerifyEvent},
     };
 
     /// Wraps an in-memory buffer and logs every single chunk of data written to it.
@@ -345,12 +345,12 @@ mod helpers {
     }
 
     pub struct WriteTestResult {
-        pub requested_reads: Vec<usize>,
+        pub _requested_reads: Vec<usize>,
         pub requested_writes: Vec<Vec<u8>>,
         pub file: Vec<u8>,
         pub disk: Vec<u8>,
-        pub events: Vec<StatusMessage>,
-        pub execute_result: Result<u64, ErrorType>,
+        pub events: Vec<WriteVerifyEvent>,
+        pub execute_result: Result<u64, WriteVerifyError>,
     }
 
     impl WriteTest {
@@ -384,7 +384,7 @@ mod helpers {
             }
 
             WriteTestResult {
-                requested_reads: file.requested_reads,
+                _requested_reads: file.requested_reads,
                 requested_writes: disk.requested_writes,
                 file: file_data,
                 disk: disk_data,
@@ -404,10 +404,10 @@ mod helpers {
     }
 
     pub struct VerifyTestResult {
-        pub requested_file_reads: Vec<usize>,
-        pub requested_disk_reads: Vec<usize>,
-        pub events: Vec<StatusMessage>,
-        pub return_val: Result<(), ErrorType>,
+        pub _requested_file_reads: Vec<usize>,
+        pub _requested_disk_reads: Vec<usize>,
+        pub _events: Vec<WriteVerifyEvent>,
+        pub return_val: Result<(), WriteVerifyError>,
     }
 
     impl VerifyTest {
@@ -429,9 +429,9 @@ mod helpers {
             .execute(|e| events.push(e));
 
             VerifyTestResult {
-                requested_file_reads: file.requested_reads,
-                requested_disk_reads: disk.requested_reads,
-                events,
+                _requested_file_reads: file.requested_reads,
+                _requested_disk_reads: disk.requested_reads,
+                _events: events,
                 return_val: verification_result,
             }
         }
