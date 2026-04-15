@@ -1,12 +1,17 @@
 use super::client::LazyHerderClient;
 use super::{HerdHandle, HerderFacade, StartWriterError};
+use crate::escalation::run_escalate;
 use crate::herder_daemon::ipc::{HerdAction, HerdEvent, TopLevelHerdEvent};
 use crate::herder_facade::DaemonError;
 use crate::herder_facade::client::{HerderClient, HerderClientFactory, RawHerderClient};
+use crate::ipc_common::read_msg_async;
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::hash::Hash;
+use std::process::Stdio;
 use std::sync::Arc;
+use tokio::io::BufWriter;
+use tokio::process::ChildStdin;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, trace};
@@ -27,10 +32,10 @@ pub fn make_herder_facade_impl(log_path: &str) -> impl HerderFacade + 'static {
     }
 
     impl HerderClientFactory for ImplFactory {
-        type Output = RawHerderClient;
+        type Output = RawHerderClient<BufWriter<ChildStdin>>;
 
         async fn make(self) -> Result<Self::Output, DaemonError> {
-            Ok(RawHerderClient::spawn_herder(
+            Ok(spawn_herder(
                 &self.log_path,
                 self.escalated,
                 Box::new(move |e| {
@@ -165,4 +170,57 @@ impl<K: Hash + Eq, T> EventDemuxMap<K, T> {
             }
         }
     }
+}
+
+async fn spawn_herder(
+    log_path: &str,
+    escalated: bool,
+    handle_event: impl Fn((u64, TopLevelHerdEvent)) + Send + 'static,
+) -> Result<RawHerderClient<BufWriter<ChildStdin>>, DaemonError> {
+    let proc = process_path::get_executable_path().unwrap();
+    let cmd = crate::escalation::Command {
+        proc: proc.to_str().unwrap().to_owned().into(),
+        envs: vec![],
+        args: vec!["_herder".into(), log_path.into()],
+    };
+
+    debug!("Starting child process with command: {:?}", cmd);
+    fn modify_cmd(cmd: &mut tokio::process::Command) {
+        cmd.kill_on_drop(true)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+    }
+    let mut child = match escalated {
+        true => run_escalate(&cmd, modify_cmd)
+            .await
+            .map_err(|e| DaemonError::DaemonSpawnFailure(true, e.into()))?,
+        false => {
+            let mut c = tokio::process::Command::from(cmd);
+            modify_cmd(&mut c);
+            c.spawn()
+                .map_err(|e| DaemonError::DaemonSpawnFailure(false, e.into()))?
+        }
+    };
+
+    // make the input pusher
+    let child_rx = child.stdout.take().unwrap();
+    tokio::spawn(async move {
+        let mut child_rx = child_rx;
+        loop {
+            // TODO dont error here
+            let msg = read_msg_async::<(u64, TopLevelHerdEvent)>(&mut child_rx)
+                .await
+                .unwrap();
+            handle_event(msg);
+        }
+    });
+
+    debug!(?child, "Process spawned, waiting for pipe to be opened...");
+    let child_tx = child.stdin.take().unwrap();
+
+    Ok(RawHerderClient {
+        _child: Some(child),
+        tx: BufWriter::new(child_tx),
+    })
 }
