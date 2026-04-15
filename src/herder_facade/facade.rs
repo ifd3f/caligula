@@ -34,15 +34,13 @@ pub fn make_herder_facade_impl(log_path: &str) -> impl HerderFacade + 'static {
     impl HerderClientFactory for ImplFactory {
         type Output = RawHerderClient<BufWriter<ChildStdin>>;
 
-        async fn make(self) -> Result<Self::Output, DaemonError> {
-            Ok(spawn_herder(
-                &self.log_path,
-                self.escalated,
-                Box::new(move |e| {
-                    self.event_demux.lock().unwrap().handle_event(e);
-                }),
-            )
-            .await?)
+        async fn make(&mut self) -> Result<Self::Output, DaemonError> {
+            let event_demux = self.event_demux.clone();
+            let handler = move |e| {
+                event_demux.lock().unwrap().handle_event(e);
+            };
+            let f = spawn_herder(self.log_path.clone(), self.escalated, handler).await?;
+            Ok(f)
         }
     }
     let standard_daemon = LazyHerderClient::new(ImplFactory {
@@ -173,7 +171,7 @@ impl<K: Hash + Eq, T> EventDemuxMap<K, T> {
 }
 
 async fn spawn_herder(
-    log_path: &str,
+    log_path: String,
     escalated: bool,
     handle_event: impl Fn((u64, TopLevelHerdEvent)) + Send + 'static,
 ) -> Result<RawHerderClient<BufWriter<ChildStdin>>, DaemonError> {
