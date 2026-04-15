@@ -1,16 +1,17 @@
 use super::client::LazyHerderClient;
 use super::{HerdHandle, HerderFacade, StartWriterError};
 use crate::escalation::run_escalate;
-use crate::herder_daemon::ipc::{HerdAction, HerdEvent, TopLevelHerdEvent};
+use crate::herder_daemon::ipc::HerdAction;
 use crate::herder_facade::DaemonError;
 use crate::herder_facade::client::{HerderClient, HerderClientFactory, RawHerderClient};
 use crate::ipc_common::read_msg_async;
+use bytes::{Bytes, BytesMut};
 use futures::StreamExt;
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::process::Stdio;
 use std::sync::Arc;
-use tokio::io::BufWriter;
+use tokio::io::{AsyncReadExt, BufWriter};
 use tokio::process::ChildStdin;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -27,7 +28,7 @@ pub fn make_herder_facade_impl(log_path: &str) -> impl HerderFacade + 'static {
     /// Simple implementor of [HerderClientFactory].
     struct ImplFactory {
         log_path: String,
-        event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, TopLevelHerdEvent>>>,
+        event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, Bytes>>>,
         escalated: bool,
     }
 
@@ -36,8 +37,8 @@ pub fn make_herder_facade_impl(log_path: &str) -> impl HerderFacade + 'static {
 
         async fn make(&mut self) -> Result<Self::Output, DaemonError> {
             let event_demux = self.event_demux.clone();
-            let handler = move |e| {
-                event_demux.lock().unwrap().handle_event(e);
+            let handler = move |id, msg| {
+                event_demux.lock().unwrap().handle_event((id, msg));
             };
             let f = spawn_herder(self.log_path.clone(), self.escalated, handler).await?;
             Ok(f)
@@ -64,7 +65,7 @@ pub fn make_herder_facade_impl(log_path: &str) -> impl HerderFacade + 'static {
 
 /// Implementation of the actual [HerderFacade] used by Caligula.
 struct HerderFacadeImpl<Std, Esc> {
-    event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, TopLevelHerdEvent>>>,
+    event_demux: Arc<std::sync::Mutex<EventDemuxMap<u64, Bytes>>>,
     next_writer_id: u64,
 
     standard_daemon: Std,
@@ -80,7 +81,7 @@ where
         &mut self,
         args: A,
         escalated: bool,
-    ) -> Result<HerdHandle<A::Event>, StartWriterError<A::Event>> {
+    ) -> Result<HerdHandle<A::StartInfo, A::Event, A::Failure>, StartWriterError<A::Event, A::Failure>> {
         let id = self.next_writer_id;
         self.next_writer_id += 1;
 
@@ -98,6 +99,7 @@ where
                 .expect("illegal state: receiver does not exist"),
         )
         .filter_map(|event| {
+            bincod
             std::future::ready(
                 A::Event::try_from(event)
                     .map_err(DaemonError::UnexpectedEventType)
@@ -173,7 +175,7 @@ impl<K: Hash + Eq, T> EventDemuxMap<K, T> {
 async fn spawn_herder(
     log_path: String,
     escalated: bool,
-    handle_event: impl Fn((u64, TopLevelHerdEvent)) + Send + 'static,
+    handle_event: impl Fn(u64, Bytes) + Send + 'static,
 ) -> Result<RawHerderClient<BufWriter<ChildStdin>>, DaemonError> {
     let proc = process_path::get_executable_path().unwrap();
     let cmd = crate::escalation::Command {
@@ -207,10 +209,11 @@ async fn spawn_herder(
         let mut child_rx = child_rx;
         loop {
             // TODO dont error here
-            let msg = read_msg_async::<(u64, TopLevelHerdEvent)>(&mut child_rx)
-                .await
-                .unwrap();
-            handle_event(msg);
+            let id = child_rx.read_u64().await.unwrap();
+            let size = child_rx.read_u32().await.unwrap();
+            let mut buf = BytesMut::zeroed(size as usize);
+            child_rx.read_exact(&mut buf).await.unwrap();
+            handle_event(id, buf.freeze());
         }
     });
 

@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::compression::CompressionFormat;
 use crate::device::Type;
-use crate::herder_daemon::ipc::{self, HerdAction};
+use crate::herder_daemon::ipc::{HerdMessage, HerdAction};
+
+pub type WriteVerifyMessage = HerdMessage<WriteVerifyStart, WriteVerifyError, WriteVerifyEvent>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WriteVerifyAction {
@@ -17,12 +19,13 @@ pub struct WriteVerifyAction {
 }
 
 impl HerdAction for WriteVerifyAction {
+    type StartInfo =  WriteVerifyStart;
+    type Failure = WriteVerifyError;
     type Event = WriteVerifyEvent;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WriteVerifyEvent {
-    InitSuccess(WriteVerifyStart),
     TotalBytes {
         src: u64,
         dest: u64,
@@ -36,29 +39,6 @@ pub enum WriteVerifyEvent {
         block_size: usize,
         duration_millis: u64,
     },
-    Success,
-    Error(WriteVerifyError),
-}
-
-ipc::impl_try_from_top_level_herd_event!(Writer => WriteVerifyEvent);
-
-impl ipc::HerdEvent for WriteVerifyEvent {
-    type StartInfo = WriteVerifyStart;
-    type Failure = WriteVerifyError;
-
-    fn downcast_as_initial_info(self) -> Result<Self::StartInfo, Self> {
-        match self {
-            WriteVerifyEvent::InitSuccess(e) => Ok(e),
-            other => Err(other),
-        }
-    }
-
-    fn downcast_as_failure(self) -> Result<Self::Failure, Self> {
-        match self {
-            WriteVerifyEvent::Error(e) => Ok(e),
-            other => Err(other),
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

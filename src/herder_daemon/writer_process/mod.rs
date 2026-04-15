@@ -17,6 +17,7 @@ use tracing_unwrap::ResultExt;
 
 use crate::compression::CompressionFormat;
 use crate::device;
+use crate::herder_daemon::ipc::HerdMessage;
 
 use self::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
 use self::xplat::open_blockdev;
@@ -37,7 +38,7 @@ const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
 pub fn spawn_writer(
     id: u64,
-    mut tx: impl FnMut(WriteVerifyEvent) + Send + 'static,
+    mut tx: impl FnMut(WriteVerifyMessage) + Send + 'static,
     init_config: WriteVerifyAction,
 ) -> JoinHandle<()> {
     std::thread::Builder::new()
@@ -46,8 +47,8 @@ pub fn spawn_writer(
             debug!("Spawned child thread {:?}", std::thread::current().id());
 
             let final_msg = match run(&mut tx, &init_config) {
-                Ok(_) => WriteVerifyEvent::Success,
-                Err(e) => WriteVerifyEvent::Error(e),
+                Ok(_) => WriteVerifyMessage::Done,
+                Err(e) => WriteVerifyMessage::Failure(e),
             };
 
             info!(?final_msg, "Completed");
@@ -57,7 +58,7 @@ pub fn spawn_writer(
 }
 
 fn run(
-    mut tx: impl FnMut(WriteVerifyEvent),
+    mut tx: impl FnMut(WriteVerifyMessage),
     args: &WriteVerifyAction,
 ) -> Result<(), WriteVerifyError> {
     if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
@@ -111,7 +112,7 @@ fn run(
         }
     });
 
-    tx(WriteVerifyEvent::InitSuccess(WriteVerifyStart {
+    tx(WriteVerifyMessage::Initial(WriteVerifyStart {
         input_file_bytes: size,
     }));
 
@@ -134,11 +135,11 @@ fn run(
         checkpoint_period,
         file_read_buf_size: buf_size,
     }
-    .execute(&mut tx)?;
+    .execute(|e| tx(WriteVerifyMessage::Event(e)))?;
 
-    tx(WriteVerifyEvent::FinishedWriting {
+    tx(WriteVerifyMessage::Event(WriteVerifyEvent::FinishedWriting {
         verifying: args.verify,
-    });
+    }));
 
     if !args.verify {
         info!("Verification skip was requested, stopping");
@@ -167,7 +168,7 @@ fn run(
         checkpoint_period,
         file_read_buf_size: buf_size,
     }
-    .execute(tx)?;
+    .execute(|e| tx(WriteVerifyMessage::Event(e)))?;
 
     Ok(())
 }

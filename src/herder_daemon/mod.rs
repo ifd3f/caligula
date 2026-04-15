@@ -4,11 +4,12 @@
 // Side note: Interestingly, this interface can theoretically be used to have caligula delegate
 // writing to remote hosts over SSH. This may be a very strange but funny feature to implement.
 
+use byteorder::{BigEndian, WriteBytesExt};
 use tracing::info;
 use tracing_unwrap::ResultExt;
 
 use crate::{
-    herder_daemon::ipc::{TopLevelHerdEvent, WriteVerifyAction},
+    herder_daemon::ipc::{WriteVerifyAction},
     ipc_common::{read_msg_async, write_msg},
 };
 
@@ -30,7 +31,9 @@ pub async fn main() {
         let child = writer_process::spawn_writer(
             msg.id,
             move |m| {
-                write_msg(std::io::stdout(), &(msg.id, TopLevelHerdEvent::from(m))).ok_or_log();
+                let mut out = std::io::stdout();
+                out.write_u64::<BigEndian>(msg.id);
+                write_msg(out, &m).ok_or_log();
             },
             msg.action,
         );
