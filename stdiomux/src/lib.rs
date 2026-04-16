@@ -1,14 +1,14 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
+use bincode::Options as _;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+use crate::mux::MAX_PAYLOAD;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub mod mux;
+
+/// Common bincode options to use for inter-process communication.
+#[inline]
+pub fn bincode_options() -> impl bincode::Options {
+    bincode::DefaultOptions::new()
+        .with_fixint_encoding()
+        .with_big_endian()
+        .with_limit(MAX_PAYLOAD as u64)
 }
