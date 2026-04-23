@@ -32,7 +32,7 @@ is-terminal = "0.4.16"
 itertools = "0.12.1"
 libc = "0.2.177"
 lz4_flex = { version = "0.11.6", default-features = false, features = ["frame"] }
-md-5 = { version = "0.10.6", default-features = false }
+md5 = { package = "md-5", version = "0.10.6", default-features = false }
 process_path = "0.1.4"
 ratatui = { version = "0.26.3", default-features = false, features = ["crossterm"] }
 ruzstd = { version = "0.6.0", default-features = false, features = ["std"] }
