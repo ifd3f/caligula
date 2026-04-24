@@ -1,3 +1,7 @@
+[workspace]
+resolver = "3"
+members = ["./stdiomux"]
+
 [package]
 name = "caligula"
 description = "A lightweight, user-friendly disk imaging tool"

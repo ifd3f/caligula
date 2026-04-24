@@ -39,6 +39,7 @@ let
         ".cargo"
         "native"
         "src"
+        "stdiomux"
 
         "build.rs"
         "Cargo.lock"
