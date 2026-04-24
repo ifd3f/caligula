@@ -141,14 +141,14 @@ impl Demux {
         )
     }
 
-    pub async fn as_sink(&self) -> impl Sink<(StreamId, Bytes)> {
+    pub async fn as_sink(&self) -> impl Sink<(StreamId, Result<Bytes, Arc<MuxError>>)> {
         futures::sink::unfold(self.clone(), |this, (stream_id, data)| {
             this.handle_datagram(stream_id, data);
             std::future::ready(Ok::<Self, Infallible>(this))
         })
     }
 
-    pub fn handle_datagram(&self, stream_id: StreamId, data: Bytes) {
+    pub fn handle_datagram(&self, stream_id: StreamId, data: Result<Bytes, Arc<MuxError>>) {
         match self.inner.lock().unwrap().entry(stream_id) {
             // there exists a callback
             Entry::Occupied(mut occupied_entry) => {
@@ -170,7 +170,7 @@ impl Demux {
 }
 
 pub trait DatagramHandler {
-    /// Handle the provided datagram. Returns [`ControlFlow::Continue`] to signal
+    /// Handle the provided datagram or error. Returns [`ControlFlow::Continue`] to signal
     /// continuation, and [`ControlFlow::Break`] to be removed from the stream handler.
-    fn handle_datagram(&mut self, data: Bytes) -> ControlFlow<()>;
+    fn handle_datagram(&self, res: Result<Bytes, Arc<MuxError>>) -> ControlFlow<()>;
 }
