@@ -37,6 +37,7 @@ let
       in
       builtins.elem rootDirName [
         ".cargo"
+        "lib"
         "native"
         "src"
 
