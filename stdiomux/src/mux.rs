@@ -15,7 +15,20 @@ pub const MTU: usize = 65536;
 pub const HEADER_LEN: usize = 4;
 pub const MAX_PAYLOAD: usize = MTU - HEADER_LEN;
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Clone, Copy)]
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    Serialize,
+    Deserialize,
+    Clone,
+    Copy,
+    derive_more::From,
+    derive_more::Into,
+)]
 pub struct StreamId(pub u16);
 
 #[derive(Debug, thiserror::Error)]
@@ -62,7 +75,19 @@ impl<W: AsyncWrite + Unpin> Clone for MuxWriter<W> {
     }
 }
 
+impl<W: AsyncWrite + Unpin> From<W> for MuxWriter<W> {
+    fn from(w: W) -> Self {
+        Self::new(w)
+    }
+}
+
 impl<W: AsyncWrite + Unpin> MuxWriter<W> {
+    pub fn new(w: W) -> Self {
+        Self {
+            w: Arc::new(tokio::sync::Mutex::new(w)),
+        }
+    }
+
     pub async fn send(&self, stream_id: StreamId, buf: impl AsRef<[u8]>) -> Result<(), MuxError> {
         let buf = buf.as_ref();
         if buf.len() > MAX_PAYLOAD {
@@ -96,7 +121,11 @@ pub struct MuxReader<R: AsyncRead + Unpin> {
 }
 
 impl<R: AsyncRead + Unpin> MuxReader<R> {
-    pub async fn read(&mut self) -> std::io::Result<(StreamId, Bytes)> {
+    pub fn new(r: R) -> Self {
+        Self { r }
+    }
+
+    pub async fn recv(&mut self) -> std::io::Result<(StreamId, Bytes)> {
         // Decode header
         let header = self.r.read_u32().await?;
         let stream_id = StreamId((header >> 16) as u16);
@@ -110,7 +139,13 @@ impl<R: AsyncRead + Unpin> MuxReader<R> {
     pub fn as_stream<'a>(
         &'a mut self,
     ) -> impl Stream<Item = std::io::Result<(StreamId, Bytes)>> + 'a {
-        futures::stream::unfold(self, |this| async move { Some((this.read().await, this)) })
+        futures::stream::unfold(self, |this| async move { Some((this.recv().await, this)) })
+    }
+}
+
+impl<R: AsyncRead + Unpin> From<R> for MuxReader<R> {
+    fn from(r: R) -> Self {
+        Self::new(r)
     }
 }
 
@@ -169,8 +204,57 @@ impl Demux {
     }
 }
 
+/// Trait for generic callbacks that handle datagrams.
 pub trait DatagramHandler {
     /// Handle the provided datagram or error. Returns [`ControlFlow::Continue`] to signal
     /// continuation, and [`ControlFlow::Break`] to be removed from the stream handler.
     fn handle_datagram(&self, res: Result<Bytes, Arc<MuxError>>) -> ControlFlow<()>;
+}
+
+impl<F> DatagramHandler for F
+where
+    F: Fn(Result<Bytes, Arc<MuxError>>) -> ControlFlow<()>,
+{
+    fn handle_datagram(&self, res: Result<Bytes, Arc<MuxError>>) -> ControlFlow<()> {
+        self(res)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::*;
+
+    #[rstest]
+    #[tokio::test]
+    async fn round_trip(
+        #[values(0, 1, 100, 65535)] stream_id: u16,
+        #[values(0, 1, 100, 65532)] len: usize,
+    ) {
+        let stream_id = StreamId(stream_id);
+        let payload = Bytes::from(vec![0u8; len]);
+
+        let mut ser = vec![];
+        MuxWriter::new(&mut ser)
+            .send(stream_id, &payload)
+            .await
+            .unwrap();
+        let result = MuxReader::new(ser.as_slice()).recv().await.unwrap();
+
+        assert_eq!(result, (stream_id, payload))
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn payload_too_big(#[values(65533, 65536, 108321)] len: usize) {
+        let stream_id = StreamId(0);
+        let payload = Bytes::from(vec![0u8; len]);
+
+        let mut ser = vec![];
+
+        MuxWriter::new(&mut ser)
+            .send(stream_id, &payload)
+            .await
+            .expect_err("Did not error when sending excessively large payload");
+    }
 }
