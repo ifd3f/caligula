@@ -1,6 +1,6 @@
 use bincode::Options as _;
 
-use crate::mux::MAX_PAYLOAD;
+use crate::mux::MAX_BODY;
 
 pub mod mux;
 
@@ -10,5 +10,5 @@ pub fn bincode_options() -> impl bincode::Options {
     bincode::DefaultOptions::new()
         .with_fixint_encoding()
         .with_big_endian()
-        .with_limit(MAX_PAYLOAD as u64)
+        .with_limit(MAX_BODY as u64)
 }
