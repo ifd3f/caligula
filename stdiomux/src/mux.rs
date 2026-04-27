@@ -11,7 +11,7 @@ pub const HEADER_BYTES: usize = 6;
 pub const MAX_BODY: usize = MTU - HEADER_BYTES;
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, Clone, Copy)]
-pub struct StreamId(pub u16);
+pub struct ChannelId(pub u16);
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, strum::FromRepr)]
 #[repr(u8)]
@@ -106,7 +106,7 @@ impl<W: AsyncWrite + Unpin> MuxWriter<W> {
         }
     }
 
-    pub async fn sendto(&self, stream_id: StreamId, frame: &Frame) -> std::io::Result<()> {
+    pub async fn sendto(&self, channel_id: ChannelId, frame: &Frame) -> std::io::Result<()> {
         let body = frame.body();
         if body.len() > MAX_BODY {
             return Err(std::io::Error::new(
@@ -120,7 +120,7 @@ impl<W: AsyncWrite + Unpin> MuxWriter<W> {
 
         let mut w = self.w.lock().await;
         w.write_u16(body.len() as u16).await?; // body len
-        w.write_u16(stream_id.0).await?; // stream id
+        w.write_u16(channel_id.0).await?; // stream id
         w.write_u8(frame.type_field() as u8).await?; // type
         w.write_u8(0).await?; // reserved
         w.write_all(&body).await?; // body
@@ -129,9 +129,9 @@ impl<W: AsyncWrite + Unpin> MuxWriter<W> {
         Ok(())
     }
 
-    pub fn as_sink(&self) -> impl Sink<(StreamId, Frame), Error = std::io::Error> {
-        futures::sink::unfold(self.clone(), |this, (stream_id, frame)| async move {
-            this.sendto(stream_id, &frame).await?;
+    pub fn as_sink(&self) -> impl Sink<(ChannelId, Frame), Error = std::io::Error> {
+        futures::sink::unfold(self.clone(), |this, (channel_id, frame)| async move {
+            this.sendto(channel_id, &frame).await?;
             Ok(this)
         })
     }
@@ -152,10 +152,10 @@ impl<R: AsyncRead + Unpin> MuxReader<R> {
         }
     }
 
-    pub async fn recvfrom(&mut self) -> std::io::Result<(StreamId, Frame)> {
+    pub async fn recvfrom(&mut self) -> std::io::Result<(ChannelId, Frame)> {
         // Read header
         let body_len = self.r.read_u16().await? as usize;
-        let stream_id = StreamId(self.r.read_u16().await?);
+        let channel_id = ChannelId(self.r.read_u16().await?);
         let frame_type = self.r.read_u8().await?;
         let _reserved = self.r.read_u8().await?;
 
@@ -207,12 +207,12 @@ impl<R: AsyncRead + Unpin> MuxReader<R> {
             FrameType::FIN => todo!(),
         };
 
-        Ok((stream_id, frame))
+        Ok((channel_id, frame))
     }
 
     pub fn as_stream<'a>(
         &'a mut self,
-    ) -> impl Stream<Item = std::io::Result<(StreamId, Frame)>> + 'a {
+    ) -> impl Stream<Item = std::io::Result<(ChannelId, Frame)>> + 'a {
         futures::stream::unfold(
             self,
             |this| async move { Some((this.recvfrom().await, this)) },
@@ -228,20 +228,20 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn round_trip(
-        #[values(0, 1, 100, 65535)] stream_id: u16,
+        #[values(0, 1, 100, 65535)] channel_id: u16,
         #[values(0, 1, 100, MAX_BODY)] len: usize,
     ) {
-        let stream_id = StreamId(stream_id);
+        let channel_id = ChannelId(channel_id);
         let payload = Frame::Data(Bytes::from(vec![0u8; len]));
 
         let mut ser = vec![];
         MuxWriter::new(&mut ser)
-            .sendto(stream_id, &payload)
+            .sendto(channel_id, &payload)
             .await
             .unwrap();
         let result = MuxReader::new(ser.as_slice()).recvfrom().await.unwrap();
 
-        assert_eq!(result, (stream_id, payload))
+        assert_eq!(result, (channel_id, payload))
     }
 
     #[rstest]
@@ -249,13 +249,13 @@ mod tests {
     async fn payload_too_big(
         #[values(MAX_BODY+1, MAX_BODY+2, MAX_BODY+10, MAX_BODY*2)] len: usize,
     ) {
-        let stream_id = StreamId(0);
+        let channel_id = ChannelId(0);
         let payload = Frame::Data(Bytes::from(vec![0u8; len]));
 
         let mut ser = vec![];
 
         MuxWriter::new(&mut ser)
-            .sendto(stream_id, &payload)
+            .sendto(channel_id, &payload)
             .await
             .expect_err("Did not error when sending excessively large payload");
     }

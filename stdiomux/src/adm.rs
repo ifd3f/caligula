@@ -7,28 +7,28 @@ use bytes::Bytes;
 use futures::{Sink, Stream};
 use tokio::sync::{mpsc, oneshot};
 
-use crate::mux::{Frame, StreamId};
+use crate::mux::{Frame, ChannelId as ChannelId};
 
 pub struct AdmissionController<Rx, Tx>
 where
-    Rx: Stream<Item = (StreamId, Frame)>,
-    Tx: Sink<(StreamId, Frame)>,
+    Rx: Stream<Item = (ChannelId, Frame)>,
+    Tx: Sink<(ChannelId, Frame)>,
 {
     inner: std::sync::Mutex<AdmissionControllerInner<Rx, Tx>>,
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum OpenStreamError {
+pub enum OpenChannelError {
     #[error("Connection reset")]
     Reset(#[from] oneshot::error::RecvError),
-    #[error("Stream ID already in use")]
-    StreamIdInUse(#[from] StreamIdInUse),
+    #[error("Channel already in use")]
+    ChannelInUse(#[from] ChannelInUse),
 }
 
 impl<Rx, Tx> AdmissionController<Rx, Tx>
 where
-    Rx: Stream<Item = (StreamId, Frame)>,
-    Tx: Sink<(StreamId, Frame)>,
+    Rx: Stream<Item = (ChannelId, Frame)>,
+    Tx: Sink<(ChannelId, Frame)>,
 {
     pub fn new(rx: Rx, tx: Tx) -> Self {
         let (tx_queue_appender, tx_queue) = mpsc::channel(128);
@@ -37,7 +37,7 @@ where
             inner: std::sync::Mutex::new(AdmissionControllerInner {
                 rx,
                 tx,
-                streams: HashMap::new(),
+                channels: HashMap::new(),
                 tx_queue,
                 tx_queue_appender,
                 high_pri_tx_queue,
@@ -46,164 +46,164 @@ where
         }
     }
 
-    pub async fn open_stream(
+    pub async fn open_channel(
         &self,
-        stream_id: StreamId,
+        channel_id: ChannelId,
         initial_rx_buffer: usize,
-    ) -> Result<StreamEstablishmentInfo, OpenStreamError> {
+    ) -> Result<ChannelEstablishmentInfo, OpenChannelError> {
         let rx = self
             .inner
             .lock()
             .unwrap()
-            .open_stream(stream_id, initial_rx_buffer)?;
+            .open_channel(channel_id, initial_rx_buffer)?;
         Ok(rx.await?)
     }
 }
 
 pub struct Sender {
-    tx_to_stream_map: mpsc::Sender<Bytes>,
+    tx_to_channel_map: mpsc::Sender<Bytes>,
 }
 
 pub struct Receiver {
-    rx_from_stream_map: mpsc::Receiver<Bytes>,
+    rx_from_channel_map: mpsc::Receiver<Bytes>,
 }
 
 struct AdmissionControllerInner<Rx, Tx>
 where
-    Rx: Stream<Item = (StreamId, Frame)>,
-    Tx: Sink<(StreamId, Frame)>,
+    Rx: Stream<Item = (ChannelId, Frame)>,
+    Tx: Sink<(ChannelId, Frame)>,
 {
     rx: Rx,
     tx: Tx,
-    /// Active, non-closed streams.
-    streams: HashMap<StreamId, StreamMapEntry>,
+    /// Active, non-closed channels.
+    channels: HashMap<ChannelId, ChannelMapEntry>,
     /// Queue of frames to transmit.
-    tx_queue: mpsc::Receiver<(StreamId, Frame)>,
+    tx_queue: mpsc::Receiver<(ChannelId, Frame)>,
     /// Queue of frames to transmit.
-    tx_queue_appender: mpsc::Sender<(StreamId, Frame)>,
+    tx_queue_appender: mpsc::Sender<(ChannelId, Frame)>,
     /// Queue of frames to transmit.
-    high_pri_tx_queue: mpsc::UnboundedReceiver<(StreamId, Frame)>,
+    high_pri_tx_queue: mpsc::UnboundedReceiver<(ChannelId, Frame)>,
     /// Queue of frames to transmit.
-    high_pri_tx_queue_appender: mpsc::UnboundedSender<(StreamId, Frame)>,
+    high_pri_tx_queue_appender: mpsc::UnboundedSender<(ChannelId, Frame)>,
 }
 
 impl<Rx, Tx> AdmissionControllerInner<Rx, Tx>
 where
-    Rx: Stream<Item = (StreamId, Frame)>,
-    Tx: Sink<(StreamId, Frame)>,
+    Rx: Stream<Item = (ChannelId, Frame)>,
+    Tx: Sink<(ChannelId, Frame)>,
 {
-    pub fn open_stream(
+    pub fn open_channel(
         &mut self,
-        stream_id: StreamId,
+        channel_id: ChannelId,
         our_rx_buffer: usize,
-    ) -> Result<oneshot::Receiver<StreamEstablishmentInfo>, StreamIdInUse> {
+    ) -> Result<oneshot::Receiver<ChannelEstablishmentInfo>, ChannelInUse> {
         let (frame, out) = self
-            .streams
-            .entry(stream_id)
-            .or_insert_with(|| StreamMapEntry {
-                state: State::Closed,
+            .channels
+            .entry(channel_id)
+            .or_insert_with(|| ChannelMapEntry {
+                state: ChannelState::Closed,
             })
             .state
             .transition_send_syn(our_rx_buffer as u64)?;
         self.high_pri_tx_queue_appender
-            .send((stream_id, frame))
+            .send((channel_id, frame))
             .unwrap();
         Ok(out)
     }
 }
 
-struct StreamMapEntry {
+struct ChannelMapEntry {
     /// current state of the connection
-    state: State,
+    state: ChannelState,
 }
 
-impl StreamMapEntry {}
+impl ChannelMapEntry {}
 
 #[derive(Default)]
-enum State {
+enum ChannelState {
     #[default]
     Closed,
     SentOpen {
-        tx_on_established: oneshot::Sender<StreamEstablishmentInfo>,
+        tx_on_established: oneshot::Sender<ChannelEstablishmentInfo>,
         our_rx_buffer: u64,
     },
     RecvdOpen {
         their_rx_buffer: u64,
     },
-    Established(StreamEstablished),
+    Established(ChannelEstablished),
     SentClose,
     RecvdClose,
 }
 
-impl State {
+impl ChannelState {
     /// Ensures that it's allowable to send a SYN. If it is allowable, returns the SYN to send,
-    /// along with a oneshot::Receiver for waiting on stream establishment.
+    /// along with a oneshot::Receiver for waiting on channel establishment.
     fn transition_send_syn(
         &mut self,
         our_rx_buffer: u64,
-    ) -> Result<(Frame, oneshot::Receiver<StreamEstablishmentInfo>), StreamIdInUse> {
+    ) -> Result<(Frame, oneshot::Receiver<ChannelEstablishmentInfo>), ChannelInUse> {
         let syn = Frame::Syn(our_rx_buffer as u64);
         let (tx_on_established, rx_on_established) = oneshot::channel();
         match self {
-            State::Closed => {
-                *self = State::SentOpen {
+            ChannelState::Closed => {
+                *self = ChannelState::SentOpen {
                     tx_on_established,
                     our_rx_buffer,
                 };
                 Ok((syn, rx_on_established))
             }
-            State::RecvdOpen { their_rx_buffer } => {
+            ChannelState::RecvdOpen { their_rx_buffer } => {
                 let (est, info) =
-                    StreamEstablished::new(our_rx_buffer as usize, *their_rx_buffer as usize);
+                    ChannelEstablished::new(our_rx_buffer as usize, *their_rx_buffer as usize);
 
-                *self = State::Established(est);
+                *self = ChannelState::Established(est);
 
                 let (tx_on_established, rx_on_established) = oneshot::channel();
                 tx_on_established.send(info).map_err(|_| ()).unwrap(); // impossible to fail
 
                 Ok((syn, rx_on_established))
             }
-            State::SentOpen { .. }
-            | State::Established(_)
-            | State::SentClose
-            | State::RecvdClose => Err(StreamIdInUse),
+            ChannelState::SentOpen { .. }
+            | ChannelState::Established(_)
+            | ChannelState::SentClose
+            | ChannelState::RecvdClose => Err(ChannelInUse),
         }
     }
 }
 
 #[derive(Debug, thiserror::Error)]
 #[error("Stream ID is already in use")]
-struct StreamIdInUse;
+pub struct ChannelInUse;
 
 #[derive(Debug, thiserror::Error)]
 #[error("oops already closed")]
 struct AlreadyClosed;
 
-pub struct StreamEstablishmentInfo {
+pub struct ChannelEstablishmentInfo {
     pub tx: Sender,
     pub rx: Receiver,
 }
 
-struct StreamEstablished {
-    tx: StreamTxState,
-    rx: StreamRxState,
+struct ChannelEstablished {
+    tx: ChannelTxState,
+    rx: ChannelRxState,
 }
 
-impl StreamEstablished {
-    fn new(rx_buffer: usize, tx_buffer: usize) -> (StreamEstablished, StreamEstablishmentInfo) {
-        let (tx_to_stream_map, rx_from_consumer) = mpsc::channel(tx_buffer);
-        let (tx_to_consumer, rx_from_stream_map) = mpsc::channel(rx_buffer);
-        let sender = Sender { tx_to_stream_map };
-        let receiver = Receiver { rx_from_stream_map };
+impl ChannelEstablished {
+    fn new(rx_buffer: usize, tx_buffer: usize) -> (ChannelEstablished, ChannelEstablishmentInfo) {
+        let (tx_to_channel_map, rx_from_consumer) = mpsc::channel(tx_buffer);
+        let (tx_to_consumer, rx_from_channel_map) = mpsc::channel(rx_buffer);
+        let sender = Sender { tx_to_channel_map };
+        let receiver = Receiver { rx_from_channel_map };
         (
-            StreamEstablished {
-                tx: StreamTxState {
+            ChannelEstablished {
+                tx: ChannelTxState {
                     rx_from_consumer,
                     outstanding_permits: 0,
                 },
-                rx: StreamRxState { tx_to_consumer },
+                rx: ChannelRxState { tx_to_consumer },
             },
-            StreamEstablishmentInfo {
+            ChannelEstablishmentInfo {
                 tx: sender,
                 rx: receiver,
             },
@@ -211,7 +211,7 @@ impl StreamEstablished {
     }
 }
 
-struct StreamTxState {
+struct ChannelTxState {
     /// rx for receiving payloads from the consumer
     rx_from_consumer: mpsc::Receiver<Bytes>,
 
@@ -219,7 +219,7 @@ struct StreamTxState {
     outstanding_permits: u64,
 }
 
-struct StreamRxState {
+struct ChannelRxState {
     /// tx for sending payloads to the consumer
     tx_to_consumer: mpsc::Sender<Bytes>,
 }

@@ -7,8 +7,8 @@ async fn test_send_and_recv() {
     let mut harness = setup_mux_layer_test().await;
 
     let frame = Frame::Data(Bytes::copy_from_slice(b"hello world"));
-    harness.aw.sendto(StreamId(10), &frame).await.unwrap();
+    harness.aw.sendto(ChannelId(10), &frame).await.unwrap();
 
     let rc = harness.br.recvfrom().await.unwrap();
-    assert_eq!(rc, (StreamId(10), frame));
+    assert_eq!(rc, (ChannelId(10), frame));
 }
