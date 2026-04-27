@@ -1578,9 +1578,11 @@ dependencies = [
  "futures",
  "rstest 0.26.1",
  "serde",
+ "stdiomux",
  "strum 0.28.0",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-pipe",
 ]
 
 [[package]]
@@ -1772,6 +1774,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "tokio-pipe"
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f213a84bffbd61b8fa0ba8a044b4bbe35d471d0b518867181e82bd5c15542784"
+dependencies = [
+ "libc",
+ "tokio",
 ]
 
 [[package]]

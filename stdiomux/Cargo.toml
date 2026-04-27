@@ -3,6 +3,10 @@ name = "stdiomux"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+test-util = ["dep:tokio-pipe"]
+
 [dependencies]
 bincode = "1.3.3"
 bytes = "1.11.1"
@@ -11,7 +15,10 @@ serde = { version = "1.0.228", features = ["derive"] }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.18"
 tokio = { version = "1.52.1", features = ["io-util", "sync"] }
+tokio-pipe = { version = "0.2.12", optional = true }
 
 [dev-dependencies]
+bytes = "1.11.1"
 rstest = "0.26.1"
+stdiomux = { path = ".", features = ["test-util"] }
 tokio = { version = "1.52.1", features = ["full"] }

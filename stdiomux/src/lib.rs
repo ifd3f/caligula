@@ -4,6 +4,9 @@ use crate::mux::MAX_BODY;
 
 pub mod mux;
 
+#[cfg(feature = "test-util")]
+pub mod test_util;
+
 /// Common bincode options to use for inter-process communication.
 #[inline]
 pub fn bincode_options() -> impl bincode::Options {
