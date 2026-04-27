@@ -10,6 +10,7 @@ test-util = ["dep:tokio-pipe"]
 [dependencies]
 bincode = "1.3.3"
 bytes = "1.11.1"
+dashmap = "6.1.0"
 futures = "0.3.32"
 serde = { version = "1.0.228", features = ["derive"] }
 strum = { version = "0.28.0", features = ["derive"] }
