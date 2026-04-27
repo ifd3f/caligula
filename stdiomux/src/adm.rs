@@ -108,8 +108,7 @@ where
                     Ok::<_, watch::error::RecvError>(())
                 };
 
-                let x = tokio::join!(next_tx, adm_enough);
-                match x {
+                match tokio::join!(next_tx, adm_enough) {
                     // if either of these is disconnected, then we're done
                     (None, _) | (_, Err(_)) => break,
 
@@ -185,9 +184,7 @@ enum ChannelState {
         their_rx_buffer: u64,
     },
     Established(EstablishedChannelEntry),
-    SentClose {
-        tx_on_closed: oneshot::Sender<()>,
-    },
+    SentClose,
 }
 
 impl ChannelState {
@@ -227,21 +224,6 @@ impl ChannelState {
         }
     }
 
-    /// Ensures that it's allowable to send a FIN. If it is allowable, returns the FIN to send,
-    /// along with a oneshot::Receiver for waiting on channel closing.
-    fn try_transition_send_fin(&mut self) -> Result<(Frame, oneshot::Receiver<()>), AlreadyClosed> {
-        match self {
-            ChannelState::Closed | ChannelState::SentClose { .. } => Err(AlreadyClosed),
-            ChannelState::Established(_)
-            | ChannelState::RecvdOpen { .. }
-            | ChannelState::SentOpen { .. } => {
-                let (tx_on_closed, rx_on_closed) = oneshot::channel();
-                *self = ChannelState::SentClose { tx_on_closed };
-                Ok((Frame::Fin, rx_on_closed))
-            }
-        }
-    }
-
     /// Handle receiving a frame. Returns the frame to send in response, if any.
     fn transition_recv(&mut self, frame: Frame) -> Option<Frame> {
         match frame {
@@ -266,7 +248,7 @@ impl ChannelState {
                     .expect("Failed");
                 None // Don't send ADM yet -- allow the frames to bunch up before ADM
             }
-            ChannelState::SentClose { .. } => None,
+            ChannelState::SentClose => None,
             ChannelState::Closed
             | ChannelState::SentOpen { .. }
             | ChannelState::RecvdOpen { .. } => {
@@ -279,14 +261,34 @@ impl ChannelState {
 
     /// Handle receiving a SYN. Returns the frame to send in response, if any.
     fn transition_recv_syn(&mut self, their_rx_buffer: u64) -> Option<Frame> {
-        match self {
+        let this = std::mem::take(self);
+        match this {
             ChannelState::Closed | ChannelState::RecvdOpen { .. } => {
                 *self = ChannelState::RecvdOpen { their_rx_buffer };
                 None
             }
-            ChannelState::SentOpen { .. }
-            | ChannelState::Established(_)
-            | ChannelState::SentClose { .. } => {
+            ChannelState::SentOpen {
+                tx_on_established,
+                our_rx_buffer,
+            } => {
+                let (entry, actor, user) =
+                    setup_established_channel_wires(our_rx_buffer, their_rx_buffer);
+                
+                // notify the user if possible
+                match tx_on_established.send((actor, user)) {
+                    Ok(_) => {
+                        // successfully established
+                        *self = ChannelState::Established(entry);
+                        None
+                    }
+                    Err(_) => {
+                        // we already gave up. send a close
+                        *self = ChannelState::SentClose;
+                        Some(Frame::Fin)
+                    }
+                }
+            }
+            ChannelState::Established(_) | ChannelState::SentClose { .. } => {
                 tracing::warn!("Unexpectedly received SYN!");
                 *self = ChannelState::Closed;
                 Some(Frame::Reset)
