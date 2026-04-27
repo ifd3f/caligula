@@ -28,7 +28,7 @@ pub enum Frame {
     Reset,
     Data(bytes::Bytes),
     Adm(u64),
-    Syn,
+    Syn(u64),
     Fin,
 }
 
@@ -38,7 +38,7 @@ impl Frame {
             Frame::Reset => FrameType::RST,
             Frame::Data(_) => FrameType::DAT,
             Frame::Adm(_) => FrameType::ADM,
-            Frame::Syn => FrameType::SYN,
+            Frame::Syn(_) => FrameType::SYN,
             Frame::Fin => FrameType::FIN,
         }
     }
@@ -48,7 +48,7 @@ impl Frame {
             Frame::Reset => Bytes::new(),
             Frame::Data(bytes) => bytes.clone(),
             Frame::Adm(seqno) => Bytes::copy_from_slice(&seqno.to_be_bytes()),
-            Frame::Syn => Bytes::new(),
+            Frame::Syn(seqno) => Bytes::copy_from_slice(&seqno.to_be_bytes()),
             Frame::Fin => Bytes::new(),
         }
     }
@@ -182,7 +182,17 @@ impl<R: AsyncRead + Unpin> MuxReader<R> {
         let frame = match frame_type {
             FrameType::RST => Frame::Reset,
             FrameType::DAT => Frame::Data(buf.freeze()),
-            FrameType::SYN => Frame::Syn,
+            FrameType::SYN => {
+                if body_len < 8 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::ConnectionAborted,
+                        format!("aborted while reading SYN packet: invalid body format"),
+                    ));
+                }
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&buf[0..8]);
+                Frame::Syn(u64::from_be_bytes(bytes))
+            }
             FrameType::ADM => {
                 if body_len < 8 {
                     return Err(std::io::Error::new(

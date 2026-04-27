@@ -2,6 +2,7 @@ use bincode::Options as _;
 
 use crate::mux::MAX_BODY;
 
+pub mod adm;
 pub mod mux;
 
 #[cfg(feature = "test-util")]
