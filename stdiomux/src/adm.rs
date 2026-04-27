@@ -7,7 +7,10 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, watch};
 
-use crate::mux::{ChannelId, Frame};
+use crate::{
+    mux::{ChannelId, Frame},
+    queue::{PriorityQueueSender, priority_queue},
+};
 
 pub struct AdmissionController<Rx, Tx>
 where
@@ -15,10 +18,7 @@ where
     Tx: Sink<(ChannelId, Frame)> + Unpin,
 {
     inner: Arc<AdmissionControllerInner>,
-    /// Queue of frames to transmit.
-    tx_queue_appender: mpsc::Sender<(ChannelId, Frame)>,
-    /// Queue of frames to transmit.
-    high_pri_tx_queue_appender: mpsc::UnboundedSender<(ChannelId, Frame)>,
+    queue_tx: PriorityQueueSender<(ChannelId, Frame)>,
     _phantom: PhantomData<(Rx, Tx)>,
 }
 
@@ -37,28 +37,25 @@ where
     <Tx as futures::Sink<(ChannelId, Frame)>>::Error: Debug,
 {
     pub fn new(mut rx: Rx, mut tx: Tx) -> Self {
-        let (tx_queue_appender, mut tx_queue) = mpsc::channel(128);
-        let (high_pri_tx_queue_appender, mut high_pri_tx_queue) = mpsc::unbounded_channel();
+        let (queue_tx, mut queue_rx) = priority_queue();
         let inner_value = Arc::new(AdmissionControllerInner {
             channels: DashMap::new(),
         });
 
         let _rx_actor = tokio::spawn({
             let inner = inner_value.clone();
-            let high_pri_tx_queue_appender = high_pri_tx_queue_appender.clone();
+            let queue_tx = queue_tx.clone();
             async move {
                 while let Some((channel_id, frame)) = rx.next().await {
                     // try to forward the message to the actor
                     let Some(entry) = inner.channels.get(&channel_id) else {
-                        high_pri_tx_queue_appender
-                            .send((channel_id, Frame::Reset))
-                            .unwrap();
+                        queue_tx.send_high_pri((channel_id, Frame::Reset)).unwrap();
                         return;
                     };
                     let send = entry.handle_frame(frame);
 
                     if let Some(send) = send {
-                        let Ok(()) = high_pri_tx_queue_appender.send((channel_id, send)) else {
+                        let Ok(()) = queue_tx.send_high_pri((channel_id, send)) else {
                             todo!()
                         };
                     }
@@ -68,24 +65,16 @@ where
 
         let _tx_actor = tokio::spawn(async move {
             loop {
-                tokio::select! {
-                    biased;
-                    v = high_pri_tx_queue.recv() => {
-                        let Some(v) = v else { return; };
-                        tx.send(v).await.unwrap()
-                    }
-                    v = tx_queue.recv() => {
-                        let Some(v) = v else { return; };
-                        tx.send(v).await.unwrap()
-                    }
-                }
+                let Some(v) = queue_rx.recv().await else {
+                    return;
+                };
+                tx.send(v).await.unwrap()
             }
         });
 
         Self {
             inner: inner_value,
-            tx_queue_appender,
-            high_pri_tx_queue_appender,
+            queue_tx,
             _phantom: PhantomData,
         }
     }
@@ -96,11 +85,11 @@ where
         initial_rx_buffer: usize,
     ) -> Result<ChannelIo, OpenChannelError> {
         let (frame, rx) = self.inner.open_channel(channel_id, initial_rx_buffer)?;
-        let Ok(()) = self.high_pri_tx_queue_appender.send((channel_id, frame)) else {
+        let Ok(()) = self.queue_tx.send_high_pri((channel_id, frame)) else {
             todo!()
         };
 
-        let tx_queue_appender = self.tx_queue_appender.clone();
+        let queue_tx = self.queue_tx.clone();
         let (mut actor_wires, io) = rx.await?;
 
         let _channel_tx_actor = tokio::spawn(async move {
@@ -126,7 +115,7 @@ where
 
                     // send the packet over
                     (Some(bs), Ok(_)) => {
-                        let Ok(()) = tx_queue_appender.send((channel_id, Frame::Data(bs))).await
+                        let Ok(()) = queue_tx.send_low_pri((channel_id, Frame::Data(bs))).await
                         else {
                             break;
                         };

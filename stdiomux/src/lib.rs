@@ -4,6 +4,7 @@ use crate::mux::MAX_BODY;
 
 pub mod adm;
 pub mod mux;
+mod queue;
 
 #[cfg(feature = "test-util")]
 pub mod test_util;
