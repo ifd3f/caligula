@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+byte-strings = "0.3.1"
+bytes = "1.11.1"
+strum = { version = "0.28.0", features = ["derive"] }
+thiserror = "2.0.18"
+
+[dev-dependencies]
+proptest = "1.11.0"
+proptest-derive = "0.8.0"
