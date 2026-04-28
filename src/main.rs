@@ -16,6 +16,9 @@ mod tty;
 mod ui;
 mod util;
 
+#[cfg(feature = "gui")]
+mod gui;
+
 /// A lightweight, user-friendly disk imaging tool
 #[derive(clap::Parser, Debug)]
 #[command(author, version, about, long_about = None, flatten_help = true)]
@@ -28,6 +31,8 @@ pub struct Args {
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     Burn(ui::BurnArgs),
+
+    Gui,
 
     /// INTERNAL ONLY!
     ///
@@ -60,6 +65,9 @@ async fn main() {
                 Ok(_) => (),
                 Err(e) => handle_toplevel_error(e),
             }
+        }
+        Command::Gui => {
+            gui::run_gui().unwrap();
         }
         Command::HerderDaemon(args) => {
             logging::init_logging_child(args.log_file);
