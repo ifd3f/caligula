@@ -32,6 +32,7 @@ pub struct Args {
 pub enum Command {
     Burn(ui::BurnArgs),
 
+    #[cfg(feature = "gui")]
     Gui,
 
     /// INTERNAL ONLY!
@@ -66,6 +67,7 @@ async fn main() {
                 Err(e) => handle_toplevel_error(e),
             }
         }
+        #[cfg(feature = "gui")]
         Command::Gui => {
             gui::run_gui().unwrap();
         }

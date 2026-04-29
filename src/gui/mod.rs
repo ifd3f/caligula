@@ -1,5 +1,4 @@
 mod app;
-mod panels;
 
 use app::App;
 
