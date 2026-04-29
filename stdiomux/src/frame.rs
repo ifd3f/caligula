@@ -8,7 +8,7 @@ use strum::{EnumDiscriminants, FromRepr, IntoDiscriminant};
 use proptest::prelude::*;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-const MAX_PAYLOAD: usize = libc::PIPE_BUF;
+pub const MAX_PAYLOAD: usize = libc::PIPE_BUF;
 
 #[expect(
     clippy::transmute_ptr_to_ref,
