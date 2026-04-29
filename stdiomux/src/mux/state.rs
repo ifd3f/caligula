@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::frame::{ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum MuxState {
     Active(ActiveData),
     Terminating(ActiveData),
@@ -15,7 +15,7 @@ impl Default for MuxState {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, thiserror::Error, Clone)]
+#[derive(Debug, PartialEq, thiserror::Error, Clone)]
 pub enum ClosedReason {
     #[error("Connection reset")]
     Reset,
@@ -25,7 +25,7 @@ pub enum ClosedReason {
     Panicked,
 }
 
-#[derive(Debug, Default, PartialEq, Eq, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct ActiveData {
     /// Active, non-closed channels.
     channels: HashMap<ChannelId, ChannelMapEntry>,
@@ -38,6 +38,12 @@ impl ActiveData {
 
     fn on_channel_control(&mut self, id: ChannelId, f: ChannelControlHeader) -> Option<Frame> {
         todo!()
+    }
+}
+
+impl PartialEq for ActiveData {
+    fn eq(&self, other: &Self) -> bool {
+        self.channels.keys().eq(other.channels.keys())
     }
 }
 
@@ -106,7 +112,7 @@ impl MuxState {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, Clone)]
 struct ChannelMapEntry {
     // /// current state of the connection
     //state: std::sync::Mutex<ChannelState>,
