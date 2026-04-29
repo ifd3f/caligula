@@ -1,12 +1,15 @@
 use std::{
     fmt::Debug,
     num::NonZero,
-    task::{Context, Poll},
+    task::{Context, Poll, Waker},
 };
 
 use bytes::Bytes;
 
-use crate::frame::{ChannelControlHeader, ChannelDataFrame};
+use crate::{
+    frame::{ChannelControlHeader, ChannelDataFrame},
+    util::panic_or_warn,
+};
 
 #[derive(Default)]
 pub enum ChannelState<B: ChannelBuffer> {
@@ -14,7 +17,8 @@ pub enum ChannelState<B: ChannelBuffer> {
     Closed,
     RecvOpen,
     SendOpen {
-        buf: Box<dyn FnOnce() -> B + 'static>,
+        buf: B,
+        waker: Option<Waker>,
     },
     Open(OpenChannel<B>),
 }
@@ -30,11 +34,25 @@ impl<B: ChannelBuffer> Debug for ChannelState<B> {
     }
 }
 
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default)]
 pub struct OpenChannel<B: ChannelBuffer> {
     their_available_permits: u64,
     our_available_permits: u64,
     buf: B,
+    tx_waker: Option<Waker>,
+    rx_waker: Option<Waker>,
+}
+
+impl<B: ChannelBuffer> OpenChannel<B> {
+    pub fn new(buf: B) -> Self {
+        Self {
+            their_available_permits: 0,
+            our_available_permits: 0,
+            buf,
+            tx_waker: None,
+            rx_waker: None,
+        }
+    }
 }
 
 impl<B: ChannelBuffer> Debug for OpenChannel<B> {
@@ -54,6 +72,10 @@ pub enum AcceptRxError {
     Disconnected,
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Channel is in use, and already opened by another caller")]
+pub struct ChannelInUse;
+
 /// Interface for the channel state machine to receive and place data.
 pub trait ChannelBuffer {
     /// Poll for how many payloads can be received on this channel.
@@ -71,32 +93,145 @@ pub trait ChannelBuffer {
     fn accept_rx(&mut self, data: Bytes) -> Result<(), AcceptRxError>;
 
     /// Poll data to transmit on this buffer.
-    fn poll_tx(&mut self, cx: &mut Context<'_>) -> Poll<Bytes>;
+    fn poll_tx(&mut self, cx: &mut Context<'_>) -> Poll<Option<Bytes>>;
 }
 
 impl<B: ChannelBuffer> ChannelState<B> {
-    pub fn on_recv_data(self, data: ChannelDataFrame) -> (Self, Option<ChannelControlHeader>) {
-        let close = (Self::Closed, Some(ChannelControlHeader::Reset));
-
+    pub fn poll_open(
+        &mut self,
+        cx: &mut Context<'_>,
+        make_buf: impl FnOnce() -> B,
+    ) -> Poll<Result<(), ChannelInUse>> {
         match self {
-            // If we get data outside of Open, close the stream
-            Self::Closed | Self::RecvOpen | Self::SendOpen { .. } => close,
-
-            // Handle the data
-            Self::Open(mut o) => {
-                // ensure that they have enough permits first
-                let Some(new_permits) = o.their_available_permits.checked_sub(1) else {
-                    return close;
+            ChannelState::Closed => {
+                *self = ChannelState::SendOpen {
+                    buf: make_buf(),
+                    waker: Some(cx.waker().clone()),
                 };
-                o.their_available_permits = new_permits;
+                Poll::Pending
+            }
+            ChannelState::RecvOpen => {
+                *self = ChannelState::Open(OpenChannel::new(make_buf()));
+                Poll::Ready(Ok(()))
+            }
+            ChannelState::SendOpen { .. } | ChannelState::Open(_) => Poll::Ready(Err(ChannelInUse)),
+        }
+    }
 
-                // attempt to accept the rx
-                let Ok(_) = o.buf.accept_rx(data.0) else {
-                    return close;
-                };
-                (Self::Open(o), None)
+    pub fn on_recv_data(&mut self, data: ChannelDataFrame) -> Option<ChannelControlHeader> {
+        let Self::Open(o) = self else {
+            return None;
+        };
+
+        // ensure that they have enough permits first
+        let Some(new_permits) = o.their_available_permits.checked_sub(1) else {
+            // not enough permits -- close the channel out of safety
+            panic_or_warn!(
+                "Channel buffer out of capacity! This may be a logic error on the other side!"
+            );
+            *self = ChannelState::Closed;
+            return Some(ChannelControlHeader::Reset);
+        };
+
+        o.their_available_permits = new_permits;
+        if let Some(w) = o.rx_waker.take() {
+            w.wake();
+        }
+
+        // attempt to accept the rx
+        match o.buf.accept_rx(data.0) {
+            Ok(_) => (),
+            Err(AcceptRxError::OutOfCapacity) => {
+                panic_or_warn!(
+                    "Channel buffer out of capacity! This may be a logic error in the buffer implementation!"
+                );
+                *self = ChannelState::Closed;
+                return Some(ChannelControlHeader::Reset);
+            }
+            Err(AcceptRxError::Disconnected) => {
+                *self = ChannelState::Closed;
+                return Some(ChannelControlHeader::Reset);
             }
         }
+
+        None
+    }
+
+    /// Calculate if we need to send an ADM packet
+    #[inline]
+    pub fn poll_next_adm(&mut self, cx: &mut Context<'_>) -> Option<u8> {
+        let Self::Open(o) = self else {
+            return None;
+        };
+
+        let actual_capacity = match o.buf.poll_rx_capacity(cx) {
+            // we have capacity
+            Poll::Ready(Some(x)) => x.into(),
+            // we are closed
+            Poll::Ready(None) => {
+                *self = ChannelState::Closed;
+                return None;
+            }
+            // we are waiting for more capacity
+            Poll::Pending => 0,
+        };
+
+        match actual_capacity.cmp(&o.their_available_permits) {
+            std::cmp::Ordering::Less => {
+                panic_or_warn!(
+                    "actual_capacity {} is less than their_available_permits {}! This may be a logic error in the buffer implementation",
+                    actual_capacity,
+                    o.their_available_permits
+                );
+                None
+            }
+
+            // capacity has not changed, so no adm is needed
+            std::cmp::Ordering::Equal => None,
+
+            // capacity has increased
+            std::cmp::Ordering::Greater => {
+                // calculate how many additional permits we need to send
+                let needed_additional_permits = actual_capacity - o.their_available_permits;
+
+                // we can only send 255 permits at a time, so clampingly convert
+                let actual_additional_permits =
+                    u8::try_from(needed_additional_permits).unwrap_or(u8::MAX);
+
+                // increment our count of their permits
+                o.their_available_permits += actual_additional_permits as u64;
+                Some(actual_additional_permits)
+            }
+        }
+    }
+
+    /// Calculate if we can send data
+    #[inline]
+    pub fn poll_next_tx(&mut self, cx: &mut Context<'_>) -> Poll<Option<ChannelDataFrame>> {
+        let Self::Open(o) = self else {
+            return Poll::Ready(None);
+        };
+
+        // out of permits -- don't send
+        if o.our_available_permits == 0 {
+            o.tx_waker = Some(cx.waker().clone());
+            return Poll::Pending;
+        }
+
+        // we have enough permits -- poll for the next datagram
+        let result = o.buf.poll_tx(cx).map(|x| x.map(ChannelDataFrame));
+
+        match &result {
+            Poll::Ready(Some(_)) => {
+                o.our_available_permits -= 1;
+            }
+            Poll::Ready(None) => {
+                *self = Self::Closed;
+            }
+            Poll::Pending => (),
+        }
+
+        result
     }
 
     pub fn on_recv_control(self, f: ChannelControlHeader) -> (Self, Option<ChannelControlHeader>) {
@@ -112,16 +247,11 @@ impl<B: ChannelBuffer> ChannelState<B> {
             (Self::Closed, Open) => (Self::RecvOpen, None),
 
             // combine our sendopen and the existing open into an opened channel
-            (Self::SendOpen { buf }, Open) => {
-                let buf = buf();
-                (
-                    Self::Open(OpenChannel {
-                        their_available_permits: 0,
-                        our_available_permits: 0,
-                        buf,
-                    }),
-                    None,
-                )
+            (Self::SendOpen { buf, mut waker }, Open) => {
+                if let Some(w) = waker.take() {
+                    w.wake();
+                }
+                (Self::Open(OpenChannel::new(buf)), None)
             }
 
             // can't get opens in any other state
