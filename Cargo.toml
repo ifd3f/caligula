@@ -22,7 +22,7 @@ clap = { version = "4.5.49", features = ["derive", "cargo", "wrap_help"] }
 crossterm = { version = "0.27.0", features = ["event-stream"] }
 derive_more = "0.99.20"
 digest = "0.10.7"
-eframe = { version = "0.34", optional = true }
+eframe = { version = "0.34", optional = true, default-features = false, features = ["accesskit", "default_fonts", "wayland", "web_screen_reader", "x11", "glow"] }
 egui = { version = "0.34", optional = true }
 flate2 = "1.1.4"
 format-bytes = "0.3.0"
@@ -38,6 +38,7 @@ lz4_flex = { version = "0.11.6", default-features = false, features = ["frame"] 
 md5 = { package = "md-5", version = "0.10.6", default-features = false }
 process_path = "0.1.4"
 ratatui = { version = "0.26.3", default-features = false, features = ["crossterm"] }
+rfd = "0.17"
 ruzstd = { version = "0.6.0", default-features = false, features = ["std"] }
 serde = { version = "1.0.228", features = ["derive"] }
 sha1 = "0.10.6"
