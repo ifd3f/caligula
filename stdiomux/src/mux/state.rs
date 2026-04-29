@@ -1,15 +1,49 @@
 use std::collections::HashMap;
+use std::fmt::Debug;
 
-use crate::frame::{ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader};
+use crate::{
+    channel::state::{ChannelBuffer, ChannelState},
+    frame::{ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader},
+};
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum MuxState {
-    Active(ActiveData),
-    Terminating(ActiveData),
+pub enum MuxState<B: ChannelBuffer> {
+    Active(ActiveData<B>),
+    Terminating(ActiveData<B>),
     Closed(Result<(), ClosedReason>),
 }
 
-impl Default for MuxState {
+impl<B: ChannelBuffer> Clone for MuxState<B> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Active(arg0) => Self::Active(arg0.clone()),
+            Self::Terminating(arg0) => Self::Terminating(arg0.clone()),
+            Self::Closed(arg0) => Self::Closed(arg0.clone()),
+        }
+    }
+}
+
+impl<B: ChannelBuffer> PartialEq for MuxState<B> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Active(l0), Self::Active(r0)) => l0 == r0,
+            (Self::Terminating(l0), Self::Terminating(r0)) => l0 == r0,
+            (Self::Closed(l0), Self::Closed(r0)) => l0 == r0,
+            _ => false,
+        }
+    }
+}
+
+impl<B: ChannelBuffer> Debug for MuxState<B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Active(arg0) => f.debug_tuple("Active").field(arg0).finish(),
+            Self::Terminating(arg0) => f.debug_tuple("Terminating").field(arg0).finish(),
+            Self::Closed(arg0) => f.debug_tuple("Closed").field(arg0).finish(),
+        }
+    }
+}
+
+impl<B: ChannelBuffer> Default for MuxState<B> {
     fn default() -> Self {
         Self::Closed(Err(ClosedReason::Panicked))
     }
@@ -25,29 +59,65 @@ pub enum ClosedReason {
     Panicked,
 }
 
-#[derive(Debug, Default, Clone)]
-pub struct ActiveData {
+pub struct ActiveData<B: ChannelBuffer> {
     /// Active, non-closed channels.
-    channels: HashMap<ChannelId, ChannelMapEntry>,
+    channels: HashMap<ChannelId, ChannelMapEntry<B>>,
 }
 
-impl ActiveData {
+impl<B: ChannelBuffer> Debug for ActiveData<B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ActiveData")
+            .field("channels", &self.channels)
+            .finish()
+    }
+}
+
+impl<B: ChannelBuffer> Default for ActiveData<B> {
+    fn default() -> Self {
+        Self {
+            channels: Default::default(),
+        }
+    }
+}
+
+impl<B: ChannelBuffer> Clone for ActiveData<B> {
+    fn clone(&self) -> Self {
+        Self {
+            channels: self
+                .channels
+                .keys()
+                .map(|k| (*k, ChannelMapEntry::default()))
+                .collect(),
+        }
+    }
+}
+
+impl<B: ChannelBuffer> ActiveData<B> {
     fn on_channel_data(&mut self, id: ChannelId, f: ChannelDataFrame) -> Option<Frame> {
-        todo!()
+        self.channels
+            .entry(id)
+            .or_default()
+            .state
+            .on_recv_data(f)
+            .map(|f| Frame::ChannelControl(id, f))
     }
 
     fn on_channel_control(&mut self, id: ChannelId, f: ChannelControlHeader) -> Option<Frame> {
-        todo!()
+        let cell = self.channels.entry(id).or_default();
+        let (new, out) = std::mem::take(cell).state.on_recv_control(f);
+        cell.state = new;
+
+        out.map(|f| Frame::ChannelControl(id, f))
     }
 }
 
-impl PartialEq for ActiveData {
+impl<B: ChannelBuffer> PartialEq for ActiveData<B> {
     fn eq(&self, other: &Self) -> bool {
         self.channels.keys().eq(other.channels.keys())
     }
 }
 
-impl MuxState {
+impl<B: ChannelBuffer> MuxState<B> {
     /// Create an initial post-handshake [MuxState]
     pub fn opened() -> Self {
         Self::Active(ActiveData::default())
@@ -112,19 +182,24 @@ impl MuxState {
     }
 }
 
-#[derive(Debug, Clone)]
-struct ChannelMapEntry {
-    // /// current state of the connection
-    //state: std::sync::Mutex<ChannelState>,
+struct ChannelMapEntry<B: ChannelBuffer> {
+    /// current state of the connection
+    state: ChannelState<B>,
 }
 
-impl ChannelMapEntry {
-    fn on_recv_data(&self, _data: ChannelDataFrame) {
-        todo!()
+impl<B: ChannelBuffer> Debug for ChannelMapEntry<B> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChannelMapEntry")
+            .field("state", &self.state)
+            .finish()
     }
+}
 
-    fn on_recv_adm(&self, _permits: u8) {
-        todo!()
+impl<B: ChannelBuffer> Default for ChannelMapEntry<B> {
+    fn default() -> Self {
+        Self {
+            state: Default::default(),
+        }
     }
 }
 
@@ -134,9 +209,13 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::frame::{
-        ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader,
+    use crate::{
+        channel::state::NullChannelBuffer,
+        frame::{ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader},
     };
+
+    type MuxState = super::MuxState<NullChannelBuffer>;
+    type ActiveData = super::ActiveData<NullChannelBuffer>;
 
     #[test]
     fn test_muxstate_default_is_closed_panicked() {
@@ -263,30 +342,6 @@ mod tests {
 
         assert_eq!(new_state, MuxState::Closed(Ok(())));
         assert_eq!(reply, Some(Frame::MuxControl(MuxControlHeader::Reset)));
-    }
-
-    #[rstest]
-    #[case::active(MuxState::opened())]
-    #[case::terminating(MuxState::Terminating(ActiveData::default()))]
-    fn test_channel_data_preserves_state(#[case] initial_state: MuxState) {
-        let frame = Frame::ChannelData(ChannelId(1), ChannelDataFrame(Bytes::new()));
-        let expected_state = initial_state.clone();
-
-        let (new_state, _reply) = initial_state.on_recv(frame);
-
-        assert_eq!(new_state, expected_state);
-    }
-
-    #[rstest]
-    #[case::active(MuxState::opened())]
-    #[case::terminating(MuxState::Terminating(ActiveData::default()))]
-    fn test_channel_control_preserves_state(#[case] initial_state: MuxState) {
-        let frame = Frame::ChannelControl(ChannelId(1), ChannelControlHeader::Open);
-        let expected_state = initial_state.clone();
-
-        let (new_state, _reply) = initial_state.on_recv(frame);
-
-        assert_eq!(new_state, expected_state);
     }
 
     #[test]

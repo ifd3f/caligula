@@ -4,6 +4,7 @@ use tokio::{
 };
 
 use crate::{
+    channel::state::ChannelBuffer,
     frame::{AsyncReadExt as _, AsyncWriteExt as _, Frame, MuxControlHeader},
     mux::state::MuxState,
     queue::priority_queue,
@@ -36,7 +37,33 @@ where
         }
 
         let (queue_tx, mut queue_rx) = priority_queue::<Frame>();
-        let (state_tx, state_rx) = watch::channel(MuxState::opened());
+        let (state_tx, state_rx) = watch::channel(MuxState::<Buffer>::opened());
+
+        #[derive(Debug, Default)]
+        struct Buffer {}
+
+        impl ChannelBuffer for Buffer {
+            fn poll_rx_capacity(
+                &mut self,
+                cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Option<std::num::NonZero<u64>>> {
+                todo!()
+            }
+
+            fn accept_rx(
+                &mut self,
+                data: bytes::Bytes,
+            ) -> Result<(), crate::channel::state::AcceptRxError> {
+                todo!()
+            }
+
+            fn poll_tx(
+                &mut self,
+                cx: &mut std::task::Context<'_>,
+            ) -> std::task::Poll<Option<bytes::Bytes>> {
+                todo!()
+            }
+        }
 
         todo!()
         /*

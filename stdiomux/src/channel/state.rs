@@ -77,7 +77,7 @@ pub enum AcceptRxError {
 pub struct ChannelInUse;
 
 /// Interface for the channel state machine to receive and place data.
-pub trait ChannelBuffer {
+pub trait ChannelBuffer: Default {
     /// Poll for how many payloads can be received on this channel.
     ///
     /// Returns the amount of capacity, [`Poll::Pending`] if no capacity,
@@ -94,6 +94,25 @@ pub trait ChannelBuffer {
 
     /// Poll data to transmit on this buffer.
     fn poll_tx(&mut self, cx: &mut Context<'_>) -> Poll<Option<Bytes>>;
+}
+
+#[cfg(test)]
+#[derive(Debug, Default)]
+pub struct NullChannelBuffer;
+
+#[cfg(test)]
+impl ChannelBuffer for NullChannelBuffer {
+    fn poll_rx_capacity(&mut self, _cx: &mut Context<'_>) -> Poll<Option<NonZero<u64>>> {
+        Poll::Ready(Some(NonZero::try_from(100).unwrap()))
+    }
+
+    fn accept_rx(&mut self, _data: Bytes) -> Result<(), AcceptRxError> {
+        Ok(())
+    }
+
+    fn poll_tx(&mut self, _cx: &mut Context<'_>) -> Poll<Option<Bytes>> {
+        Poll::Pending
+    }
 }
 
 impl<B: ChannelBuffer> ChannelState<B> {
