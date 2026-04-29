@@ -66,7 +66,7 @@ pub enum MuxControlHeader {
 #[strum_discriminants(repr(u8))]
 pub enum ChannelControlHeader {
     Reset,
-    Open(u8),
+    Open,
     Admit(u8),
 }
 
@@ -113,7 +113,7 @@ impl Header {
                 let opcode = f.discriminant() as u32;
                 let argument: u8 = match f {
                     ChannelControlHeader::Reset => 0,
-                    ChannelControlHeader::Open(size) => *size,
+                    ChannelControlHeader::Open => 0,
                     ChannelControlHeader::Admit(permits) => *permits,
                 };
                 opcode << 24 | (argument as u32) << 16 | id.0 as u32
@@ -159,7 +159,7 @@ impl Header {
                     channel_id,
                     match opcode {
                         ChannelControlOpcode::Reset => ChannelControlHeader::Reset,
-                        ChannelControlOpcode::Open => ChannelControlHeader::Open(channel_argument),
+                        ChannelControlOpcode::Open => ChannelControlHeader::Open,
                         ChannelControlOpcode::Admit => {
                             ChannelControlHeader::Admit(channel_argument)
                         }
@@ -184,7 +184,7 @@ impl Header {
             },
             Header::ChannelControl(_, h) => match h {
                 ChannelControlHeader::Reset
-                | ChannelControlHeader::Open(_)
+                | ChannelControlHeader::Open
                 | ChannelControlHeader::Admit(_) => 0,
             },
             Header::ChannelData(_, payload_len) => *payload_len,
@@ -213,7 +213,7 @@ impl Header {
                 id,
                 match h {
                     other @ (ChannelControlHeader::Reset
-                    | ChannelControlHeader::Open(_)
+                    | ChannelControlHeader::Open
                     | ChannelControlHeader::Admit(_)) => other,
                 },
             ),
@@ -258,7 +258,7 @@ impl Frame {
             },
             Frame::ChannelControl(_, h) => match h {
                 ChannelControlHeader::Reset
-                | ChannelControlHeader::Open(_)
+                | ChannelControlHeader::Open
                 | ChannelControlHeader::Admit(_) => Bytes::new(),
             },
             Frame::ChannelData(_, channel_data_frame) => channel_data_frame.0.clone(),

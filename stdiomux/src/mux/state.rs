@@ -275,7 +275,7 @@ mod tests {
     #[case::active(MuxState::opened())]
     #[case::terminating(MuxState::Terminating(ActiveData::default()))]
     fn test_channel_control_preserves_state(#[case] initial_state: MuxState) {
-        let frame = Frame::ChannelControl(ChannelId(1), ChannelControlHeader::Open(10));
+        let frame = Frame::ChannelControl(ChannelId(1), ChannelControlHeader::Open);
         let expected_state = initial_state.clone();
 
         let (new_state, _reply) = initial_state.on_recv(frame);
