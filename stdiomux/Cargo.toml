@@ -20,6 +20,7 @@ criterion = { version = "0.8.2", features = ["async", "async_tokio", "html_repor
 proptest = "1.11.0"
 proptest-derive = "0.8.0"
 rand = "0.10.1"
+rstest = "0.26.1"
 tokio = { version = "1.52.1", features = ["rt-multi-thread", "test-util"] }
 tokio-pipe = "0.2.12"
 
