@@ -22,7 +22,7 @@ clap = { version = "4.5.49", features = ["derive", "cargo", "wrap_help"] }
 crossterm = { version = "0.27.0", features = ["event-stream"] }
 derive_more = "0.99.20"
 digest = "0.10.7"
-eframe = { version = "0.34", optional = true, default-features = false, features = ["accesskit", "default_fonts", "wayland", "web_screen_reader", "x11", "glow"] }
+eframe = { version = "0.34", optional = true, default-features = false, features = ["accesskit", "default_fonts", "wayland", "web_screen_reader", "x11", "glow", "persistence"] }
 egui = { version = "0.34", optional = true }
 flate2 = "1.1.4"
 format-bytes = "0.3.0"
