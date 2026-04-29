@@ -1,5 +1,6 @@
 use std::{
-    fmt::{Debug, DebugList},
+    fmt::Debug,
+    num::NonZero,
     task::{Context, Poll},
 };
 
@@ -29,7 +30,7 @@ impl<B: ChannelBuffer> Debug for ChannelState<B> {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, PartialEq, Eq)]
 pub struct OpenChannel<B: ChannelBuffer> {
     their_available_permits: u64,
     our_available_permits: u64,
@@ -44,28 +45,32 @@ impl<B: ChannelBuffer> Debug for OpenChannel<B> {
             .finish()
     }
 }
-/// Interface for interacting with a ChannelBuffer that may or may not be alive.
-pub trait ChannelBuffer {
-    type Live: LiveChannelBuffer;
 
-    /// Ensures that this buffer is alive.
-    fn ensure_alive(&mut self) -> Option<&mut Self::Live>;
-
-    /// Attempt to accept a piece of data that has been received. This method must either
-    /// return the live version, or return None to signal that it cannot place the data
-    /// and must therefore close the stream.
-    fn accept_rx(&mut self, data: Bytes) -> Option<&mut Self::Live>;
+#[derive(Debug, thiserror::Error)]
+pub enum AcceptRxError {
+    #[error("Buffer is out of capacity")]
+    OutOfCapacity,
+    #[error("Buffer is disconnected")]
+    Disconnected,
 }
 
-/// Interface for interacting with a channel buffer that is guaranteed to be alive.
-pub trait LiveChannelBuffer {
-    /// Called when new transmission permits are granted.
-    fn on_grant_tx_permits(&mut self, permits: u8);
+/// Interface for the channel state machine to receive and place data.
+pub trait ChannelBuffer {
+    /// Poll for how many payloads can be received on this channel.
+    ///
+    /// Returns the amount of capacity, [`Poll::Pending`] if no capacity,
+    /// or [`None`] if this buffer is closed.
+    fn poll_rx_capacity(&mut self, cx: &mut Context<'_>) -> Poll<Option<NonZero<u64>>>;
 
-    /// Returns how much capacity is available for receiving on this channel.
-    fn rx_capacity(&mut self) -> u64;
+    /// Place received data into this channel.
+    ///
+    /// Returning an error will cause the buffer to disconnect.
+    ///
+    /// If `poll_rx_capacity()` is implemented correctly, this is guaranteed to always work.
+    /// As a failsafe, if it turns out there is no more capacity, return [`AcceptRxError::OutOfCapacity`].
+    fn accept_rx(&mut self, data: Bytes) -> Result<(), AcceptRxError>;
 
-    /// Poll for new data to transmit on this buffer.
+    /// Poll data to transmit on this buffer.
     fn poll_tx(&mut self, cx: &mut Context<'_>) -> Poll<Bytes>;
 }
 
@@ -86,7 +91,7 @@ impl<B: ChannelBuffer> ChannelState<B> {
                 o.their_available_permits = new_permits;
 
                 // attempt to accept the rx
-                let Some(_) = o.buf.accept_rx(data.0) else {
+                let Ok(_) = o.buf.accept_rx(data.0) else {
                     return close;
                 };
                 (Self::Open(o), None)
