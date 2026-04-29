@@ -12,7 +12,7 @@ proptest = "1.11.0"
 strum = { version = "0.28.0", features = ["derive"] }
 test-strategy = "0.4.5"
 thiserror = "2.0.18"
-tokio = { version = "1.52.1", features = ["io-std", "io-util"] }
+tokio = { version = "1.52.1", features = ["io-std", "io-util", "macros"] }
 
 [dev-dependencies]
 bytesize = "2.3.1"

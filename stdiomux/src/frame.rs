@@ -19,6 +19,11 @@ const HELLO_PAYLOAD: &[u8; MAX_PAYLOAD] = {
     const_concat_bytes!(MAGIC, &[0u8; MAX_PAYLOAD - MAGIC.len()])
 };
 
+pub const HELLO: Frame = Frame::MuxControl(MuxControlHeader::Hello);
+pub const RST: Frame = Frame::MuxControl(MuxControlHeader::Reset);
+pub const FIN: Frame = Frame::MuxControl(MuxControlHeader::Finished);
+pub const TRM: Frame = Frame::MuxControl(MuxControlHeader::Terminate);
+
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ChannelId(#[cfg_attr(test, proptest(strategy = "0u16..=65535"))] pub u16);
@@ -324,8 +329,12 @@ pub trait ReadExt: std::io::Read {
     fn read_frame(&mut self) -> std::io::Result<Frame> {
         let mut header = [0u8; 4];
         self.read_exact(&mut header)?;
-        let header = Header::deserialize(u32::from_be_bytes(header))
-            .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?;
+        let header = Header::deserialize(u32::from_be_bytes(header)).map_err(|e| match e {
+            DeserializeFrameError::InvalidHello(e) => {
+                std::io::Error::new(ErrorKind::ConnectionAborted, e)
+            }
+            other => std::io::Error::new(ErrorKind::InvalidData, other),
+        })?;
 
         let mut buf = BytesMut::zeroed(header.payload_length() as usize);
         self.read_exact(&mut buf)?;
