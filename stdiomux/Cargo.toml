@@ -6,9 +6,15 @@ edition = "2024"
 [dependencies]
 byte-strings = "0.3.1"
 bytes = "1.11.1"
+futures = "0.3.32"
+libc = "0.2.186"
+proptest = "1.11.0"
 strum = { version = "0.28.0", features = ["derive"] }
+test-strategy = "0.4.5"
 thiserror = "2.0.18"
+tokio = { version = "1.52.1", features = ["io-std", "io-util"] }
 
 [dev-dependencies]
 proptest = "1.11.0"
 proptest-derive = "0.8.0"
+tokio = { version = "1.52.1", features = ["rt-multi-thread", "test-util"] }
