@@ -1,4 +1,5 @@
 mod app;
+mod sections;
 
 use app::App;
 

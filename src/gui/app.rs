@@ -1,33 +1,63 @@
-use egui::{CentralPanel, Color32, MenuBar, Panel, RichText, ViewportCommand};
+use egui::{CentralPanel, MenuBar, Panel, RichText, ViewportCommand};
 use std::path::PathBuf;
 
 use crate::{
     compression::CompressionFormat,
-    hash::{HashAlg, parse_hash_input},
+    device::{Removable, WriteTarget, enumerate_devices},
+    gui::sections::{add_begin_writing_ui, add_file_hash_ui, add_image_ui, add_target_disk_ui},
+    hash::HashAlg,
 };
 
 #[derive(Default)]
 #[cfg_attr(debug_assertions, derive(serde::Deserialize, serde::Serialize))]
 pub struct App {
-    picked_image: Option<PathBuf>,
-    file_hash_str: String,
-    file_hash_algorithms_possible: Vec<HashAlg>,
-    file_hash_algorithm_selected: Option<HashAlg>,
-    latest_hashing_error: String,
-    skip_hashing: bool,
+    pub picked_image: Option<PathBuf>,
+    pub file_hash_options: FileHashOptions,
+    pub detected_compression_format: Option<CompressionFormat>,
+    #[cfg_attr(debug_assertions, serde(skip))]
+    pub possible_write_targets: Vec<WriteTarget>,
+    #[cfg_attr(debug_assertions, serde(skip))]
+    pub selected_write_target: Option<WriteTarget>,
+    pub show_all_disks: bool,
+}
+
+#[derive(Default)]
+#[cfg_attr(debug_assertions, derive(serde::Deserialize, serde::Serialize))]
+pub struct FileHashOptions {
+    pub entered_hash: String,
+    pub possible_algorithms: Vec<HashAlg>,
+    pub selected_algorithm: Option<HashAlg>,
+    pub last_error: String,
+    pub skip: bool,
+    #[cfg_attr(debug_assertions, serde(skip))]
+    pub verified: bool,
 }
 
 impl App {
     #[cfg(not(debug_assertions))]
     pub fn new(_cc: &eframe::CreationContext) -> Self {
-        Self::default()
+        let mut s = Self::default();
+        s.refresh_devices();
+        s
     }
 
     #[cfg(debug_assertions)]
     pub fn new(cc: &eframe::CreationContext) -> Self {
-        cc.storage
+        let mut s: Self = cc
+            .storage
             .and_then(|storage| eframe::get_value(storage, eframe::APP_KEY))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        s.refresh_devices();
+        s
+    }
+
+    pub fn refresh_devices(&mut self) {
+        // TODO: deduplicate this.
+        // This is code stolen from `ask_outfile.rs`!
+        self.possible_write_targets = enumerate_devices()
+            .filter(|d| self.show_all_disks || d.removable == Removable::Yes)
+            .collect();
+        self.possible_write_targets.sort();
     }
 }
 
@@ -53,58 +83,25 @@ impl eframe::App for App {
 
             ui.add_space(SECTION_SPACING * ui.spacing().item_spacing.y);
 
-            ui.strong("Image");
-            if ui.button("💿 Pick file").clicked() {
-                self.picked_image = rfd::FileDialog::new().pick_file();
-            }
-            if let Some(picked) = &self.picked_image {
-                ui.label(picked.to_string_lossy());
-                if let Some(cf) = CompressionFormat::detect_from_path(picked) {
-                    ui.label(format!("Detected compression format: {}", cf));
-                } else {
-                    // ui.label(RichText::new("Couldn't detect compression format for picked image, assuming uncompressed!").color(Color32::YELLOW));
-                }
-            }
+            add_image_ui(self, ui);
 
             ui.add_space(SECTION_SPACING * ui.spacing().item_spacing.y);
 
-            ui.horizontal(|ui| {
-                ui.strong("File hash");
-                ui.checkbox(&mut self.skip_hashing, "Skip?");
+            ui.add_enabled_ui(self.picked_image.is_some(), |ui| {
+                add_file_hash_ui(&mut self.file_hash_options, ui)
             });
 
-            ui.add_enabled_ui(!self.skip_hashing, |ui| {
-                ui.label("We will guess the hash algorithm from your input.");
-                if ui.text_edit_singleline(&mut self.file_hash_str).changed() {
-                    match parse_hash_input(&self.file_hash_str) {
-                        Ok((algs, _)) => {
-                            self.file_hash_algorithms_possible = algs;
-                            self.latest_hashing_error.clear();
-                        }
-                        Err(e) => {
-                            self.file_hash_algorithms_possible = vec![];
-                            self.file_hash_algorithm_selected = None;
-                            self.latest_hashing_error = e.to_string();
-                        }
-                    }
-                }
+            ui.add_space(SECTION_SPACING * ui.spacing().item_spacing.y);
 
-                if self.skip_hashing {
-                    return;
-                }
+            ui.add_enabled_ui(
+                self.file_hash_options.verified || self.file_hash_options.skip,
+                |ui| add_target_disk_ui(self, ui),
+            );
 
-                if !self.latest_hashing_error.is_empty() {
-                    ui.label(RichText::new(&self.latest_hashing_error).color(Color32::RED));
-                }
-                ui.horizontal(|ui| {
-                    for alg in &self.file_hash_algorithms_possible {
-                        let is_selected = Some(*alg) == self.file_hash_algorithm_selected;
+            ui.add_space(SECTION_SPACING * ui.spacing().item_spacing.y);
 
-                        if ui.selectable_label(is_selected, alg.to_string()).clicked() {
-                            self.file_hash_algorithm_selected = Some(*alg);
-                        }
-                    }
-                });
+            ui.add_enabled_ui(self.selected_write_target.is_some(), |ui| {
+                add_begin_writing_ui(self, ui)
             });
         });
     }
