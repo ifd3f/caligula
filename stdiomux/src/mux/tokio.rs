@@ -1,15 +1,13 @@
 use std::{
     error::Error,
     num::NonZero,
-    sync::{Arc},
+    sync::Arc,
     task::{Context, Poll, Waker},
 };
 
 use bytes::Bytes;
 use futures::{Sink, SinkExt, Stream, TryStream, TryStreamExt as _};
-use tokio::{
-    sync::{mpsc, oneshot},
-};
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::PollSender;
 
 use crate::{
@@ -74,17 +72,6 @@ where
         Ok(Self { inner: inner })
     }
 
-    /// Perform a single round each of sending and receiving.
-    ///
-    /// For more information, see the documentation for [Self::tx_round] and [Self::rx_round].
-    pub async fn rxtx_round(&self) -> Result<(), ClosedReason> {
-        tokio::try_join!(
-            self.inner.rx_round(),
-            self.inner.tx_round(),
-        )?;
-        Ok(())
-    }
-
     /// Perform a single round of sending.
     ///
     /// Must be called continuously to ensure data is actually sent.
@@ -110,6 +97,13 @@ where
     pub async fn rx_round(&self) -> Result<(), ClosedReason> {
         self.inner.rx_round().await
     }
+
+    /// Perform a single round each of sending and receiving. Only useful for testing!
+    async fn rxtx_round(&self) -> Result<(), ClosedReason> {
+        tokio::try_join!(self.inner.rx_round(), self.inner.tx_round(),)?;
+        Ok(())
+    }
+
 
     pub async fn open_channel(
         &self,
@@ -517,10 +511,7 @@ mod tests {
         run_single_test(
             |sut| async move {
                 println!("sut: opening ch");
-                let (ch, r) = tokio::join!(
-                    sut.open_channel(CHANNEL, BUFFER),
-                    sut.rxtx_round(),
-                );
+                let (ch, r) = tokio::join!(sut.open_channel(CHANNEL, BUFFER), sut.rxtx_round(),);
                 let (_ch, _) = (ch.unwrap(), r.unwrap());
                 println!("sut: ch is open");
 
@@ -549,45 +540,54 @@ mod tests {
         .await
     }
 
-    #[ignore]
     #[tokio::test]
     #[test_log::test]
     async fn send_into_sut_channel() {
+        const CHANNEL: ChannelId = ChannelId(10);
+        const BUFFER: usize = 128;
+
         println!("starting test");
         run_single_test(
             |sut| async move {
                 println!("sut: opening ch");
-                let mut ch = sut.open_channel(ChannelId(10), 100).await.unwrap();
+                let (ch, r) = tokio::join!(sut.open_channel(CHANNEL, BUFFER), sut.rxtx_round(),);
+                let (mut ch, _) = (ch.unwrap(), r.unwrap());
                 println!("sut: ch is open");
 
-                // send adm
+                // send adms
                 sut.tx_round().await.unwrap();
 
-                for _ in 0..100 {
-                    ch.next().await.unwrap();
+                // read the rest of it
+                for _ in 0..BUFFER {
+                    let (bs, r) = tokio::join!(ch.next(), sut.rx_round());
+                    bs.unwrap();
+                    r.unwrap();
                 }
             },
             |mut rx, mut tx| async move {
                 println!("sut: opening ch");
-                let open = Frame::ChannelControl(ChannelId(10), ChannelControlHeader::Open);
+                let open = Frame::ChannelControl(CHANNEL, ChannelControlHeader::Open);
                 tx.send(open).await.unwrap();
                 println!("sut: ch is open");
 
+                // recv open reply
                 let reply = rx.next().await.unwrap().unwrap();
                 assert_eq!(
                     reply,
-                    Frame::ChannelControl(ChannelId(10), ChannelControlHeader::Open)
+                    Frame::ChannelControl(CHANNEL, ChannelControlHeader::Open)
                 );
 
+                // recv adm
                 let adm = rx.next().await.unwrap().unwrap();
                 assert_eq!(
                     adm,
-                    Frame::ChannelControl(ChannelId(10), ChannelControlHeader::Admit(100))
+                    Frame::ChannelControl(CHANNEL, ChannelControlHeader::Admit(BUFFER as u8))
                 );
 
-                for _ in 0..100 {
+                // send datas
+                for _ in 0..BUFFER {
                     tx.send(Frame::ChannelData(
-                        ChannelId(10),
+                        CHANNEL,
                         Bytes::from_static(b"foobar").into(),
                     ))
                     .await
@@ -598,22 +598,113 @@ mod tests {
         .await
     }
 
-    #[ignore]
+    #[tokio::test]
+    #[test_log::test]
+    async fn send_from_sut_channel() {
+        const CHANNEL: ChannelId = ChannelId(10);
+        const BUFFER: usize = 128;
+
+        println!("starting test");
+        run_single_test(
+            |sut| async move {
+                println!("sut: opening ch");
+                let (ch, r) = tokio::join!(sut.open_channel(CHANNEL, 1), sut.rxtx_round(),);
+                let (mut ch, _) = (ch.unwrap(), r.unwrap());
+                println!("sut: ch is open");
+
+                // exchange adms
+                sut.rxtx_round().await.unwrap();
+
+                // queue bytes for sending
+                for _ in 0..BUFFER {
+                    ch.send(Bytes::from_static(b"foobar")).await.unwrap();
+                }
+
+                // actually send
+                for _ in 0..BUFFER {
+                    sut.tx_round().await.unwrap();
+                }
+            },
+            |mut rx, mut tx| async move {
+                println!("sut: opening ch");
+                let open = Frame::ChannelControl(CHANNEL, ChannelControlHeader::Open);
+                tx.send(open).await.unwrap();
+                println!("sut: ch is open");
+
+                // recv open reply
+                let reply = rx.next().await.unwrap().unwrap();
+                assert_eq!(
+                    reply,
+                    Frame::ChannelControl(CHANNEL, ChannelControlHeader::Open)
+                );
+
+                // get adms
+                let adm = rx.next().await.unwrap().unwrap();
+                assert_eq!(
+                    adm,
+                    Frame::ChannelControl(CHANNEL, ChannelControlHeader::Admit(1))
+                );
+
+                // send adm
+                tx.send(Frame::ChannelControl(
+                    CHANNEL,
+                    ChannelControlHeader::Admit(BUFFER as u8),
+                ))
+                .await
+                .unwrap();
+
+                for _ in 0..BUFFER {
+                    let f = rx.next().await.unwrap().unwrap();
+                    assert_eq!(
+                        f,
+                        Frame::ChannelData(CHANNEL, Bytes::from_static(b"foobar").into())
+                    );
+                }
+            },
+        )
+        .await
+    }
+
     #[tokio::test]
     #[test_log::test]
     async fn open_channel_and_send_data() {
-        println!("starting test");
+        const CHANNEL: ChannelId = ChannelId(10);
+        const BUFFER: usize = 128;
+
         run_double_test(
-            |c| async move {
-                let mut ch = c.open_channel(ChannelId(10), 100).await.unwrap();
-                for _ in 0..100 {
-                    ch.send(Bytes::from_static(b"foobar")).await.unwrap();
+            |sut| async move {
+                println!("sut: opening ch");
+                let (ch, r) = tokio::join!(sut.open_channel(CHANNEL, BUFFER), sut.rxtx_round(),);
+                let (mut ch, _) = (ch.unwrap(), r.unwrap());
+                println!("sut: ch is open");
+
+                // exchange adms
+                sut.rxtx_round().await.unwrap();
+
+                // read the rest of it
+                for _ in 0..BUFFER {
+                    let (bs, r) = tokio::join!(ch.next(), sut.rx_round());
+                    bs.unwrap();
+                    r.unwrap();
                 }
             },
-            |c| async move {
-                let mut ch = c.open_channel(ChannelId(10), 100).await.unwrap();
-                for _ in 0..100 {
-                    assert_eq!(ch.next().await, Some(Bytes::from_static(b"foobar")));
+            |sut| async move {
+                println!("sut: opening ch");
+                let (ch, r) = tokio::join!(sut.open_channel(CHANNEL, BUFFER), sut.rxtx_round(),);
+                let (mut ch, _) = (ch.unwrap(), r.unwrap());
+                println!("sut: ch is open");
+
+                // exchange adms
+                sut.rxtx_round().await.unwrap();
+
+                // buffer sends
+                for _ in 0..BUFFER {
+                    ch.send(Bytes::from_static(b"foobar")).await.unwrap();
+                }
+
+                // actually send
+                for _ in 0..BUFFER {
+                    sut.tx_round().await.unwrap();
                 }
             },
         )
