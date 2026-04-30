@@ -7,7 +7,9 @@ use std::{
 use bytes::Bytes;
 
 use crate::{
-    frame::{ChannelControlHeader, ChannelDataFrame}, mux::state::MuxNotOpen, util::panic_or_warn
+    frame::{ChannelControlHeader, ChannelDataFrame},
+    mux::state::MuxNotOpen,
+    util::panic_or_warn,
 };
 
 #[derive(Default)]
@@ -79,7 +81,7 @@ pub enum OpenChannelError {
     #[error("Requestor dropped before channel could be opened")]
     RequestorDropped,
     #[error("{0}")]
-    MuxNotOpen(#[from]MuxNotOpen)
+    MuxNotOpen(#[from] MuxNotOpen),
 }
 
 /// Interface for the channel state machine to receive and place data.
@@ -157,9 +159,7 @@ impl<B: ChannelBuffer> ChannelState<B> {
                     *self = ChannelState::Closed;
                     return Poll::Ready(Err(OpenChannelError::RequestorDropped));
                 };
-                *self = ChannelState::SendOpen {
-                    buf,
-                };
+                *self = ChannelState::SendOpen { buf };
                 Poll::Pending
             }
             ChannelState::RecvOpen => {
@@ -306,9 +306,7 @@ impl<B: ChannelBuffer> ChannelState<B> {
             (Self::Closed, Open) => (Self::RecvOpen, None),
 
             // combine our sendopen and the existing open into an opened channel
-            (Self::SendOpen { buf }, Open) => {
-                (Self::Open(OpenChannel::new(buf)), None)
-            }
+            (Self::SendOpen { buf }, Open) => (Self::Open(OpenChannel::new(buf)), None),
 
             // can't get opens in any other state
             (_, Open) => send_close,

@@ -1,18 +1,22 @@
 use std::{
-    marker::PhantomData, num::NonZero, pin::Pin, sync::Arc, task::{Context, Poll, Waker}
+    future::poll_fn,
+    marker::PhantomData,
+    num::NonZero,
+    pin::Pin,
+    sync::Arc,
+    task::{Poll},
 };
 
 use bytes::Bytes;
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
-    sync::{mpsc, oneshot, watch},
+    sync::{mpsc, oneshot},
 };
 
 use crate::{
-    channel::state::{AcceptRxError, ChannelBuffer, ChannelInUse, OpenChannelError},
+    channel::state::{AcceptRxError, ChannelBuffer, OpenChannelError},
     frame::{AsyncReadExt as _, AsyncWriteExt as _, ChannelId, Frame, MuxControlHeader},
     mux::state::{MuxNotOpen, MuxState},
-    queue::priority_queue,
 };
 
 pub struct AsyncMuxController<R, W>
@@ -51,10 +55,25 @@ where
         let _tx_actor = tokio::spawn({
             let inner = inner.clone();
             async move {
-                while let Some(f) = from_rx.recv().await {
-                    w.write_frame_async(&f)
-                        .await
-                        .expect("transport error while writing frame");
+                loop {
+                    let frames = tokio::select! {
+                        s = inner.get_tx_frames() => {
+                            s
+                        }
+                        s = from_rx.recv() => {
+                            Ok(s.into_iter().collect())
+                        }
+                    };
+
+                    let Ok(frames) = frames else {
+                        return;
+                    };
+
+                    for f in frames {
+                        w.write_frame_async(&f)
+                            .await
+                            .expect("transport error while writing frame");
+                    }
                 }
             }
         });
@@ -112,6 +131,13 @@ where
 #[derive(Clone)]
 struct Inner {
     state: Pin<Arc<std::sync::Mutex<MuxState<MpscChannelBuffer>>>>,
+}
+
+impl Inner {
+    async fn get_tx_frames(&self) -> Result<Vec<Frame>, MuxNotOpen> {
+        let state = self.state.clone();
+        poll_fn(move |cx| state.lock().unwrap().poll_sends(cx)).await
+    }
 }
 
 fn make_channel_io(initial_channel_buffer: usize) -> (ChannelIo, MpscChannelBuffer) {

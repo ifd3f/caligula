@@ -115,7 +115,7 @@ impl<B: ChannelBuffer> ActiveData<B> {
     /// Get frames to send. This function is guaranteed to return a fixed number of frames
     /// per channel, but it may return more than one frame per channel.
     #[inline]
-    pub fn poll_sends<'a>(&'a mut self, cx: &'a mut Context<'a>) -> Poll<Vec<Frame>> {
+    pub fn poll_sends(&mut self, cx: &mut Context<'_>) -> Poll<Vec<Frame>> {
         let mut out = vec![];
         self.clean_up_closed_channels();
         for (id, c) in &mut self.channels {
@@ -136,7 +136,7 @@ impl<B: ChannelBuffer> ActiveData<B> {
     }
 
     pub fn clean_up_closed_channels(&mut self) {
-        self.channels.retain(|k, v| !v.state.closed());
+        self.channels.retain(|_, v| !v.state.closed());
     }
 }
 
@@ -157,10 +157,7 @@ impl<B: ChannelBuffer> MuxState<B> {
     }
 
     /// Get a list of frames to send.
-    pub fn poll_sends<'a>(
-        &'a mut self,
-        cx: &'a mut Context<'a>,
-    ) -> Poll<Result<Vec<Frame>, MuxNotOpen>> {
+    pub fn poll_sends(&mut self, cx: &mut Context<'_>) -> Poll<Result<Vec<Frame>, MuxNotOpen>> {
         let (Self::Active(a) | Self::Terminating(a)) = self else {
             return Poll::Ready(Err(MuxNotOpen));
         };
@@ -288,7 +285,6 @@ impl<B: ChannelBuffer> Default for ChannelMapEntry<B> {
 
 #[cfg(test)]
 mod tests {
-    use bytes::Bytes;
     use rstest::rstest;
 
     use super::*;
@@ -330,10 +326,7 @@ mod tests {
             MuxControlHeader::Hello
         ))))
     )]
-    fn test_hello_frame_handling(
-        #[case] mut state: MuxState,
-        #[case] expected_state: MuxState,
-    ) {
+    fn test_hello_frame_handling(#[case] mut state: MuxState, #[case] expected_state: MuxState) {
         let frame = Frame::MuxControl(MuxControlHeader::Hello);
         let reply = state.on_recv(frame);
 
@@ -433,7 +426,7 @@ mod tests {
         let mut state = MuxState::opened();
 
         // Receive Terminate -> should transition to Terminating
-        let  reply = state.on_recv(Frame::MuxControl(MuxControlHeader::Terminate));
+        let reply = state.on_recv(Frame::MuxControl(MuxControlHeader::Terminate));
         assert_eq!(state, MuxState::Terminating(ActiveData::default()));
         assert_eq!(reply, Some(Frame::MuxControl(MuxControlHeader::Terminate)));
 
