@@ -1,10 +1,13 @@
+use std::{marker::PhantomData, num::NonZero, sync::Arc, task::Poll};
+
+use bytes::Bytes;
 use tokio::{
     io::{AsyncRead, AsyncWrite, AsyncWriteExt},
-    sync::watch,
+    sync::{mpsc, watch},
 };
 
 use crate::{
-    channel::state::ChannelBuffer,
+    channel::state::{AcceptRxError, ChannelBuffer},
     frame::{AsyncReadExt as _, AsyncWriteExt as _, Frame, MuxControlHeader},
     mux::state::MuxState,
     queue::priority_queue,
@@ -15,8 +18,8 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    r: R,
-    w: W,
+    inner: Arc<std::sync::Mutex<Inner>>,
+    _phantom: PhantomData<(R, W)>,
 }
 
 impl<R, W> AsyncMuxController<R, W>
@@ -36,66 +39,43 @@ where
             ))?;
         }
 
-        let (queue_tx, mut queue_rx) = priority_queue::<Frame>();
-        let (state_tx, state_rx) = watch::channel(MuxState::<Buffer>::opened());
+        let inner = Arc::new(std::sync::Mutex::new(Inner {
+            state: MuxState::<MpscChannelBuffer>::opened(),
+        }));
 
-        #[derive(Debug, Default)]
-        struct Buffer {}
-
-        impl ChannelBuffer for Buffer {
-            fn poll_rx_capacity(
-                &mut self,
-                cx: &mut std::task::Context<'_>,
-            ) -> std::task::Poll<Option<std::num::NonZero<u64>>> {
-                todo!()
-            }
-
-            fn accept_rx(
-                &mut self,
-                data: bytes::Bytes,
-            ) -> Result<(), crate::channel::state::AcceptRxError> {
-                todo!()
-            }
-
-            fn poll_tx(
-                &mut self,
-                cx: &mut std::task::Context<'_>,
-            ) -> std::task::Poll<Option<bytes::Bytes>> {
-                todo!()
-            }
-        }
-
-        todo!()
-        /*
-        let inner_value = Arc::new(Inner {
-            channels: DashMap::new(),
-        });
-
-        let _rx_actor = tokio::spawn({
-            let inner = inner_value.clone();
-            let queue_tx = queue_tx.clone();
+        let (to_tx, mut from_rx) = mpsc::unbounded_channel::<Frame>();
+        let _tx_actor = tokio::spawn({
+            let inner = inner.clone();
             async move {
-                loop {
-                    let f = r.read_frame_async().await.expect("failed to read frame");
-                    inner.on_recv(f);
+                while let Some(f) = from_rx.recv().await {
+                    w.write_frame_async(&f)
+                        .await
+                        .expect("transport error while writing frame");
                 }
             }
         });
 
-        let _tx_actor = tokio::spawn(async move {
-            loop {
-                let Some(v) = queue_rx.recv().await else {
-                    return;
-                };
-                w.write_frame_async(v).await.unwrap()
+        let _rx_actor = tokio::spawn({
+            let inner = inner.clone();
+            async move {
+                loop {
+                    let f = r.read_frame_async().await.expect("failed to read frame");
+                    let mut inner = inner.lock().unwrap();
+                    if let Some(response) = inner.on_recv(f) {
+                        let Ok(()) = to_tx.send(response) else {
+                            return;
+                        };
+                    }
+                    if inner.state.closed() {
+                        return;
+                    }
+                }
             }
         });
         Ok(Self {
-            inner: inner_value,
-            queue_tx,
+            inner: inner,
             _phantom: PhantomData,
         })
-        */
     }
 
     // pub async fn open_channel(
@@ -105,4 +85,78 @@ where
     // ) -> Result<ChannelIo, OpenChannelError> {
     //     todo!()
     // }
+}
+
+struct Inner {
+    state: MuxState<MpscChannelBuffer>,
+}
+
+impl Inner {
+    fn on_recv(&mut self, f: Frame) -> Option<Frame> {
+        let (new_state, f) = std::mem::take(&mut self.state).on_recv(f);
+        self.state = new_state;
+        f
+    }
+}
+
+fn make_channel_io() -> (ChannelIo, MpscChannelBuffer) {
+    let (to_user, from_controller) = mpsc::channel(128);
+    let (to_controller, from_user) = mpsc::channel(128);
+
+    (
+        ChannelIo {
+            tx: to_controller,
+            rx: from_controller,
+        },
+        MpscChannelBuffer {
+            inner: Some((to_user, from_user)),
+        },
+    )
+}
+
+#[derive(Debug)]
+pub struct ChannelIo {
+    tx: mpsc::Sender<Bytes>,
+    rx: mpsc::Receiver<Bytes>,
+}
+
+#[derive(Debug, Default)]
+struct MpscChannelBuffer {
+    inner: Option<(mpsc::Sender<Bytes>, mpsc::Receiver<Bytes>)>,
+}
+
+impl ChannelBuffer for MpscChannelBuffer {
+    fn poll_rx_capacity(&mut self, _cx: &mut std::task::Context<'_>) -> Poll<Option<NonZero<u64>>> {
+        let Some((tx, _rx)) = &mut self.inner else {
+            return Poll::Ready(None);
+        };
+
+        match NonZero::try_from(tx.capacity() as u64) {
+            Err(_) => Poll::Pending,
+            Ok(c) => Poll::Ready(Some(c)),
+        }
+    }
+
+    fn accept_rx(&mut self, data: Bytes) -> Result<(), AcceptRxError> {
+        let Some((tx, _rx)) = &mut self.inner else {
+            return Err(AcceptRxError::Disconnected);
+        };
+
+        tx.try_send(data).map_err(|_| AcceptRxError::OutOfCapacity)
+    }
+
+    fn poll_tx(
+        &mut self,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<bytes::Bytes>> {
+        let Some((_tx, rx)) = &mut self.inner else {
+            return Poll::Ready(None);
+        };
+
+        match rx.try_recv() {
+            Ok(x) => Poll::Ready(Some(x)),
+            Err(mpsc::error::TryRecvError::Empty) => Poll::Pending,
+            Err(mpsc::error::TryRecvError::Disconnected) => Poll::Ready(None),
+        }
+    }
 }

@@ -223,6 +223,13 @@ impl<B: ChannelBuffer> MuxState<B> {
             (Self::Terminating(_), MuxControl(Finished)) => (Self::Closed(Ok(())), None),
         }
     }
+
+    pub(crate) fn closed(&self) -> bool {
+        match self {
+            MuxState::Closed(_) => true,
+            _ => false,
+        }
+    }
 }
 
 struct ChannelMapEntry<B: ChannelBuffer> {
