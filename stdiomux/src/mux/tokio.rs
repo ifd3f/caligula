@@ -25,6 +25,7 @@ where
     Tx::Error: Error + Sync,
 {
     inner: Arc<Inner>,
+    txq: mpsc::UnboundedSender<Frame>,
     _phantom: PhantomData<(Rx, Tx)>,
 }
 
@@ -43,87 +44,43 @@ where
     Rx::Error: Error + Sync + Send,
     Tx::Error: Error + Sync + Send,
 {
-    pub async fn open(mut r: Rx, mut w: Tx) -> Result<Self, OpenMuxError> {
+    pub async fn open(mut rx: Rx, mut tx: Tx) -> Result<Self, OpenMuxError> {
         // send handshake
-        w.send(Frame::MuxControl(MuxControlHeader::Hello))
+        tx.send(Frame::MuxControl(MuxControlHeader::Hello))
             .await
             .map_err(|e| OpenMuxError::Transport(Arc::new(e)))?;
 
         // ensure we got the correct handshake
-        match r.try_next().await {
+        match rx.try_next().await {
             Ok(Some(Frame::MuxControl(MuxControlHeader::Hello))) => (),
             Ok(f) => return Err(OpenMuxError::NonHello(f)),
             Err(e) => return Err(OpenMuxError::Transport(Arc::new(e))),
         }
 
-        // start processing
+        // shared state
         let inner = Arc::new(Inner {
             state: std::sync::Mutex::new(MuxState::<MpscChannelBuffer>::opened()),
         });
 
-        let (to_tx, mut from_rx) = mpsc::unbounded_channel::<Frame>();
-        let _tx_actor = tokio::spawn({
-            let inner = Arc::downgrade(&inner);
-            async move {
-                loop {
-                    let f = match from_rx.recv().await {
-                        Some(f) => f,
-                        None => {
-                            Inner::close_weak(inner, Ok(()));
-                            return;
-                        }
-                    };
+        // queue for transmissions
+        let (txq_tx, txq_rx) = mpsc::unbounded_channel::<Frame>();
 
-                    match w.send(f).await {
-                        Ok(()) => (),
-                        Err(e) => {
-                            Inner::close_weak(
-                                inner,
-                                Err(ClosedReason::TransportFailure(Arc::new(e))),
-                            );
-                            return;
-                        }
-                    }
-                }
+        // start processing in background
+        let _background = tokio::spawn({
+            let inner = Arc::downgrade(&inner);
+            let txq_tx = txq_tx.clone();
+            async move {
+                let r = tokio::select! {
+                    r = rx_actor(inner.clone(), rx, txq_tx) => r,
+                    r = tx_actor(inner.clone(), tx, txq_rx) => r,
+                };
+                Inner::close_weak(inner, r);
             }
         });
 
-        let _rx_actor = tokio::spawn({
-            let inner = Arc::downgrade(&inner);
-            async move {
-                loop {
-                    let f = match r.try_next().await {
-                        Ok(Some(f)) => f,
-                        Ok(None) => {
-                            Inner::close_weak(inner, Ok(()));
-                            return;
-                        }
-                        Err(e) => {
-                            Inner::close_weak(
-                                inner,
-                                Err(ClosedReason::TransportFailure(Arc::new(e))),
-                            );
-                            return;
-                        }
-                    };
-
-                    let Some(inner) = inner.upgrade() else {
-                        return;
-                    };
-                    if let Some(r) = inner.state.lock().unwrap().on_recv(f) {
-                        match to_tx.send(r) {
-                            Ok(()) => (),
-                            Err(e) => {
-                                inner.close(Err(ClosedReason::TransportFailure(Arc::new(e))));
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
-        });
         Ok(Self {
             inner: inner,
+            txq: txq_tx,
             _phantom: PhantomData,
         })
     }
@@ -152,6 +109,49 @@ where
         Ok(rx
             .await
             .map_err(|_| OpenChannelError::MuxNotOpen(MuxNotOpen))?)
+    }
+}
+
+async fn tx_actor<Tx>(
+    _inner: Weak<Inner>,
+    mut tx: Tx,
+    mut txq: mpsc::UnboundedReceiver<Frame>,
+) -> Result<(), ClosedReason>
+where
+    Tx: Sink<Frame> + Unpin + Send + 'static,
+    Tx::Error: Error + Sync + Send,
+{
+    loop {
+        let f = txq.recv().await.ok_or_else(|| ClosedReason::QueueClosed)?;
+
+        tx.send(f)
+            .await
+            .map_err(|e| ClosedReason::TransportFailure(Arc::new(e)))?;
+    }
+}
+
+async fn rx_actor<Rx>(
+    inner: Weak<Inner>,
+    mut rx: Rx,
+    txq: mpsc::UnboundedSender<Frame>,
+) -> Result<(), ClosedReason>
+where
+    Rx: TryStream<Ok = Frame> + Unpin + Send + 'static,
+    Rx::Error: Error + Sync + Send,
+{
+    loop {
+        let f = match rx.try_next().await {
+            Ok(Some(f)) => f,
+            Ok(None) => Err(ClosedReason::TransportClosed)?,
+            Err(e) => Err(ClosedReason::TransportFailure(Arc::new(e)))?,
+        };
+
+        let Some(inner) = inner.upgrade() else {
+            return Ok(());
+        };
+        if let Some(r) = inner.state.lock().unwrap().on_recv(f) {
+            txq.send(r).map_err(|_| ClosedReason::QueueClosed)?;
+        }
     }
 }
 

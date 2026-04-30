@@ -63,6 +63,10 @@ pub enum ClosedReason {
     Panicked,
     #[error("Transport failure: {0}")]
     TransportFailure(#[from] Arc<dyn Error + Sync + Send>),
+    #[error("Transport unexpectedly closed")]
+    TransportClosed,
+    #[error("Queue unexpectedly closed")]
+    QueueClosed,
 }
 
 impl PartialEq for ClosedReason {
