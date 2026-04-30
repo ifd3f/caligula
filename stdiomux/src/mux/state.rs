@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::task::Context;
 use std::{collections::HashMap, task::Poll};
 
+use crate::channel::state::{ChannelBufferFactory, OpenChannelError};
 use crate::{
     channel::state::{ChannelBuffer, ChannelState},
     frame::{ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader},
@@ -169,7 +170,14 @@ impl<B: ChannelBuffer> MuxState<B> {
     /// Handle receiving the given frame.
     ///
     /// Returns the new state, along with the reply to send, if any.
-    pub fn on_recv(self, frame: Frame) -> (Self, Option<Frame>) {
+    pub fn on_recv(&mut self, f: Frame) -> Option<Frame> {
+        let (new_state, f) = std::mem::take(self).on_recv_owned(f);
+        *self = new_state;
+        f
+    }
+
+    #[inline]
+    fn on_recv_owned(self, frame: Frame) -> (Self, Option<Frame>) {
         use Frame::*;
         use MuxControlHeader::*;
 
@@ -209,6 +217,15 @@ impl<B: ChannelBuffer> MuxState<B> {
                 let response = a.on_channel_control(id, f);
                 (Self::Active(a), response)
             }
+            // Reject new connections if terminating
+            (Self::Terminating(mut a), ChannelControl(id, ChannelControlHeader::Open)) => {
+                a.channels.remove(&id);
+                (
+                    Self::Terminating(a),
+                    Some(Frame::ChannelControl(id, ChannelControlHeader::Reset)),
+                )
+            }
+            // Otherwise, handle control messages normally
             (Self::Terminating(mut a), ChannelControl(id, f)) => {
                 let response = a.on_channel_control(id, f);
                 (Self::Terminating(a), response)
@@ -229,6 +246,22 @@ impl<B: ChannelBuffer> MuxState<B> {
             MuxState::Closed(_) => true,
             _ => false,
         }
+    }
+
+    pub(crate) fn open_channel(
+        &mut self,
+        channel_id: ChannelId,
+        f: Box<dyn ChannelBufferFactory<Output = B>>,
+    ) -> Poll<Result<(), OpenChannelError>> {
+        let Self::Active(a) = self else {
+            // if terminating, return this error too
+            return Poll::Ready(Err(MuxNotOpen.into()));
+        };
+        a.channels
+            .entry(channel_id)
+            .or_default()
+            .state
+            .request_open(f)
     }
 }
 
@@ -261,7 +294,7 @@ mod tests {
     use super::*;
     use crate::{
         channel::state::NullChannelBuffer,
-        frame::{ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader},
+        frame::{Frame, MuxControlHeader},
     };
 
     type MuxState = super::MuxState<NullChannelBuffer>;
@@ -298,13 +331,13 @@ mod tests {
         ))))
     )]
     fn test_hello_frame_handling(
-        #[case] initial_state: MuxState,
+        #[case] mut state: MuxState,
         #[case] expected_state: MuxState,
     ) {
         let frame = Frame::MuxControl(MuxControlHeader::Hello);
-        let (new_state, reply) = initial_state.on_recv(frame);
+        let reply = state.on_recv(frame);
 
-        assert_eq!(new_state, expected_state);
+        assert_eq!(state, expected_state);
         assert_eq!(reply, Some(Frame::MuxControl(MuxControlHeader::Reset)));
     }
 
@@ -322,14 +355,14 @@ mod tests {
         None
     )]
     fn test_reset_frame_handling(
-        #[case] initial_state: MuxState,
+        #[case] mut state: MuxState,
         #[case] expected_state: MuxState,
         #[case] expected_reply: Option<Frame>,
     ) {
         let frame = Frame::MuxControl(MuxControlHeader::Reset);
-        let (new_state, reply) = initial_state.on_recv(frame);
+        let reply = state.on_recv(frame);
 
-        assert_eq!(new_state, expected_state);
+        assert_eq!(state, expected_state);
         assert_eq!(reply, expected_reply);
     }
 
@@ -347,14 +380,14 @@ mod tests {
         None
     )]
     fn test_finished_frame_handling(
-        #[case] initial_state: MuxState,
+        #[case] mut state: MuxState,
         #[case] expected_state: MuxState,
         #[case] expected_reply: Option<Frame>,
     ) {
         let frame = Frame::MuxControl(MuxControlHeader::Finished);
-        let (new_state, reply) = initial_state.on_recv(frame);
+        let reply = state.on_recv(frame);
 
-        assert_eq!(new_state, expected_state);
+        assert_eq!(state, expected_state);
         assert_eq!(reply, expected_reply);
     }
 
@@ -372,14 +405,14 @@ mod tests {
         Some(Frame::MuxControl(MuxControlHeader::Reset))
     )]
     fn test_terminate_frame_handling(
-        #[case] initial_state: MuxState,
+        #[case] mut state: MuxState,
         #[case] expected_state: MuxState,
         #[case] expected_reply: Option<Frame>,
     ) {
         let frame = Frame::MuxControl(MuxControlHeader::Terminate);
-        let (new_state, reply) = initial_state.on_recv(frame);
+        let reply = state.on_recv(frame);
 
-        assert_eq!(new_state, expected_state);
+        assert_eq!(state, expected_state);
         assert_eq!(reply, expected_reply);
     }
 
@@ -387,25 +420,25 @@ mod tests {
     #[case::terminate(Frame::MuxControl(MuxControlHeader::Terminate))]
     #[case::finished(Frame::MuxControl(MuxControlHeader::Finished))]
     fn test_non_reset_frame_when_closed_sends_reset(#[case] frame: Frame) {
-        let state = MuxState::Closed(Ok(()));
-        let (new_state, reply) = state.on_recv(frame);
+        let mut state = MuxState::Closed(Ok(()));
+        let reply = state.on_recv(frame);
 
-        assert_eq!(new_state, MuxState::Closed(Ok(())));
+        assert_eq!(state, MuxState::Closed(Ok(())));
         assert_eq!(reply, Some(Frame::MuxControl(MuxControlHeader::Reset)));
     }
 
     #[test]
     fn test_graceful_shutdown_sequence() {
         // Start with Active state
-        let state = MuxState::opened();
+        let mut state = MuxState::opened();
 
         // Receive Terminate -> should transition to Terminating
-        let (state, reply) = state.on_recv(Frame::MuxControl(MuxControlHeader::Terminate));
+        let  reply = state.on_recv(Frame::MuxControl(MuxControlHeader::Terminate));
         assert_eq!(state, MuxState::Terminating(ActiveData::default()));
         assert_eq!(reply, Some(Frame::MuxControl(MuxControlHeader::Terminate)));
 
         // Receive Finished -> should close gracefully
-        let (state, reply) = state.on_recv(Frame::MuxControl(MuxControlHeader::Finished));
+        let reply = state.on_recv(Frame::MuxControl(MuxControlHeader::Finished));
         assert_eq!(state, MuxState::Closed(Ok(())));
         assert_eq!(reply, None);
     }
@@ -413,12 +446,12 @@ mod tests {
     #[test]
     fn test_unexpected_frame_after_reset() {
         // Close with Reset
-        let state = MuxState::opened();
-        let (state, _) = state.on_recv(Frame::MuxControl(MuxControlHeader::Reset));
+        let mut state = MuxState::opened();
+        let _ = state.on_recv(Frame::MuxControl(MuxControlHeader::Reset));
         assert_eq!(state, MuxState::Closed(Err(ClosedReason::Reset)));
 
         // Try to send Terminate - should get Reset back
-        let (state, reply) = state.on_recv(Frame::MuxControl(MuxControlHeader::Terminate));
+        let reply = state.on_recv(Frame::MuxControl(MuxControlHeader::Terminate));
         assert_eq!(state, MuxState::Closed(Err(ClosedReason::Reset)));
         assert_eq!(reply, Some(Frame::MuxControl(MuxControlHeader::Reset)));
     }
@@ -447,15 +480,15 @@ mod tests {
 
     #[test]
     fn test_multiple_resets_dont_cycle() {
-        let state = MuxState::Closed(Ok(()));
+        let mut state = MuxState::Closed(Ok(()));
 
         // First reset
-        let (state, reply) = state.on_recv(Frame::MuxControl(MuxControlHeader::Reset));
+        let reply = state.on_recv(Frame::MuxControl(MuxControlHeader::Reset));
         assert_eq!(state, MuxState::Closed(Ok(())));
         assert_eq!(reply, None); // No response to prevent cycles
 
         // Second reset
-        let (state, reply) = state.on_recv(Frame::MuxControl(MuxControlHeader::Reset));
+        let reply = state.on_recv(Frame::MuxControl(MuxControlHeader::Reset));
         assert_eq!(state, MuxState::Closed(Ok(())));
         assert_eq!(reply, None); // Still no response
     }
@@ -463,12 +496,12 @@ mod tests {
     #[test]
     fn test_state_preserves_closure_reason() {
         // Close with Reset
-        let state = MuxState::Closed(Err(ClosedReason::Reset));
+        let mut state = MuxState::Closed(Err(ClosedReason::Reset));
 
-        // Send another frame
-        let (new_state, _) = state.on_recv(Frame::MuxControl(MuxControlHeader::Terminate));
+        // Send another Reset frame
+        state.on_recv(Frame::MuxControl(MuxControlHeader::Terminate));
 
         // Should still be closed with original reason
-        assert_eq!(new_state, MuxState::Closed(Err(ClosedReason::Reset)));
+        assert_eq!(state, MuxState::Closed(Err(ClosedReason::Reset)));
     }
 }

@@ -7,8 +7,7 @@ use std::{
 use bytes::Bytes;
 
 use crate::{
-    frame::{ChannelControlHeader, ChannelDataFrame},
-    util::panic_or_warn,
+    frame::{ChannelControlHeader, ChannelDataFrame}, mux::state::MuxNotOpen, util::panic_or_warn
 };
 
 #[derive(Default)]
@@ -18,7 +17,6 @@ pub enum ChannelState<B: ChannelBuffer> {
     RecvOpen,
     SendOpen {
         buf: B,
-        waker: Option<Waker>,
     },
     Open(OpenChannel<B>),
 }
@@ -39,7 +37,6 @@ pub struct OpenChannel<B: ChannelBuffer> {
     their_available_permits: u64,
     our_available_permits: u64,
     buf: B,
-    tx_waker: Option<Waker>,
     rx_waker: Option<Waker>,
 }
 
@@ -49,7 +46,6 @@ impl<B: ChannelBuffer> OpenChannel<B> {
             their_available_permits: 0,
             our_available_permits: 0,
             buf,
-            tx_waker: None,
             rx_waker: None,
         }
     }
@@ -75,6 +71,16 @@ pub enum AcceptRxError {
 #[derive(Debug, thiserror::Error)]
 #[error("Channel is in use, and already opened by another caller")]
 pub struct ChannelInUse;
+
+#[derive(Debug, thiserror::Error)]
+pub enum OpenChannelError {
+    #[error("{0}")]
+    ChannelInUse(#[from] ChannelInUse),
+    #[error("Requestor dropped before channel could be opened")]
+    RequestorDropped,
+    #[error("{0}")]
+    MuxNotOpen(#[from]MuxNotOpen)
+}
 
 /// Interface for the channel state machine to receive and place data.
 pub trait ChannelBuffer: Default {
@@ -115,25 +121,55 @@ impl ChannelBuffer for NullChannelBuffer {
     }
 }
 
+pub trait ChannelBufferFactory {
+    type Output: ChannelBuffer;
+    /// Called when the connection is established to build a buffer.
+    ///
+    /// Return None to signal that the requestor disconnected before the connection could be established.
+    fn make_buf(self: Box<Self>) -> Option<Self::Output>;
+}
+
+impl<F, B> ChannelBufferFactory for F
+where
+    F: FnOnce() -> Option<B>,
+    B: ChannelBuffer,
+{
+    type Output = B;
+    fn make_buf(self: Box<Self>) -> Option<B> {
+        self()
+    }
+}
+
 impl<B: ChannelBuffer> ChannelState<B> {
-    pub fn poll_open(
+    /// Called when user attempts to open the channel.
+    ///
+    /// Returns Pending if we're waiting, Ok if we opened, and OpenChannelError if we failed to open.
+    pub fn request_open(
         &mut self,
-        cx: &mut Context<'_>,
-        make_buf: impl FnOnce() -> B,
-    ) -> Poll<Result<(), ChannelInUse>> {
+        f: Box<dyn ChannelBufferFactory<Output = B>>,
+    ) -> Poll<Result<(), OpenChannelError>> {
         match self {
+            ChannelState::SendOpen { .. } | ChannelState::Open(_) => {
+                Poll::Ready(Err(OpenChannelError::ChannelInUse(ChannelInUse)))
+            }
             ChannelState::Closed => {
+                let Some(buf) = f.make_buf() else {
+                    *self = ChannelState::Closed;
+                    return Poll::Ready(Err(OpenChannelError::RequestorDropped));
+                };
                 *self = ChannelState::SendOpen {
-                    buf: make_buf(),
-                    waker: Some(cx.waker().clone()),
+                    buf,
                 };
                 Poll::Pending
             }
             ChannelState::RecvOpen => {
-                *self = ChannelState::Open(OpenChannel::new(make_buf()));
+                let Some(buf) = f.make_buf() else {
+                    *self = ChannelState::Closed;
+                    return Poll::Ready(Err(OpenChannelError::RequestorDropped));
+                };
+                *self = ChannelState::Open(OpenChannel::new(buf));
                 Poll::Ready(Ok(()))
             }
-            ChannelState::SendOpen { .. } | ChannelState::Open(_) => Poll::Ready(Err(ChannelInUse)),
         }
     }
 
@@ -238,7 +274,6 @@ impl<B: ChannelBuffer> ChannelState<B> {
 
         // out of permits -- don't send
         if o.our_available_permits == 0 {
-            o.tx_waker = Some(cx.waker().clone());
             return Poll::Pending;
         }
 
@@ -271,10 +306,7 @@ impl<B: ChannelBuffer> ChannelState<B> {
             (Self::Closed, Open) => (Self::RecvOpen, None),
 
             // combine our sendopen and the existing open into an opened channel
-            (Self::SendOpen { buf, mut waker }, Open) => {
-                if let Some(w) = waker.take() {
-                    w.wake();
-                }
+            (Self::SendOpen { buf }, Open) => {
                 (Self::Open(OpenChannel::new(buf)), None)
             }
 
