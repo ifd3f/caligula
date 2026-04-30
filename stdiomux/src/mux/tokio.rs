@@ -1,6 +1,5 @@
 use std::{
     error::Error,
-    future::poll_fn,
     marker::PhantomData,
     num::NonZero,
     sync::{Arc, Weak},
@@ -30,7 +29,6 @@ where
     Tx::Error: Error + Sync + Send,
 {
     inner: Arc<Inner>,
-    txq: mpsc::UnboundedSender<Frame>,
     _phantom: PhantomData<(Rx, Tx)>,
 }
 
@@ -62,21 +60,21 @@ where
             Err(e) => return Err(OpenMuxError::Transport(Arc::new(e))),
         }
 
+        // queue for transmissions
+        let (txq_tx, txq_rx) = mpsc::unbounded_channel::<Frame>();
+
         // shared state
         let inner = Arc::new(Inner {
             state: std::sync::Mutex::new(MuxState::<MpscChannelBuffer>::opened()),
+            txq: txq_tx.clone()
         });
-
-        // queue for transmissions
-        let (txq_tx, txq_rx) = mpsc::unbounded_channel::<Frame>();
 
         // start processing in background
         let _background = tokio::spawn({
             let inner = Arc::downgrade(&inner);
-            let txq_tx = txq_tx.clone();
             async move {
                 let r = tokio::select! {
-                    r = rx_actor(inner.clone(), rx, txq_tx) => r,
+                    r = rx_actor(inner.clone(), rx) => r,
                     r = tx_actor(inner.clone(), tx, txq_rx) => r,
                 };
                 Inner::close_weak(inner, r);
@@ -85,7 +83,6 @@ where
 
         Ok(Self {
             inner: inner,
-            txq: txq_tx,
             _phantom: PhantomData,
         })
     }
@@ -121,7 +118,6 @@ where
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         let inner = Arc::downgrade(&self.inner);
-        let txq = self.txq.clone();
         async move {
             loop {
                 interval.tick().await;
@@ -133,11 +129,11 @@ where
                 let mut cx = Context::from_waker(Waker::noop());
                 let frames = inner.clone().poll_tx_frames(&mut cx)?;
                 for f in frames {
-                    txq.send(f).map_err(|_| MuxNotOpen)?;
+                    inner.txq.send(f).map_err(|_| MuxNotOpen)?;
                 }
             }
         }
-        .map(|x: Result<(), MuxNotOpen>| ())
+        .map(|_: Result<(), MuxNotOpen>| ())
     }
 }
 
@@ -180,7 +176,6 @@ where
 async fn rx_actor<Rx>(
     inner: Weak<Inner>,
     mut rx: Rx,
-    txq: mpsc::UnboundedSender<Frame>,
 ) -> Result<(), ClosedReason>
 where
     Rx: TryStream<Ok = Frame> + Unpin + Send + 'static,
@@ -197,13 +192,14 @@ where
             return Ok(());
         };
         if let Some(r) = inner.state.lock().unwrap().on_recv(f) {
-            txq.send(r).map_err(|_| ClosedReason::QueueClosed)?;
+            inner.txq.send(r).map_err(|_| ClosedReason::QueueClosed)?;
         }
     }
 }
 
 struct Inner {
     state: std::sync::Mutex<MuxState<MpscChannelBuffer>>,
+    txq: mpsc::UnboundedSender<Frame>,
 }
 
 impl Inner {
