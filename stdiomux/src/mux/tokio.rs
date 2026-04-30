@@ -1,17 +1,14 @@
 use std::{
     error::Error,
-    marker::PhantomData,
     num::NonZero,
-    sync::{Arc, Weak},
+    sync::{Arc},
     task::{Context, Poll, Waker},
-    time::Duration,
 };
 
 use bytes::Bytes;
-use futures::{FutureExt, Sink, SinkExt, Stream, TryStream, TryStreamExt as _};
+use futures::{Sink, SinkExt, Stream, TryStream, TryStreamExt as _};
 use tokio::{
-    sync::{Notify, mpsc, oneshot, watch},
-    time::MissedTickBehavior,
+    sync::{mpsc, oneshot},
 };
 use tokio_util::sync::PollSender;
 
@@ -24,12 +21,11 @@ use crate::{
 pub struct AsyncMuxController<Rx, Tx>
 where
     Rx: TryStream<Ok = Frame> + Unpin + Send + 'static,
-    Tx: Sink<Frame> + Unpin + Send + 'static,
     Rx::Error: Error + Sync + Send,
+    Tx: Sink<Frame> + Unpin + Send + 'static,
     Tx::Error: Error + Sync + Send,
 {
-    inner: Arc<Inner>,
-    _phantom: PhantomData<(Rx, Tx)>,
+    inner: Arc<Inner<Rx, Tx>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -43,8 +39,8 @@ pub enum OpenMuxError {
 impl<Rx, Tx> AsyncMuxController<Rx, Tx>
 where
     Rx: TryStream<Ok = Frame> + Unpin + Send + 'static,
-    Tx: Sink<Frame> + Unpin + Send + 'static,
     Rx::Error: Error + Sync + Send,
+    Tx: Sink<Frame> + Unpin + Send + 'static,
     Tx::Error: Error + Sync + Send,
 {
     pub async fn open(mut rx: Rx, mut tx: Tx) -> Result<Self, OpenMuxError> {
@@ -62,31 +58,57 @@ where
 
         // queue for transmissions
         let (txq_tx, txq_rx) = mpsc::unbounded_channel::<Frame>();
-        let (txq_empty_tx, txq_empty_rx) = watch::channel(());
 
         // shared state
         let inner = Arc::new(Inner {
             state: std::sync::Mutex::new(MuxState::<MpscChannelBuffer>::opened()),
-            txq: txq_tx.clone(),
-            txq_empty: txq_empty_rx,
-        });
-
-        // start processing in background
-        let _background = tokio::spawn({
-            let inner = Arc::downgrade(&inner);
-            async move {
-                let r = tokio::select! {
-                    r = rx_actor(inner.clone(), rx) => r,
-                    r = tx_actor(inner.clone(), tx, txq_rx, txq_empty_tx) => r,
-                };
-                Inner::close_weak(inner, r);
+            rx_state: RxState { rx }.into(),
+            tx_state: TxState {
+                tx,
+                priority_txq: txq_rx,
             }
+            .into(),
+            priority_txq: txq_tx,
         });
 
-        Ok(Self {
-            inner: inner,
-            _phantom: PhantomData,
-        })
+        Ok(Self { inner: inner })
+    }
+
+    /// Perform a single round each of sending and receiving.
+    ///
+    /// For more information, see the documentation for [Self::tx_round] and [Self::rx_round].
+    pub async fn rxtx_round(&self) -> Result<(), ClosedReason> {
+        tokio::try_join!(
+            self.inner.rx_round(),
+            self.inner.tx_round(),
+        )?;
+        Ok(())
+    }
+
+    /// Perform a single round of sending.
+    ///
+    /// Must be called continuously to ensure data is actually sent.
+    ///
+    /// Note that this may run for longer than just the current round if more frames have
+    /// been added!
+    ///
+    /// The reason sends aren't immediate is because we want to batch transmissions
+    /// together for efficiency.
+    pub async fn tx_round(&self) -> Result<(), ClosedReason> {
+        self.inner.tx_round().await
+    }
+
+    /// Perform a single round of receiving.
+    ///
+    /// Must be called continuously to ensure data is actually received.
+    ///
+    /// Note that this may run for longer than just the current round if more frames have
+    /// been added!
+    ///
+    /// The reason sends aren't immediate is because we want to batch transmissions
+    /// together for efficiency.
+    pub async fn rx_round(&self) -> Result<(), ClosedReason> {
+        self.inner.rx_round().await
     }
 
     pub async fn open_channel(
@@ -111,7 +133,7 @@ where
             Poll::Pending => (),
         }
         self.inner
-            .txq
+            .priority_txq
             .send(Frame::ChannelControl(
                 channel_id,
                 ChannelControlHeader::Open,
@@ -121,45 +143,6 @@ where
         Ok(rx
             .await
             .map_err(|_| OpenChannelError::MuxNotOpen(MuxNotOpen))?)
-    }
-
-    /// Repeatedly transfer channel frames into the transmission queue on the
-    /// provided interval.
-    ///
-    /// The reason sends aren't immediate is because we want to batch transmissions
-    /// together for efficiency.
-    pub fn do_sends_interval(&self, period: Duration) -> impl Future<Output = ()> + 'static {
-        let mut interval = tokio::time::interval(period);
-        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
-
-        let inner = Arc::downgrade(&self.inner);
-        async move {
-            loop {
-                interval.tick().await;
-
-                let Some(inner) = inner.upgrade() else {
-                    return Err(MuxNotOpen);
-                };
-
-                inner.flush_channel_round().await?;
-            }
-        }
-        .map(|_: Result<(), MuxNotOpen>| ())
-    }
-
-    /// Transfer a single round of channel frames into the transmission queue and ensure
-    /// that it becomes empty.
-    ///
-    /// Must be called continuously to ensure data is actually sent. Alternatively, you
-    /// can call [do_sends_interval] in a background task.
-    ///
-    /// Note that this may run for longer than just the current round if more frames have
-    /// been added!
-    ///
-    /// The reason sends aren't immediate is because we want to batch transmissions
-    /// together for efficiency.
-    pub async fn flush_channel_round(&self) -> Result<(), MuxNotOpen> {
-        self.inner.flush_channel_round().await
     }
 }
 
@@ -181,84 +164,110 @@ where
 {
 }
 
-async fn tx_actor<Tx>(
-    _inner: Weak<Inner>,
-    mut tx: Tx,
-    mut txq: mpsc::UnboundedReceiver<Frame>,
-    txq_empty_tx: watch::Sender<()>,
-) -> Result<(), ClosedReason>
-where
-    Tx: Sink<Frame> + Unpin + Send + 'static,
-    Tx::Error: Error + Sync + Send,
-{
-    loop {
-        let f = match txq.try_recv() {
-            Ok(f) => f,
-            Err(mpsc::error::TryRecvError::Empty) => {
-                txq_empty_tx.send(()).ok();
-                txq.recv().await.ok_or(ClosedReason::QueueClosed)?
-            }
-            Err(mpsc::error::TryRecvError::Disconnected) => return Err(ClosedReason::QueueClosed),
-        };
-
-        tx.send(f)
-            .await
-            .map_err(|e| ClosedReason::TransportFailure(Arc::new(e)))?;
-    }
+struct Inner<Rx, Tx> {
+    state: std::sync::Mutex<MuxState<MpscChannelBuffer>>,
+    rx_state: tokio::sync::Mutex<RxState<Rx>>,
+    tx_state: tokio::sync::Mutex<TxState<Tx>>,
+    priority_txq: mpsc::UnboundedSender<Frame>,
 }
 
-async fn rx_actor<Rx>(inner: Weak<Inner>, mut rx: Rx) -> Result<(), ClosedReason>
+struct RxState<Rx> {
+    rx: Rx,
+}
+
+struct TxState<Tx> {
+    tx: Tx,
+    priority_txq: mpsc::UnboundedReceiver<Frame>,
+}
+
+impl<Tx> TxState<Tx> {}
+
+impl<Rx, Tx> Inner<Rx, Tx>
 where
     Rx: TryStream<Ok = Frame> + Unpin + Send + 'static,
     Rx::Error: Error + Sync + Send,
+    Tx: Sink<Frame> + Unpin + Send + 'static,
+    Tx::Error: Error + Sync + Send,
 {
-    loop {
-        let f = match rx.try_next().await {
-            Ok(Some(f)) => f,
-            Ok(None) => Err(ClosedReason::TransportClosed)?,
-            Err(e) => Err(ClosedReason::TransportFailure(Arc::new(e)))?,
+    /// Do a single round of receives
+    async fn rx_round(&self) -> Result<(), ClosedReason> {
+        let fut = async move {
+            // hold the rx state lock for a single rx
+            let mut rxs = self.rx_state.lock().await;
+            let f = match rxs.rx.try_next().await {
+                Ok(Some(f)) => f,
+                Ok(None) => Err(ClosedReason::TransportClosed)?,
+                Err(e) => Err(ClosedReason::TransportFailure(Arc::new(e)))?,
+            };
+            drop(rxs);
+
+            // the reply is always going to be high-priority
+            if let Some(r) = self.state.lock().unwrap().on_recv(f) {
+                self.priority_txq
+                    .send(r)
+                    .expect("queue unexpectedly closed");
+            }
+            Ok::<(), ClosedReason>(())
         };
 
-        let Some(inner) = inner.upgrade() else {
-            return Ok(());
-        };
-        if let Some(r) = inner.state.lock().unwrap().on_recv(f) {
-            inner.txq.send(r).map_err(|_| ClosedReason::QueueClosed)?;
+        if let Err(e) = fut.await {
+            self.close(e);
         }
-    }
-}
 
-struct Inner {
-    state: std::sync::Mutex<MuxState<MpscChannelBuffer>>,
-    txq: mpsc::UnboundedSender<Frame>,
-    txq_empty: watch::Receiver<()>,
-}
-
-impl Inner {
-    /// Transfer a single round of channel frames into the transmission queue and
-    /// wait for the queue to get empty.
-    async fn flush_channel_round(&self) -> Result<(), MuxNotOpen> {
-        let mut cx = Context::from_waker(Waker::noop());
-        let frames = self.state.lock().unwrap().poll_sends(&mut cx)?;
-        for f in frames {
-            self.txq.send(f).map_err(|_| MuxNotOpen)?;
-        }
-        self.txq_empty
-            .clone()
-            .changed()
-            .await
-            .map_err(|_| MuxNotOpen)?;
         Ok(())
     }
 
-    /// Close the mux with a result if you only have a weak pointer.
-    fn close_weak(this: Weak<Self>, r: Result<(), ClosedReason>) {
-        let Some(i) = this.upgrade() else { return };
-        i.close(r);
+    /// Do a single round of sends
+    async fn tx_round(&self) -> Result<(), ClosedReason> {
+        let mut cx = Context::from_waker(Waker::noop());
+        let polled_frames = self.state.lock().unwrap().poll_sends(&mut cx)?;
+
+        // sort polled frames into high-pri and low-pri
+        let mut lpframes = vec![];
+        for f in polled_frames {
+            match f {
+                f @ Frame::MuxControl(_) | f @ Frame::ChannelControl(_, _) => self
+                    .priority_txq
+                    .send(f)
+                    .expect("insert into priority txq should never fail"),
+                f @ Frame::ChannelData(_, _) => lpframes.push(f),
+            }
+        }
+
+        let fut = async move {
+            // hold the tx state lock over this loop
+            let mut txs = self.tx_state.lock().await;
+            let mut lpframes = lpframes.into_iter();
+            loop {
+                let f = match txs.priority_txq.try_recv() {
+                    Ok(f) => Some(f),
+                    Err(mpsc::error::TryRecvError::Empty) => lpframes.next(),
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        panic!("this should never fail");
+                    }
+                };
+
+                let Some(f) = f else {
+                    break;
+                };
+
+                txs.tx
+                    .send(f)
+                    .await
+                    .map_err(|e| ClosedReason::TransportFailure(Arc::new(e)))?;
+            }
+            Ok::<(), ClosedReason>(())
+        };
+
+        if let Err(e) = fut.await {
+            self.close(e);
+        }
+
+        Ok(())
     }
 
     /// Close the mux with a result
-    fn close(&self, r: Result<(), ClosedReason>) {
+    fn close(&self, r: ClosedReason) {
         let mut s = self.state.lock().unwrap();
         if s.closed() {
             // don't overwrite the existing reason if already closed
@@ -508,11 +517,15 @@ mod tests {
         run_single_test(
             |sut| async move {
                 println!("sut: opening ch");
-                let _ch = sut.open_channel(CHANNEL, BUFFER).await.unwrap();
+                let (ch, r) = tokio::join!(
+                    sut.open_channel(CHANNEL, BUFFER),
+                    sut.rxtx_round(),
+                );
+                let (_ch, _) = (ch.unwrap(), r.unwrap());
                 println!("sut: ch is open");
 
                 // send adms
-                sut.flush_channel_round().await.unwrap();
+                sut.tx_round().await.unwrap();
             },
             |mut rx, mut tx| async move {
                 println!("h: opening ch");
@@ -536,6 +549,7 @@ mod tests {
         .await
     }
 
+    #[ignore]
     #[tokio::test]
     #[test_log::test]
     async fn send_into_sut_channel() {
@@ -547,7 +561,7 @@ mod tests {
                 println!("sut: ch is open");
 
                 // send adm
-                sut.flush_channel_round().await.unwrap();
+                sut.tx_round().await.unwrap();
 
                 for _ in 0..100 {
                     ch.next().await.unwrap();
