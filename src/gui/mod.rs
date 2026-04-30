@@ -2,11 +2,15 @@ mod app;
 mod sections;
 
 use app::App;
+use std::sync::Arc;
+use tokio::runtime::Handle;
 
-pub fn run_gui() -> eframe::Result {
+use crate::logging::LogPaths;
+
+pub fn main(log_paths: Arc<LogPaths>) -> eframe::Result<()> {
     eframe::run_native(
         "caligula-gui",
         Default::default(),
-        Box::new(|cc| Ok(Box::new(App::new(cc)))),
+        Box::new(|cc| Ok(Box::new(App::new(cc, log_paths)))),
     )
 }

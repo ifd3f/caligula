@@ -1,11 +1,15 @@
 use egui::{Checkbox, Color32, ComboBox, RichText, UiBuilder};
+use futures::StreamExt;
+use std::time::Instant;
+use tokio::task::LocalSet;
 
 use crate::{
     compression::CompressionFormat,
     device,
-    gui::app::{App, FileHashOptions},
+    gui::app::{App, FileHashOptions, OngoingWrite, Options},
     hash::parse_hash_input,
-    ui::BeginParams,
+    herder_facade::make_herder_facade_impl,
+    ui::{BeginParams, Interactive, UseSudo, WriterState, try_start_burn},
 };
 
 pub fn add_file_hash_ui(hash_options: &mut FileHashOptions, ui: &mut egui::Ui) {
@@ -75,12 +79,12 @@ pub fn add_file_hash_ui(hash_options: &mut FileHashOptions, ui: &mut egui::Ui) {
     );
 }
 
-pub fn add_image_ui(app: &mut App, ui: &mut egui::Ui) {
-    let App {
+pub fn add_image_ui(options: &mut Options, ui: &mut egui::Ui) {
+    let Options {
         detected_compression_format,
         picked_image,
         ..
-    } = app;
+    } = options;
 
     ui.strong("Image");
     if ui.button("💿 Pick file").clicked()
@@ -114,37 +118,45 @@ pub fn add_target_disk_ui(app: &mut App, ui: &mut egui::Ui) {
     // - stop alloc:ing and doing so much work here.. DON'T CLONE!
     // - move the label formatting into a place where it's done ONCE, not on every ui render!
     // - deduplicate, label formatting is stolen from `ask_outfile.rs`
-    ComboBox::from_label(format!("{} available", app.possible_write_targets.len()))
-        .selected_text(
-            app.selected_write_target
-                .as_ref()
-                .map(|dev| match dev.target_type {
-                    device::Type::Disk => format!(
-                        "{} | {} - {} ({}, removable: {})",
-                        dev.name, dev.model, dev.size, dev.target_type, dev.removable
-                    ),
-                    _ => format!(
-                        "{} | {} - {} ({})",
-                        dev.name, dev.model, dev.size, dev.target_type
-                    ),
-                })
-                .unwrap_or_default(),
-        )
-        .show_ui(ui, |ui| {
-            for dev in &app.possible_write_targets {
-                let label = match dev.target_type {
-                    device::Type::Disk => format!(
-                        "{} | {} - {} ({}, removable: {})",
-                        dev.name, dev.model, dev.size, dev.target_type, dev.removable
-                    ),
-                    _ => format!(
-                        "{} | {} - {} ({})",
-                        dev.name, dev.model, dev.size, dev.target_type
-                    ),
-                };
-                ui.selectable_value(&mut app.selected_write_target, Some(dev.clone()), label);
-            }
-        });
+    ComboBox::from_label(format!(
+        "{} available",
+        app.options.possible_write_targets.len()
+    ))
+    .selected_text(
+        app.options
+            .selected_write_target
+            .as_ref()
+            .map(|dev| match dev.target_type {
+                device::Type::Disk => format!(
+                    "{} | {} - {} ({}, removable: {})",
+                    dev.name, dev.model, dev.size, dev.target_type, dev.removable
+                ),
+                _ => format!(
+                    "{} | {} - {} ({})",
+                    dev.name, dev.model, dev.size, dev.target_type
+                ),
+            })
+            .unwrap_or_default(),
+    )
+    .show_ui(ui, |ui| {
+        for dev in &app.options.possible_write_targets {
+            let label = match dev.target_type {
+                device::Type::Disk => format!(
+                    "{} | {} - {} ({}, removable: {})",
+                    dev.name, dev.model, dev.size, dev.target_type, dev.removable
+                ),
+                _ => format!(
+                    "{} | {} - {} ({})",
+                    dev.name, dev.model, dev.size, dev.target_type
+                ),
+            };
+            ui.selectable_value(
+                &mut app.options.selected_write_target,
+                Some(dev.clone()),
+                label,
+            );
+        }
+    });
 }
 
 pub fn add_begin_writing_ui(app: &mut App, ui: &mut egui::Ui) {
@@ -155,23 +167,91 @@ pub fn add_begin_writing_ui(app: &mut App, ui: &mut egui::Ui) {
             // don't unwrap.
             // actually don't even have this shitty refresh button,
             // should just refresh when any of the underlying values change
-            app.begin_params = BeginParams::new(
-                app.picked_image.clone().unwrap(),
-                app.detected_compression_format.unwrap(),
-                app.selected_write_target.clone().unwrap(),
+            app.options.begin_params = BeginParams::new(
+                app.options.picked_image.clone().unwrap(),
+                app.options.detected_compression_format.unwrap(),
+                app.options.selected_write_target.clone().unwrap(),
             )
             .ok();
         }
 
-        if let Some(begin_params) = &app.begin_params {
+        if let Some(begin_params) = &app.options.begin_params {
             ui.label(begin_params.to_string());
             ui.label(RichText::new("Ready to write!").color(Color32::GREEN));
+
+            if !app.options.has_confirmed_writing {
+                if ui.button("Perform write").clicked() {
+                    app.options.has_confirmed_writing = true;
+                }
+                return;
+            }
+
             ui.label(
                 RichText::new("THIS ACTION WILL DESTROY ALL DATA ON THIS DEVICE!!!")
                     .color(Color32::YELLOW),
             );
-            if ui.button("Perform write").clicked() {
-                // TODO:
+
+            if ui.button("I know, do it!").clicked() {
+                // TODO: make sure this really needs to clone
+                let log_paths = app.log_paths.clone();
+                let begin_params = begin_params.clone();
+                let cf = app.options.detected_compression_format.unwrap(); // FIXME:
+                let ongoing_write = app.ongoing_write.clone();
+
+                tokio::task::spawn_local(async move {
+                    eprintln!("inside task!");
+                    let mut herder = make_herder_facade_impl(log_paths.main());
+
+                    // FIXME: parameters to `try_start_burn`
+                    let interactive = Interactive::Never;
+                    let mut handle = try_start_burn(
+                        &mut herder,
+                        &begin_params.make_child_config(),
+                        UseSudo::Never,
+                        interactive.is_interactive(),
+                    )
+                    .await?;
+
+                    let input_file_bytes = handle.initial_info.input_file_bytes;
+
+                    let mut child_state =
+                        WriterState::initial(Instant::now(), !cf.is_identity(), input_file_bytes);
+
+                    *ongoing_write.lock().unwrap() = Some(OngoingWrite {
+                        write_progress: 0,
+                        verify_progress: 0,
+                    });
+
+                    loop {
+                        eprintln!("got event!");
+                        let x = handle.events.next().await;
+                        child_state = child_state.on_status(Instant::now(), x);
+                        // FIXME: fugly-ass unwrapping
+                        match &child_state {
+                            WriterState::Writing(b) => {
+                                ongoing_write
+                                    .lock()
+                                    .unwrap()
+                                    .as_mut()
+                                    .unwrap()
+                                    .write_progress = (b.approximate_ratio() * 1000.0) as u64
+                            }
+                            WriterState::Verifying {
+                                total_write_bytes, ..
+                            } => {
+                                ongoing_write
+                                    .lock()
+                                    .unwrap()
+                                    .as_mut()
+                                    .unwrap()
+                                    .verify_progress = total_write_bytes * 1000 / input_file_bytes
+                            }
+                            WriterState::Finished { .. } => break,
+                        }
+                    }
+
+                    anyhow::Ok(())
+                });
             }
         }
     });

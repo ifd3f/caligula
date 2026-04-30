@@ -1,6 +1,8 @@
 use clap::{CommandFactory as _, Parser};
 use tracing::debug;
 
+use crate::logging::LogPaths;
+
 mod byteseries;
 mod compression;
 mod device;
@@ -48,7 +50,7 @@ pub struct HerderDaemonArgs {
     log_file: String,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "local")]
 async fn main() {
     let args: Args = match std::env::var("_CALIGULA_CONFIGURE_CLAP_FOR_README") {
         Ok(var) if var == "1" => parse_args_for_readme_generation(),
@@ -69,7 +71,18 @@ async fn main() {
         }
         #[cfg(feature = "gui")]
         Command::Gui => {
-            gui::run_gui().unwrap();
+            // FIXME: duplicated setup from `Command::Burn`
+            let state_dir = util::ensure_state_dir().await.unwrap();
+            let log_paths = logging::LogPaths::init(state_dir);
+            logging::init_logging_parent(&log_paths);
+
+            debug!("Starting primary process");
+
+            match gui::main(log_paths.into()) {
+                Ok(_) => (),
+                // FIXME: shitty to_string on error
+                Err(e) => handle_toplevel_error(anyhow::anyhow!(e.to_string())),
+            }
         }
         Command::HerderDaemon(args) => {
             logging::init_logging_child(args.log_file);

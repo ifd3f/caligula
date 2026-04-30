@@ -7,17 +7,15 @@ mod writer_tracking;
 
 use std::{fs::File, path::Path, sync::Arc};
 
-pub use self::cli::BurnArgs;
-pub use self::start::BeginParams;
-pub use self::utils::ByteSpeed;
+pub use self::{
+    cli::{BurnArgs, Interactive, UseSudo},
+    start::{BeginParams, begin_writing, try_start_burn},
+    utils::ByteSpeed,
+    writer_tracking::WriterState,
+};
 use crate::{
-    herder_facade::make_herder_facade_impl,
-    logging::LogPaths,
-    tty::TermiosRestore,
-    ui::{
-        simple_ui::do_setup_wizard,
-        start::{begin_writing, try_start_burn},
-    },
+    herder_facade::make_herder_facade_impl, logging::LogPaths, tty::TermiosRestore,
+    ui::simple_ui::do_setup_wizard,
 };
 use tracing::{debug, info};
 
