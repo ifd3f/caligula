@@ -66,7 +66,7 @@ where
         // shared state
         let inner = Arc::new(Inner {
             state: std::sync::Mutex::new(MuxState::<MpscChannelBuffer>::opened()),
-            txq: txq_tx.clone()
+            txq: txq_tx.clone(),
         });
 
         // start processing in background
@@ -113,6 +113,11 @@ where
             .map_err(|_| OpenChannelError::MuxNotOpen(MuxNotOpen))?)
     }
 
+    /// Repeatedly transfer channel frames into the transmission queue on the
+    /// provided interval.
+    ///
+    /// The reason sends aren't immediate is because we want to batch transmissions
+    /// together for efficiency.
     pub fn do_sends_interval(&self, period: Duration) -> impl Future<Output = ()> + 'static {
         let mut interval = tokio::time::interval(period);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -126,14 +131,22 @@ where
                     return Err(MuxNotOpen);
                 };
 
-                let mut cx = Context::from_waker(Waker::noop());
-                let frames = inner.clone().poll_tx_frames(&mut cx)?;
-                for f in frames {
-                    inner.txq.send(f).map_err(|_| MuxNotOpen)?;
-                }
+                inner.flush_channel_round()?;
             }
         }
         .map(|_: Result<(), MuxNotOpen>| ())
+    }
+
+    /// Transfer a single round of channel frames into the transmission queue.
+    /// 
+    /// Must be called continuously to ensure data is
+    /// actually sent. Alternatively, you can call [do_sends_interval] in a background
+    /// task.
+    ///
+    /// The reason sends aren't immediate is because we want to batch transmissions
+    /// together for efficiency.
+    pub fn flush_channel_round(&self) -> Result<(), MuxNotOpen> {
+        self.inner.flush_channel_round()
     }
 }
 
@@ -173,10 +186,7 @@ where
     }
 }
 
-async fn rx_actor<Rx>(
-    inner: Weak<Inner>,
-    mut rx: Rx,
-) -> Result<(), ClosedReason>
+async fn rx_actor<Rx>(inner: Weak<Inner>, mut rx: Rx) -> Result<(), ClosedReason>
 where
     Rx: TryStream<Ok = Frame> + Unpin + Send + 'static,
     Rx::Error: Error + Sync + Send,
@@ -203,9 +213,14 @@ struct Inner {
 }
 
 impl Inner {
-    fn poll_tx_frames(self: Arc<Self>, cx: &mut Context<'_>) -> Result<Vec<Frame>, MuxNotOpen> {
-        let this = self.clone();
-        this.state.lock().unwrap().poll_sends(cx)
+    /// Transfer a single round of channel frames into the transmission queue.
+    fn flush_channel_round(&self) -> Result<(), MuxNotOpen> {
+        let mut cx = Context::from_waker(Waker::noop());
+        let frames = self.state.lock().unwrap().poll_sends(&mut cx)?;
+        for f in frames {
+            self.txq.send(f).map_err(|_| MuxNotOpen)?;
+        }
+        Ok(())
     }
 
     /// Close the mux with a result if you only have a weak pointer.
@@ -352,8 +367,6 @@ mod tests {
 
     type TestController = AsyncMuxController<FrameStream, FrameSink>;
 
-    const SENDS_INTERVAL: Duration = Duration::from_millis(1);
-
     fn make_sink_stream_pair(name: String) -> (FrameSink, FrameStream) {
         let (tx, rx) = mpsc::channel::<Result<Frame, std::io::Error>>(128);
         (
@@ -407,9 +420,7 @@ mod tests {
         let ca = Arc::pin(h.sut);
         let a = sut(ca.clone());
         let b = harness(h.rx, h.tx);
-        let bg = tokio::spawn(ca.do_sends_interval(SENDS_INTERVAL));
         tokio::join!(a, b);
-        bg.abort();
     }
 
     struct DoubleHarness {
@@ -444,14 +455,7 @@ mod tests {
         let (ca, cb) = (Arc::pin(h.a), Arc::pin(h.b));
         let a = a(ca.clone());
         let b = b(cb.clone());
-        let bg = tokio::spawn(async move {
-            tokio::join!(
-                ca.do_sends_interval(SENDS_INTERVAL),
-                cb.do_sends_interval(SENDS_INTERVAL)
-            )
-        });
         tokio::join!(a, b);
-        bg.abort();
     }
 
     #[tokio::test]
