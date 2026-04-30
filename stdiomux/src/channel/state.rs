@@ -178,19 +178,21 @@ impl<B: ChannelBuffer> ChannelState<B> {
 
     /// Calculate if we need to send an ADM packet
     #[inline]
-    pub fn poll_next_adm(&mut self, cx: &mut Context<'_>) -> Option<u8> {
+    pub fn poll_next_adm(&mut self, cx: &mut Context<'_>) -> Poll<ChannelControlHeader> {
         let Self::Open(o) = self else {
-            return None;
+            return Poll::Pending;
         };
 
         let actual_capacity = match o.buf.poll_rx_capacity(cx) {
             // we have capacity
             Poll::Ready(Some(x)) => x.into(),
-            // we are closed
+
+            // buffer has closed
             Poll::Ready(None) => {
                 *self = ChannelState::Closed;
-                return None;
+                return Poll::Ready(ChannelControlHeader::Reset);
             }
+
             // we are waiting for more capacity
             Poll::Pending => 0,
         };
@@ -202,11 +204,14 @@ impl<B: ChannelBuffer> ChannelState<B> {
                     actual_capacity,
                     o.their_available_permits
                 );
-                None
+
+                // if can't panic, quit to be safe
+                *self = ChannelState::Closed;
+                return Poll::Ready(ChannelControlHeader::Reset);
             }
 
             // capacity has not changed, so no adm is needed
-            std::cmp::Ordering::Equal => None,
+            std::cmp::Ordering::Equal => Poll::Pending,
 
             // capacity has increased
             std::cmp::Ordering::Greater => {
@@ -219,7 +224,7 @@ impl<B: ChannelBuffer> ChannelState<B> {
 
                 // increment our count of their permits
                 o.their_available_permits += actual_additional_permits as u64;
-                Some(actual_additional_permits)
+                Poll::Ready(ChannelControlHeader::Admit(actual_additional_permits))
             }
         }
     }
@@ -284,6 +289,13 @@ impl<B: ChannelBuffer> ChannelState<B> {
 
             // can't get admits outside of Open
             (_, Admit(_)) => send_close,
+        }
+    }
+
+    pub(crate) fn closed(&self) -> bool {
+        match self {
+            ChannelState::Closed => true,
+            _ => false,
         }
     }
 }

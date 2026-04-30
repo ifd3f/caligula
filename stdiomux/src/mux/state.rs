@@ -1,5 +1,6 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
+use std::task::Context;
+use std::{collections::HashMap, task::Poll};
 
 use crate::{
     channel::state::{ChannelBuffer, ChannelState},
@@ -109,6 +110,33 @@ impl<B: ChannelBuffer> ActiveData<B> {
 
         out.map(|f| Frame::ChannelControl(id, f))
     }
+
+    /// Get frames to send. This function is guaranteed to return a fixed number of frames
+    /// per channel, but it may return more than one frame per channel.
+    #[inline]
+    pub fn poll_sends<'a>(&'a mut self, cx: &'a mut Context<'a>) -> Poll<Vec<Frame>> {
+        let mut out = vec![];
+        self.clean_up_closed_channels();
+        for (id, c) in &mut self.channels {
+            if let Poll::Ready(x) = c.state.poll_next_adm(cx) {
+                out.push(Frame::ChannelControl(*id, x));
+            }
+            if let Poll::Ready(Some(x)) = c.state.poll_next_tx(cx) {
+                out.push(Frame::ChannelData(*id, x));
+            }
+        }
+        self.clean_up_closed_channels();
+
+        if out.is_empty() {
+            Poll::Pending
+        } else {
+            Poll::Ready(out)
+        }
+    }
+
+    pub fn clean_up_closed_channels(&mut self) {
+        self.channels.retain(|k, v| !v.state.closed());
+    }
 }
 
 impl<B: ChannelBuffer> PartialEq for ActiveData<B> {
@@ -117,10 +145,25 @@ impl<B: ChannelBuffer> PartialEq for ActiveData<B> {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("Mux is closed")]
+pub struct MuxNotOpen;
+
 impl<B: ChannelBuffer> MuxState<B> {
     /// Create an initial post-handshake [MuxState]
     pub fn opened() -> Self {
         Self::Active(ActiveData::default())
+    }
+
+    /// Get a list of frames to send.
+    pub fn poll_sends<'a>(
+        &'a mut self,
+        cx: &'a mut Context<'a>,
+    ) -> Poll<Result<Vec<Frame>, MuxNotOpen>> {
+        let (Self::Active(a) | Self::Terminating(a)) = self else {
+            return Poll::Ready(Err(MuxNotOpen));
+        };
+        a.poll_sends(cx).map(Ok)
     }
 
     /// Handle receiving the given frame.
