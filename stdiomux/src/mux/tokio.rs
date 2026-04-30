@@ -10,14 +10,14 @@ use std::{
 use bytes::Bytes;
 use futures::{FutureExt, Sink, SinkExt, Stream, TryStream, TryStreamExt as _};
 use tokio::{
-    sync::{mpsc, oneshot},
+    sync::{Notify, mpsc, oneshot, watch},
     time::MissedTickBehavior,
 };
 use tokio_util::sync::PollSender;
 
 use crate::{
     channel::state::{AcceptRxError, ChannelBuffer, OpenChannelError},
-    frame::{ChannelId, Frame, MuxControlHeader},
+    frame::{ChannelControlHeader, ChannelId, Frame, MuxControlHeader},
     mux::state::{ClosedReason, MuxNotOpen, MuxState},
 };
 
@@ -62,11 +62,13 @@ where
 
         // queue for transmissions
         let (txq_tx, txq_rx) = mpsc::unbounded_channel::<Frame>();
+        let (txq_empty_tx, txq_empty_rx) = watch::channel(());
 
         // shared state
         let inner = Arc::new(Inner {
             state: std::sync::Mutex::new(MuxState::<MpscChannelBuffer>::opened()),
             txq: txq_tx.clone(),
+            txq_empty: txq_empty_rx,
         });
 
         // start processing in background
@@ -75,7 +77,7 @@ where
             async move {
                 let r = tokio::select! {
                     r = rx_actor(inner.clone(), rx) => r,
-                    r = tx_actor(inner.clone(), tx, txq_rx) => r,
+                    r = tx_actor(inner.clone(), tx, txq_rx, txq_empty_tx) => r,
                 };
                 Inner::close_weak(inner, r);
             }
@@ -108,6 +110,14 @@ where
             Poll::Ready(r) => r?,
             Poll::Pending => (),
         }
+        self.inner
+            .txq
+            .send(Frame::ChannelControl(
+                channel_id,
+                ChannelControlHeader::Open,
+            ))
+            .map_err(|_| OpenChannelError::MuxNotOpen(MuxNotOpen))?;
+
         Ok(rx
             .await
             .map_err(|_| OpenChannelError::MuxNotOpen(MuxNotOpen))?)
@@ -131,22 +141,25 @@ where
                     return Err(MuxNotOpen);
                 };
 
-                inner.flush_channel_round()?;
+                inner.flush_channel_round().await?;
             }
         }
         .map(|_: Result<(), MuxNotOpen>| ())
     }
 
-    /// Transfer a single round of channel frames into the transmission queue.
-    /// 
-    /// Must be called continuously to ensure data is
-    /// actually sent. Alternatively, you can call [do_sends_interval] in a background
-    /// task.
+    /// Transfer a single round of channel frames into the transmission queue and ensure
+    /// that it becomes empty.
+    ///
+    /// Must be called continuously to ensure data is actually sent. Alternatively, you
+    /// can call [do_sends_interval] in a background task.
+    ///
+    /// Note that this may run for longer than just the current round if more frames have
+    /// been added!
     ///
     /// The reason sends aren't immediate is because we want to batch transmissions
     /// together for efficiency.
-    pub fn flush_channel_round(&self) -> Result<(), MuxNotOpen> {
-        self.inner.flush_channel_round()
+    pub async fn flush_channel_round(&self) -> Result<(), MuxNotOpen> {
+        self.inner.flush_channel_round().await
     }
 }
 
@@ -172,13 +185,21 @@ async fn tx_actor<Tx>(
     _inner: Weak<Inner>,
     mut tx: Tx,
     mut txq: mpsc::UnboundedReceiver<Frame>,
+    txq_empty_tx: watch::Sender<()>,
 ) -> Result<(), ClosedReason>
 where
     Tx: Sink<Frame> + Unpin + Send + 'static,
     Tx::Error: Error + Sync + Send,
 {
     loop {
-        let f = txq.recv().await.ok_or_else(|| ClosedReason::QueueClosed)?;
+        let f = match txq.try_recv() {
+            Ok(f) => f,
+            Err(mpsc::error::TryRecvError::Empty) => {
+                txq_empty_tx.send(()).ok();
+                txq.recv().await.ok_or(ClosedReason::QueueClosed)?
+            }
+            Err(mpsc::error::TryRecvError::Disconnected) => return Err(ClosedReason::QueueClosed),
+        };
 
         tx.send(f)
             .await
@@ -210,16 +231,23 @@ where
 struct Inner {
     state: std::sync::Mutex<MuxState<MpscChannelBuffer>>,
     txq: mpsc::UnboundedSender<Frame>,
+    txq_empty: watch::Receiver<()>,
 }
 
 impl Inner {
-    /// Transfer a single round of channel frames into the transmission queue.
-    fn flush_channel_round(&self) -> Result<(), MuxNotOpen> {
+    /// Transfer a single round of channel frames into the transmission queue and
+    /// wait for the queue to get empty.
+    async fn flush_channel_round(&self) -> Result<(), MuxNotOpen> {
         let mut cx = Context::from_waker(Waker::noop());
         let frames = self.state.lock().unwrap().poll_sends(&mut cx)?;
         for f in frames {
             self.txq.send(f).map_err(|_| MuxNotOpen)?;
         }
+        self.txq_empty
+            .clone()
+            .changed()
+            .await
+            .map_err(|_| MuxNotOpen)?;
         Ok(())
     }
 
@@ -472,13 +500,55 @@ mod tests {
 
     #[tokio::test]
     #[test_log::test]
-    async fn send_into_sut() {
+    async fn sut_open_channel_works() {
+        const CHANNEL: ChannelId = ChannelId(10);
+        const BUFFER: usize = 128;
+
+        println!("starting test");
+        run_single_test(
+            |sut| async move {
+                println!("sut: opening ch");
+                let _ch = sut.open_channel(CHANNEL, BUFFER).await.unwrap();
+                println!("sut: ch is open");
+
+                // send adms
+                sut.flush_channel_round().await.unwrap();
+            },
+            |mut rx, mut tx| async move {
+                println!("h: opening ch");
+                let open = Frame::ChannelControl(CHANNEL, ChannelControlHeader::Open);
+                tx.send(open).await.unwrap();
+                println!("h: ch is open");
+
+                let reply = rx.next().await.unwrap().unwrap();
+                assert_eq!(
+                    reply,
+                    Frame::ChannelControl(CHANNEL, ChannelControlHeader::Open)
+                );
+
+                let adm = rx.next().await.unwrap().unwrap();
+                assert_eq!(
+                    adm,
+                    Frame::ChannelControl(CHANNEL, ChannelControlHeader::Admit(BUFFER as u8))
+                );
+            },
+        )
+        .await
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn send_into_sut_channel() {
         println!("starting test");
         run_single_test(
             |sut| async move {
                 println!("sut: opening ch");
                 let mut ch = sut.open_channel(ChannelId(10), 100).await.unwrap();
                 println!("sut: ch is open");
+
+                // send adm
+                sut.flush_channel_round().await.unwrap();
+
                 for _ in 0..100 {
                     ch.next().await.unwrap();
                 }

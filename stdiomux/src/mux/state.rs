@@ -172,7 +172,7 @@ impl<B: ChannelBuffer> MuxState<B> {
 
     /// Poll for a single round of frames to send. Returns a list of frames, or an error if the mux
     /// is in the closed state.
-    /// 
+    ///
     /// This function is guaranteed to return a fixed number of frames per channel, but it may return
     /// more than one frame per channel.
     pub fn poll_sends(&mut self, cx: &mut Context<'_>) -> Result<Vec<Frame>, MuxNotOpen> {

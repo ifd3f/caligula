@@ -24,7 +24,7 @@ proptest = "1.11.0"
 proptest-derive = "0.8.0"
 rand = "0.10.1"
 rstest = "0.26.1"
-test-log = "0.2.20"
+test-log = { version = "0.2.20", features = ["trace"] }
 tokio = { version = "1.52.1", features = ["full", "rt-multi-thread", "test-util"] }
 tokio-pipe = "0.2.12"
 tokio-stream = "0.1.18"
