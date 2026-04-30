@@ -1,96 +1,123 @@
 use std::{
+    error::Error,
     future::poll_fn,
     marker::PhantomData,
     num::NonZero,
-    pin::Pin,
-    sync::Arc,
-    task::{Poll},
+    sync::{Arc, Weak},
+    task::Poll,
 };
 
 use bytes::Bytes;
-use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
-    sync::{mpsc, oneshot},
-};
+use futures::{Sink, SinkExt, TryStream, TryStreamExt as _};
+use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     channel::state::{AcceptRxError, ChannelBuffer, OpenChannelError},
-    frame::{AsyncReadExt as _, AsyncWriteExt as _, ChannelId, Frame, MuxControlHeader},
-    mux::state::{MuxNotOpen, MuxState},
+    frame::{ChannelId, Frame, MuxControlHeader},
+    mux::state::{ClosedReason, MuxNotOpen, MuxState},
 };
 
-pub struct AsyncMuxController<R, W>
+pub struct AsyncMuxController<Rx, Tx>
 where
-    R: AsyncRead + Unpin + Send + 'static,
-    W: AsyncWrite + Unpin + Send + 'static,
+    Rx: TryStream<Ok = Frame> + Unpin + Send + 'static,
+    Tx: Sink<Frame> + Unpin + Send + 'static,
+    Rx::Error: Error + Sync,
+    Tx::Error: Error + Sync,
 {
-    inner: Inner,
-    _phantom: PhantomData<(R, W)>,
+    inner: Arc<Inner>,
+    _phantom: PhantomData<(Rx, Tx)>,
 }
 
-impl<R, W> AsyncMuxController<R, W>
+#[derive(Debug, thiserror::Error)]
+pub enum OpenMuxError {
+    #[error("Got a non-hello handshake frame: {0:?}")]
+    NonHello(Option<Frame>),
+    #[error("transport error: {0}")]
+    Transport(#[from] Arc<dyn Error>),
+}
+
+impl<Rx, Tx> AsyncMuxController<Rx, Tx>
 where
-    R: AsyncRead + Unpin + Send + 'static,
-    W: AsyncWrite + Unpin + Send + 'static,
+    Rx: TryStream<Ok = Frame> + Unpin + Send + 'static,
+    Tx: Sink<Frame> + Unpin + Send + 'static,
+    Rx::Error: Error + Sync + Send,
+    Tx::Error: Error + Sync + Send,
 {
-    pub async fn open(mut r: R, mut w: W) -> std::io::Result<Self> {
-        w.write_frame_async(&Frame::MuxControl(MuxControlHeader::Hello))
-            .await?;
-        w.flush().await?;
-        let read = r.read_frame_async().await?;
-        if read != Frame::MuxControl(MuxControlHeader::Hello) {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::ConnectionAborted,
-                "did not receive a hello from the other end",
-            ))?;
+    pub async fn open(mut r: Rx, mut w: Tx) -> Result<Self, OpenMuxError> {
+        // send handshake
+        w.send(Frame::MuxControl(MuxControlHeader::Hello))
+            .await
+            .map_err(|e| OpenMuxError::Transport(Arc::new(e)))?;
+
+        // ensure we got the correct handshake
+        match r.try_next().await {
+            Ok(Some(Frame::MuxControl(MuxControlHeader::Hello))) => (),
+            Ok(f) => return Err(OpenMuxError::NonHello(f)),
+            Err(e) => return Err(OpenMuxError::Transport(Arc::new(e))),
         }
 
-        let inner = Inner {
-            state: Arc::pin(std::sync::Mutex::new(
-                MuxState::<MpscChannelBuffer>::opened(),
-            )),
-        };
+        // start processing
+        let inner = Arc::new(Inner {
+            state: std::sync::Mutex::new(MuxState::<MpscChannelBuffer>::opened()),
+        });
 
         let (to_tx, mut from_rx) = mpsc::unbounded_channel::<Frame>();
         let _tx_actor = tokio::spawn({
-            let inner = inner.clone();
+            let inner = Arc::downgrade(&inner);
             async move {
                 loop {
-                    let frames = tokio::select! {
-                        s = inner.get_tx_frames() => {
-                            s
-                        }
-                        s = from_rx.recv() => {
-                            Ok(s.into_iter().collect())
+                    let f = match from_rx.recv().await {
+                        Some(f) => f,
+                        None => {
+                            Inner::close_weak(inner, Ok(()));
+                            return;
                         }
                     };
 
-                    let Ok(frames) = frames else {
-                        return;
-                    };
-
-                    for f in frames {
-                        w.write_frame_async(&f)
-                            .await
-                            .expect("transport error while writing frame");
+                    match w.send(f).await {
+                        Ok(()) => (),
+                        Err(e) => {
+                            Inner::close_weak(
+                                inner,
+                                Err(ClosedReason::TransportFailure(Arc::new(e))),
+                            );
+                            return;
+                        }
                     }
                 }
             }
         });
 
         let _rx_actor = tokio::spawn({
-            let inner = inner.clone();
+            let inner = Arc::downgrade(&inner);
             async move {
                 loop {
-                    let f = r.read_frame_async().await.expect("failed to read frame");
-                    let mut state = inner.state.lock().unwrap();
-                    if let Some(response) = state.on_recv(f) {
-                        let Ok(()) = to_tx.send(response) else {
+                    let f = match r.try_next().await {
+                        Ok(Some(f)) => f,
+                        Ok(None) => {
+                            Inner::close_weak(inner, Ok(()));
                             return;
-                        };
-                    }
-                    if state.closed() {
+                        }
+                        Err(e) => {
+                            Inner::close_weak(
+                                inner,
+                                Err(ClosedReason::TransportFailure(Arc::new(e))),
+                            );
+                            return;
+                        }
+                    };
+
+                    let Some(inner) = inner.upgrade() else {
                         return;
+                    };
+                    if let Some(r) = inner.state.lock().unwrap().on_recv(f) {
+                        match to_tx.send(r) {
+                            Ok(()) => (),
+                            Err(e) => {
+                                inner.close(Err(ClosedReason::TransportFailure(Arc::new(e))));
+                                return;
+                            }
+                        }
                     }
                 }
             }
@@ -128,15 +155,30 @@ where
     }
 }
 
-#[derive(Clone)]
 struct Inner {
-    state: Pin<Arc<std::sync::Mutex<MuxState<MpscChannelBuffer>>>>,
+    state: std::sync::Mutex<MuxState<MpscChannelBuffer>>,
 }
 
 impl Inner {
-    async fn get_tx_frames(&self) -> Result<Vec<Frame>, MuxNotOpen> {
-        let state = self.state.clone();
-        poll_fn(move |cx| state.lock().unwrap().poll_sends(cx)).await
+    async fn get_tx_frames(self: Arc<Self>) -> Result<Vec<Frame>, MuxNotOpen> {
+        let this = self.clone();
+        poll_fn(move |cx| this.state.lock().unwrap().poll_sends(cx)).await
+    }
+
+    /// Close the mux with a result if you only have a weak pointer.
+    fn close_weak(this: Weak<Self>, r: Result<(), ClosedReason>) {
+        let Some(i) = this.upgrade() else { return };
+        i.close(r);
+    }
+
+    /// Close the mux with a result
+    fn close(&self, r: Result<(), ClosedReason>) {
+        let mut s = self.state.lock().unwrap();
+        if s.closed() {
+            // don't overwrite the existing reason if already closed
+            return;
+        }
+        *s = MuxState::Closed(r);
     }
 }
 
@@ -188,7 +230,7 @@ impl ChannelBuffer for MpscChannelBuffer {
 
     fn poll_tx(
         &mut self,
-        cx: &mut std::task::Context<'_>,
+        _cx: &mut std::task::Context<'_>,
     ) -> std::task::Poll<Option<bytes::Bytes>> {
         let Some((_tx, rx)) = &mut self.inner else {
             return Poll::Ready(None);

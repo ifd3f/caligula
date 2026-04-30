@@ -1,4 +1,6 @@
+use std::error::Error;
 use std::fmt::Debug;
+use std::sync::Arc;
 use std::task::Context;
 use std::{collections::HashMap, task::Poll};
 
@@ -51,7 +53,7 @@ impl<B: ChannelBuffer> Default for MuxState<B> {
     }
 }
 
-#[derive(Debug, PartialEq, thiserror::Error, Clone)]
+#[derive(Debug, thiserror::Error, Clone)]
 pub enum ClosedReason {
     #[error("Connection reset")]
     Reset,
@@ -59,6 +61,18 @@ pub enum ClosedReason {
     UnexpectedFrame(Frame),
     #[error("Panicked during operation")]
     Panicked,
+    #[error("Transport failure: {0}")]
+    TransportFailure(#[from] Arc<dyn Error + Sync + Send>),
+}
+
+impl PartialEq for ClosedReason {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::UnexpectedFrame(l0), Self::UnexpectedFrame(r0)) => l0 == r0,
+            (Self::TransportFailure(_), Self::TransportFailure(_)) => false,
+            _ => core::mem::discriminant(self) == core::mem::discriminant(other),
+        }
+    }
 }
 
 pub struct ActiveData<B: ChannelBuffer> {
