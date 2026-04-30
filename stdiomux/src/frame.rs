@@ -24,7 +24,9 @@ pub const RST: Frame = Frame::MuxControl(MuxControlHeader::Reset);
 pub const FIN: Frame = Frame::MuxControl(MuxControlHeader::Finished);
 pub const TRM: Frame = Frame::MuxControl(MuxControlHeader::Terminate);
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy)]
+#[derive(
+    Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Clone, Copy, derive_more::From, derive_more::Into,
+)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub struct ChannelId(#[cfg_attr(test, proptest(strategy = "0u16..=65535"))] pub u16);
 
@@ -70,7 +72,7 @@ pub enum ChannelControlHeader {
     Admit(u8),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, derive_more::From, derive_more::Into)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary), proptest(params = "()"))]
 pub struct ChannelDataFrame(#[cfg_attr(test, proptest(strategy = "payload_strategy()"))] pub Bytes);
 
@@ -384,10 +386,10 @@ mod tests {
     fn test_serialize_roundtrip(frame: Frame) {
         let mut buf: Vec<u8> = vec![];
         buf.write_frame(&frame).unwrap();
-        println!(
-            "serialized header: {:032b}",
-            u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]])
-        );
+        // println!(
+        //     "serialized header: {:032b}",
+        //     u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]])
+        // );
 
         let mut cursor = &buf[..];
         let result = cursor.read_frame().unwrap();
@@ -400,10 +402,10 @@ mod tests {
     async fn test_serialize_roundtrip_async(frame: Frame) {
         let mut buf: Vec<u8> = vec![];
         buf.write_frame_async(&frame).await.unwrap();
-        println!(
-            "serialized header: {:032b}",
-            u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]])
-        );
+        // println!(
+        //     "serialized header: {:032b}",
+        //     u32::from_be_bytes([buf[0], buf[1], buf[2], buf[3]])
+        // );
 
         let mut cursor = &buf[..];
         let result = cursor.read_frame_async().await.unwrap();

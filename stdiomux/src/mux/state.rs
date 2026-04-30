@@ -133,7 +133,7 @@ impl<B: ChannelBuffer> ActiveData<B> {
     /// Get frames to send. This function is guaranteed to return a fixed number of frames
     /// per channel, but it may return more than one frame per channel.
     #[inline]
-    pub fn poll_sends(&mut self, cx: &mut Context<'_>) -> Poll<Vec<Frame>> {
+    pub fn poll_sends(&mut self, cx: &mut Context<'_>) -> Vec<Frame> {
         let mut out = vec![];
         self.clean_up_closed_channels();
         for (id, c) in &mut self.channels {
@@ -146,11 +146,7 @@ impl<B: ChannelBuffer> ActiveData<B> {
         }
         self.clean_up_closed_channels();
 
-        if out.is_empty() {
-            Poll::Pending
-        } else {
-            Poll::Ready(out)
-        }
+        out
     }
 
     pub fn clean_up_closed_channels(&mut self) {
@@ -175,11 +171,11 @@ impl<B: ChannelBuffer> MuxState<B> {
     }
 
     /// Get a list of frames to send.
-    pub fn poll_sends(&mut self, cx: &mut Context<'_>) -> Poll<Result<Vec<Frame>, MuxNotOpen>> {
+    pub fn poll_sends(&mut self, cx: &mut Context<'_>) -> Result<Vec<Frame>, MuxNotOpen> {
         let (Self::Active(a) | Self::Terminating(a)) = self else {
-            return Poll::Ready(Err(MuxNotOpen));
+            return Err(MuxNotOpen);
         };
-        a.poll_sends(cx).map(Ok)
+        Ok(a.poll_sends(cx))
     }
 
     /// Handle receiving the given frame.
