@@ -1,6 +1,8 @@
 use clap::{CommandFactory as _, Parser};
 use tracing::debug;
 
+use crate::logging::LogPaths;
+
 mod byteseries;
 mod compression;
 mod device;
@@ -16,6 +18,9 @@ mod tty;
 mod ui;
 mod util;
 
+#[cfg(feature = "gui")]
+mod gui;
+
 /// A lightweight, user-friendly disk imaging tool
 #[derive(clap::Parser, Debug)]
 #[command(author, version, about, long_about = None, flatten_help = true)]
@@ -28,6 +33,9 @@ pub struct Args {
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     Burn(ui::BurnArgs),
+
+    #[cfg(feature = "gui")]
+    Gui,
 
     /// INTERNAL ONLY!
     ///
@@ -42,7 +50,7 @@ pub struct HerderDaemonArgs {
     log_file: String,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "local")]
 async fn main() {
     let args: Args = match std::env::var("_CALIGULA_CONFIGURE_CLAP_FOR_README") {
         Ok(var) if var == "1" => parse_args_for_readme_generation(),
@@ -59,6 +67,21 @@ async fn main() {
             match ui::main(&state_dir, log_paths.into(), &burn_args).await {
                 Ok(_) => (),
                 Err(e) => handle_toplevel_error(e),
+            }
+        }
+        #[cfg(feature = "gui")]
+        Command::Gui => {
+            // FIXME: duplicated setup from `Command::Burn`
+            let state_dir = util::ensure_state_dir().await.unwrap();
+            let log_paths = logging::LogPaths::init(state_dir);
+            logging::init_logging_parent(&log_paths);
+
+            debug!("Starting primary process");
+
+            match gui::main(log_paths.into()) {
+                Ok(_) => (),
+                // FIXME: shitty to_string on error
+                Err(e) => handle_toplevel_error(anyhow::anyhow!(e.to_string())),
             }
         }
         Command::HerderDaemon(args) => {

@@ -22,6 +22,8 @@ clap = { version = "4.5.49", features = ["derive", "cargo", "wrap_help"] }
 crossterm = { version = "0.27.0", features = ["event-stream"] }
 derive_more = "0.99.20"
 digest = "0.10.7"
+eframe = { version = "0.34", optional = true, default-features = false, features = ["accesskit", "default_fonts", "wayland", "web_screen_reader", "x11", "glow", "persistence"] }
+egui = { version = "0.34", optional = true }
 flate2 = "1.1.4"
 format-bytes = "0.3.0"
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
@@ -36,13 +38,14 @@ lz4_flex = { version = "0.11.6", default-features = false, features = ["frame"] 
 md5 = { package = "md-5", version = "0.10.6", default-features = false }
 process_path = "0.1.4"
 ratatui = { version = "0.26.3", default-features = false, features = ["crossterm"] }
+rfd = "0.17"
 ruzstd = { version = "0.6.0", default-features = false, features = ["std"] }
 serde = { version = "1.0.228", features = ["derive"] }
 sha1 = "0.10.6"
 sha2 = "0.10.9"
 shell-words = "1.1.0"
 thiserror = "1.0.69"
-tokio = { version = "1.48.0", features = ["rt-multi-thread", "process", "io-util", "io-std", "macros", "fs"] }
+tokio = { version = "1.48.0", features = ["rt", "process", "io-util", "io-std", "macros", "fs"] }
 tokio-stream = "0.1.18"
 tracing = { version = "0.1.41", default-features = false, features = [
     "std",
@@ -52,6 +55,9 @@ tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 tracing-unwrap = "1.0.1"
 which = "6.0.3"
 xz2 = { version = "0.1.7", features = ["static"] }
+
+[features]
+gui = ["dep:egui", "dep:eframe"]
 
 [dev-dependencies]
 approx = "0.5.1"
