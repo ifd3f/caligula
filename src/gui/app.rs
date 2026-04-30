@@ -6,6 +6,7 @@ use crate::{
     device::{Removable, WriteTarget, enumerate_devices},
     gui::sections::{add_begin_writing_ui, add_file_hash_ui, add_image_ui, add_target_disk_ui},
     hash::HashAlg,
+    ui::BeginParams,
 };
 
 #[derive(Default)]
@@ -19,6 +20,8 @@ pub struct App {
     #[cfg_attr(debug_assertions, serde(skip))]
     pub selected_write_target: Option<WriteTarget>,
     pub show_all_disks: bool,
+    #[cfg_attr(debug_assertions, serde(skip))]
+    pub begin_params: Option<BeginParams>,
 }
 
 #[derive(Default)]
@@ -58,6 +61,16 @@ impl App {
             .filter(|d| self.show_all_disks || d.removable == Removable::Yes)
             .collect();
         self.possible_write_targets.sort();
+    }
+
+    pub fn file_hash_is_valid_or_skipped(&self) -> bool {
+        self.file_hash_options.verified || self.file_hash_options.skip
+    }
+
+    pub fn is_ready_for_writing(&self) -> bool {
+        self.picked_image.is_some()
+            && self.file_hash_is_valid_or_skipped()
+            && self.selected_write_target.is_some()
     }
 }
 

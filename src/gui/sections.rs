@@ -2,9 +2,10 @@ use egui::{Checkbox, Color32, ComboBox, RichText, UiBuilder};
 
 use crate::{
     compression::CompressionFormat,
-    device::{self, Removable, WriteTarget, enumerate_devices},
+    device,
     gui::app::{App, FileHashOptions},
     hash::parse_hash_input,
+    ui::BeginParams,
 };
 
 pub fn add_file_hash_ui(hash_options: &mut FileHashOptions, ui: &mut egui::Ui) {
@@ -146,4 +147,32 @@ pub fn add_target_disk_ui(app: &mut App, ui: &mut egui::Ui) {
         });
 }
 
-pub fn add_begin_writing_ui(app: &mut App, ui: &mut egui::Ui) {}
+pub fn add_begin_writing_ui(app: &mut App, ui: &mut egui::Ui) {
+    ui.add_enabled_ui(app.is_ready_for_writing(), |ui| {
+        ui.strong("Write");
+        if ui.button("Prepare for writing").clicked() {
+            // FIXME:
+            // don't unwrap.
+            // actually don't even have this shitty refresh button,
+            // should just refresh when any of the underlying values change
+            app.begin_params = BeginParams::new(
+                app.picked_image.clone().unwrap(),
+                app.detected_compression_format.unwrap(),
+                app.selected_write_target.clone().unwrap(),
+            )
+            .ok();
+        }
+
+        if let Some(begin_params) = &app.begin_params {
+            ui.label(begin_params.to_string());
+            ui.label(RichText::new("Ready to write!").color(Color32::GREEN));
+            ui.label(
+                RichText::new("THIS ACTION WILL DESTROY ALL DATA ON THIS DEVICE!!!")
+                    .color(Color32::YELLOW),
+            );
+            if ui.button("Perform write").clicked() {
+                // TODO:
+            }
+        }
+    });
+}

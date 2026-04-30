@@ -8,6 +8,7 @@ mod writer_tracking;
 use std::{fs::File, path::Path, sync::Arc};
 
 pub use self::cli::BurnArgs;
+pub use self::start::BeginParams;
 pub use self::utils::ByteSpeed;
 use crate::{
     herder_facade::make_herder_facade_impl,
