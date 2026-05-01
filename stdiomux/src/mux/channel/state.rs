@@ -1,8 +1,12 @@
-use super::{handle::ChannelHandle, shared::Shared};
-use crate::frame::{ChannelAdmit, ChannelControlHeader, ChannelDataFrame};
+use bytes::Bytes;
+
+use super::{handle::ChannelHandle };
+use crate::{
+    frame::{ChannelAdmit, ChannelControlHeader, ChannelDataFrame}, mux::channel::shared::{Mode, WokeRb}, util::AnyDrop
+};
 use std::{
     fmt::Debug,
-    sync::{Arc, Weak},
+    sync::{Arc, Mutex, Weak},
 };
 
 /// Representation of the channel's state.
@@ -44,15 +48,30 @@ impl Default for Status {
 /// State tracked after user requests an open.
 pub struct OpenState {
     /// shared with user
-    shared: Weak<Shared>,
+    shared: WeakShared,
 
     /// whether we still need to send an open or not
     need_to_send_open: bool,
 }
 
+/// Data shared weakly with the user.
+struct WeakShared {
+    tx: AnyDrop<Mutex<WokeRb<Bytes>>>,
+    rx: Weak<Mutex<WokeRb<Bytes>>>,
+}
+
+/// Data shared strongly with the user.
+#[derive(Clone)]
+struct Shared {
+    tx: Arc<Mutex<WokeRb<Bytes>>>,
+    rx: Arc<Mutex<WokeRb<Bytes>>>,
+}
+
 impl OpenState {
-    fn ensure_user_alive(&self) -> Option<Arc<Shared>> {
-        self.shared.upgrade()
+    fn ensure_user_alive(&self) -> Option<Shared> {
+        let tx = self.shared.tx.upgrade()?;
+        let rx = self.shared.rx.upgrade()?;
+        Some(Shared{tx, rx})
     }
 }
 
@@ -93,12 +112,18 @@ impl Debug for Status {
 
 /// Make a pair of [UserHandle] and [ChannelHandle].
 fn make_handles(our_rx_buffer: usize, need_to_send_open: bool) -> (OpenState, ChannelHandle) {
-    let shared = Arc::new(Shared::new(our_rx_buffer));
+    let tx = AnyDrop::new(Mutex::new(WokeRb::new(0, Mode::WakeOnRemove)));
+    let rx = Arc::new(Mutex::new(WokeRb::new(0, Mode::WakeOnRemove)));
+
     let for_us = OpenState {
-        shared: Arc::downgrade(&shared),
+        shared: WeakShared {
+            tx: tx.clone(),
+            rx: Arc::downgrade(&rx),
+        },
         need_to_send_open,
     };
-    let for_them = ChannelHandle { shared };
+    let for_them = ChannelHandle { tx, rx };
+
     (for_us, for_them)
 }
 
@@ -267,7 +292,7 @@ impl Channel {
     /// Helper function that checks if we're open and the user is listening.
     ///
     /// Unlike [Self::require_open_and_user], this will not close us if this is not the case.
-    fn ensure_open_and_user(&mut self) -> Option<Arc<Shared>> {
+    fn ensure_open_and_user(&mut self) -> Option<Shared> {
         let Status::Open(h) = &self.status else {
             return None;
         };
@@ -278,7 +303,7 @@ impl Channel {
     ///
     /// NOTE: This will move us into closed if we're not open! Use [Self::ensure_open_and_user]
     /// if this is not desired.
-    fn require_open_and_user(&mut self) -> Option<Arc<Shared>> {
+    fn require_open_and_user(&mut self) -> Option<Shared> {
         let Status::Open(h) = &self.status else {
             self.ensure_closed(CloseReason::UserDropped, true);
             return None;

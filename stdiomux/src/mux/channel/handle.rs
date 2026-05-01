@@ -1,9 +1,11 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
-use super::shared::Shared;
+use bytes::Bytes;
+
+use crate::{mux::channel::shared::WokeRb, util::AnyDrop};
 
 /// Handle to a channel.
 pub struct ChannelHandle {
-    /// User owns this.
-    pub(crate) shared: Arc<Shared>,
+    pub(crate) tx: AnyDrop<Mutex<WokeRb<Bytes>>>,
+    pub(crate) rx: Arc<Mutex<WokeRb<Bytes>>>,
 }

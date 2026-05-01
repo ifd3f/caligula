@@ -1,24 +1,11 @@
+use std::sync::Arc;
+
 use bytes::Bytes;
 use futures::task::AtomicWaker;
 use ringbuf::{
     HeapRb,
     traits::{Consumer, Observer, Producer},
 };
-
-/// Data shared between the user and the channel state machine.
-pub(crate) struct Shared {
-    pub(crate) rx: std::sync::Mutex<WokeRb<Bytes>>,
-    pub(crate) tx: std::sync::Mutex<WokeRb<Bytes>>,
-}
-
-impl Shared {
-    pub fn new(our_rx_buffer: usize) -> Self {
-        Self {
-            tx: WokeRb::new(0, Mode::WakeOnRemove).into(),
-            rx: WokeRb::new(our_rx_buffer, Mode::WakeOnInsert).into(),
-        }
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 #[error("Buffer is full")]
