@@ -4,3 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+futures = { version = "0.3.32", default-features = false }
+tokio = { version = "1.52.1", optional = true }
+
+[features]
+io-tokio = ["dep:tokio", "tokio/io-std", "tokio/io-util"]
+io-futures = ["futures/std"]
