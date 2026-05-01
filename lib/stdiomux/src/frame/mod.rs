@@ -52,7 +52,7 @@ pub trait Frame: Sized + Clone + Debug + PartialEq + Eq {
     /// Serialize this frame, including the header, into the given buffer.
     ///
     /// Panics if the provided buffer length is NOT `Self::Header::SIZE + self.header().body_len()` bytes.
-    fn serialize(&self, buf: &mut [u8]) -> Result<(), Self::SerializeError>;
+    fn serialize(self, buf: &mut [u8]) -> Result<(), Self::SerializeError>;
 }
 
 /// The header of a [Frame].
@@ -89,7 +89,7 @@ pub trait FixedSizeFrame: Sized + Clone + Debug + PartialEq + Eq {
     /// Serialize this frame into the given buffer.
     ///
     /// Panics if the provided buffer is not exactly [Self::SIZE].
-    fn serialize(&self, buf: &mut [u8]) -> Result<(), Self::SerializeError>;
+    fn serialize(self, buf: &mut [u8]) -> Result<(), Self::SerializeError>;
 
     /// Attempt to deserialize this from a buffer.
     ///
@@ -136,7 +136,7 @@ impl<F: FixedSizeFrame> Frame for F {
     }
 
     #[inline]
-    fn serialize(&self, buf: &mut [u8]) -> Result<(), Self::SerializeError> {
+    fn serialize(self, buf: &mut [u8]) -> Result<(), Self::SerializeError> {
         <Self as FixedSizeFrame>::serialize(self, buf)
     }
 }

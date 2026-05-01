@@ -22,7 +22,7 @@ impl<W: AsyncWrite + Unpin, F: Frame> FrameWriter<W, F> {
     }
 
     /// Write the provided frame to the underlying [AsyncWrite].
-    pub async fn write_frame(&mut self, f: &F) -> Result<(), WriteFrameError<F>> {
+    pub async fn write_frame(&mut self, f: F) -> Result<(), WriteFrameError<F>> {
         let len = F::Header::SIZE + f.header().body_len();
         let mut buf = vec![0u8; len];
 
@@ -30,6 +30,10 @@ impl<W: AsyncWrite + Unpin, F: Frame> FrameWriter<W, F> {
 
         self.w.write_all(&buf).await?;
         Ok(())
+    }
+
+    pub fn inner_mut(&mut self) -> &mut W {
+        &mut self.w
     }
 }
 
@@ -83,5 +87,9 @@ impl<R: AsyncRead + Unpin, F: Frame> FrameReader<R, F> {
                 Ok(F::deserialize(header, body.freeze()).map_err(ReadFrameError::Body)?)
             }
         }
+    }
+
+    pub fn inner_mut(&mut self) -> &mut R {
+        &mut self.r
     }
 }

@@ -24,7 +24,7 @@ impl<W: Write, F: Frame> FrameWriter<W, F> {
     }
 
     /// Write the provided frame to the underlying [Write].
-    pub fn write_frame(&mut self, f: &F) -> Result<(), WriteFrameError<F>> {
+    pub fn write_frame(&mut self, f: F) -> Result<(), WriteFrameError<F>> {
         let len = F::Header::SIZE + f.header().body_len();
         let mut buf = vec![0u8; len];
 
