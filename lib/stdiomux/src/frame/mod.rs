@@ -1,11 +1,16 @@
 //! Traits and helpers for working with datagram framing.
 //!
 //! WARNING: This is meant to be a purely internally-used library! There are no stability
-//! guarantees! End users of this library should not be implementing these traits!
+//! guarantees! End users of this library should not be implementing these traits or using
+//! these types directly!
 
+#[cfg(feature = "io-futures")]
+pub mod futures;
 pub mod simple;
 #[cfg(feature = "io-std")]
 pub mod sync;
+#[cfg(feature = "io-tokio")]
+pub mod tokio;
 
 use std::{borrow::Cow, error::Error, fmt::Debug};
 
@@ -134,4 +139,22 @@ impl<F: FixedSizeFrame> Frame for F {
     fn serialize(&self, buf: &mut [u8]) -> Result<(), Self::SerializeError> {
         <Self as FixedSizeFrame>::serialize(self, buf)
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum WriteFrameError<F: Frame> {
+    #[error("Error serializing frame: {0}")]
+    Frame(F::SerializeError),
+    #[error("I/O error: {0}")]
+    IO(#[from] std::io::Error),
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ReadFrameError<F: Frame> {
+    #[error("Error reading header: {0}")]
+    Header(<F::Header as Header>::DeserializeError),
+    #[error("Error reading frame: {0}")]
+    Body(F::DeserializeBodyError),
+    #[error("I/O error: {0}")]
+    IO(#[from] std::io::Error),
 }

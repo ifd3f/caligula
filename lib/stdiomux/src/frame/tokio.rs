@@ -1,21 +1,19 @@
-//! [`std::io`]-based [Frame] serialization and deserialization utilities.
+//! [`tokio::io`]-based [Frame] serialization and deserialization utilities.
 
-use std::{
-    io::{Read, Write},
-    marker::PhantomData,
-};
+use std::marker::PhantomData;
 
 use bytes::{Bytes, BytesMut};
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 
 use super::{Frame, Header, ReadFrameError, WriteFrameError};
 
-/// [`std::io::Write`]-based frame serializer.
-pub struct FrameWriter<W: Write, F: Frame> {
+/// [`AsyncWrite`]-based frame serializer.
+pub struct FrameWriter<W: AsyncWrite + Unpin, F: Frame> {
     w: W,
     _phantom: PhantomData<F>,
 }
 
-impl<W: Write, F: Frame> FrameWriter<W, F> {
+impl<W: AsyncWrite + Unpin, F: Frame> FrameWriter<W, F> {
     pub fn new(w: W) -> Self {
         Self {
             w,
@@ -23,25 +21,25 @@ impl<W: Write, F: Frame> FrameWriter<W, F> {
         }
     }
 
-    /// Write the provided frame to the underlying [Write].
-    pub fn write_frame(&mut self, f: &F) -> Result<(), WriteFrameError<F>> {
+    /// Write the provided frame to the underlying [AsyncWrite].
+    pub async fn write_frame(&mut self, f: &F) -> Result<(), WriteFrameError<F>> {
         let len = F::Header::SIZE + f.header().body_len();
         let mut buf = vec![0u8; len];
 
         f.serialize(&mut buf).map_err(WriteFrameError::Frame)?;
 
-        self.w.write_all(&buf)?;
+        self.w.write_all(&buf).await?;
         Ok(())
     }
 }
 
-/// [`std::io::Read`]-based frame deserializer.
-pub struct FrameReader<R: Read, F: Frame> {
+/// [`AsyncRead`]-based frame deserializer.
+pub struct FrameReader<R: AsyncRead + Unpin, F: Frame> {
     r: R,
     _phantom: PhantomData<F>,
 }
 
-impl<R: Read, F: Frame> FrameReader<R, F> {
+impl<R: AsyncRead + Unpin, F: Frame> FrameReader<R, F> {
     const HEADER_SIZE: usize = <F::Header as Header>::SIZE;
 
     pub fn new(r: R) -> Self {
@@ -51,8 +49,8 @@ impl<R: Read, F: Frame> FrameReader<R, F> {
         }
     }
 
-    /// Read a single frame off the underlying [Read].
-    pub fn read_frame(&mut self) -> Result<F, ReadFrameError<F>> {
+    /// Read a single frame off the underlying [AsyncRead].
+    pub async fn read_frame(&mut self) -> Result<F, ReadFrameError<F>> {
         // create uninitialized MTU-length BytesMut
         let mut buf = BytesMut::with_capacity(F::MTU);
 
@@ -69,7 +67,7 @@ impl<R: Read, F: Frame> FrameReader<R, F> {
         let mut header = buf;
 
         // read and deserialize header
-        self.r.read_exact(&mut header)?;
+        self.r.read_exact(&mut header).await?;
         let header =
             <F::Header as Header>::deserialize(header.freeze()).map_err(ReadFrameError::Header)?;
 
@@ -81,7 +79,7 @@ impl<R: Read, F: Frame> FrameReader<R, F> {
             len => {
                 // read and deserialize body
                 body.truncate(len);
-                self.r.read_exact(&mut body)?;
+                self.r.read_exact(&mut body).await?;
                 Ok(F::deserialize(header, body.freeze()).map_err(ReadFrameError::Body)?)
             }
         }

@@ -21,3 +21,4 @@ tokio = { version = "1.52.1", optional = true }
 stdiomux = { path = ".", features = ["io-std", "io-tokio", "io-futures", "proptest"] }
 proptest = "1.11.0"
 test-strategy = "0.4.5"
+tokio = { version = "1.52.1", features = ["rt", "rt-multi-thread"] }

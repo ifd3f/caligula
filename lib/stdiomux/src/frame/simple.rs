@@ -20,7 +20,8 @@ pub struct SimpleLengthFrame(
 fn payload_strategy() -> impl proptest::prelude::Strategy<Value = Bytes> {
     use proptest::prelude::Strategy as _;
 
-    const MAX_PAYLOAD: usize = 100;
+    // slightly over 8 bits to catch endianness bugs
+    const MAX_PAYLOAD: usize = 259;
     proptest::collection::vec(proptest::num::u8::ANY, 0..=MAX_PAYLOAD).prop_map(|x| Bytes::from(x))
 }
 
