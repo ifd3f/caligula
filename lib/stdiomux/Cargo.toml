@@ -3,10 +3,17 @@ name = "stdiomux"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+io-futures = ["futures/std"]
+io-std = []
+io-tokio = ["dep:tokio", "tokio/io-std", "tokio/io-util"]
+
 [dependencies]
+bytes = "1.11.1"
 futures = { version = "0.3.32", default-features = false }
+thiserror = "2.0.18"
 tokio = { version = "1.52.1", optional = true }
 
-[features]
-io-tokio = ["dep:tokio", "tokio/io-std", "tokio/io-util"]
-io-futures = ["futures/std"]
+[dev-dependencies]
+stdiomux = { path = ".", features = ["io-std", "io-tokio", "io-futures"] }
+proptest = "1.11.0"
