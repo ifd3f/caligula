@@ -71,13 +71,13 @@ impl<R: Read, F: Frame> FrameReader<R, F> {
 
     /// Read a single frame off the underlying [Read].
     pub fn read_frame(&mut self) -> Result<F, ReadFrameError<F>> {
+        // create uninitialized MTU-length BytesMut
+        let mut buf = BytesMut::with_capacity(F::MTU);
+
         // safety for all unsafe blocks:
         // setting the length is safe because we are filling these bytes before they get read.
         // yes, technically R's impl can read the uninitialized data for whatever,
         // but in practice, if you're worried about that, that's kinda your problem lol
-
-        // create uninitialized MTU-length BytesMut
-        let mut buf = BytesMut::with_capacity(F::MTU);
         unsafe {
             buf.set_len(F::MTU);
         }

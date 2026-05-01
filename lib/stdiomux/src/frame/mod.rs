@@ -1,11 +1,15 @@
+//! Traits and helpers for working with datagram framing.
+//!
+//! WARNING: This is meant to be a purely internally-used library! There are no stability
+//! guarantees! End users of this library should not be implementing these traits!
+
+pub mod simple;
 #[cfg(feature = "io-std")]
 pub mod sync;
 
-use std::{error::Error, fmt::Debug};
+use std::{borrow::Cow, error::Error, fmt::Debug};
 
 use bytes::Bytes;
-
-use crate::util::Sealed;
 
 /// A frame that can be serialized and deserialized onto a wire.
 ///
@@ -15,8 +19,10 @@ use crate::util::Sealed;
 ///
 /// Deserialization occurs in two phases: the header must be read first, then the
 /// body must be read based on length inferred from the header.
-#[expect(private_bounds)]
-pub trait Frame: Sized + Clone + Debug + PartialEq + Eq + Sealed {
+///
+/// WARNING: All serializers and deserializers will operate on these frames in memory!
+/// You should make your frames reasonably sized!
+pub trait Frame: Sized + Clone + Debug + PartialEq + Eq {
     /// Errors encountered while serializing this frame onto a wire.
     type SerializeError: Error;
 
@@ -29,8 +35,8 @@ pub trait Frame: Sized + Clone + Debug + PartialEq + Eq + Sealed {
     /// Absolute maximum size of a frame, INCLUDING header.
     const MTU: usize;
 
-    /// Get a reference to the header of this frame.
-    fn header(&self) -> &Self::Header;
+    /// Borrow or calculate the header of this frame.
+    fn header(&self) -> Cow<'_, Self::Header>;
 
     /// Deserialize the body of this frame, given a header. Body will be empty if the
     /// header indicated a zero-length body.
@@ -45,8 +51,7 @@ pub trait Frame: Sized + Clone + Debug + PartialEq + Eq + Sealed {
 }
 
 /// The header of a [Frame].
-#[expect(private_bounds)]
-pub trait Header: Sized + Clone + Debug + PartialEq + Eq + Sealed {
+pub trait Header: Sized + Clone + Debug + PartialEq + Eq {
     /// Errors encountered while deserializing this header from a wire.
     type DeserializeError: Error;
 
@@ -66,8 +71,7 @@ pub trait Header: Sized + Clone + Debug + PartialEq + Eq + Sealed {
 ///
 /// Implementors get [Frame] and [Header] for free. When deserializing, the frame
 /// will be deserialized in the header phase and skip the body phase entirely.
-#[expect(private_bounds)]
-pub trait FixedSizeFrame: Sized + Clone + Debug + PartialEq + Eq + Sealed {
+pub trait FixedSizeFrame: Sized + Clone + Debug + PartialEq + Eq {
     /// Errors encountered while serializing this frame onto a wire.
     type SerializeError: Error;
 
@@ -114,8 +118,8 @@ impl<F: FixedSizeFrame> Frame for F {
     const MTU: usize = <Self as FixedSizeFrame>::SIZE;
 
     #[inline]
-    fn header(&self) -> &Self::Header {
-        self
+    fn header(&self) -> Cow<'_, Self::Header> {
+        Cow::Borrowed(self)
     }
 
     #[inline]
