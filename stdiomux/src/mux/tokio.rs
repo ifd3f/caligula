@@ -81,8 +81,9 @@ where
     ///
     /// The reason sends aren't immediate is because we want to batch transmissions
     /// together for efficiency.
-    pub async fn tx_round(&self) -> Result<(), ClosedReason> {
-        self.inner.tx_round().await
+    pub fn tx_round(&self) -> impl Future<Output = Result<(), ClosedReason>> + Send + 'static {
+        let inner = self.inner.clone();
+        async move { inner.tx_round().await }
     }
 
     /// Perform a single round of receiving.
@@ -94,16 +95,51 @@ where
     ///
     /// The reason sends aren't immediate is because we want to batch transmissions
     /// together for efficiency.
-    pub async fn rx_round(&self) -> Result<(), ClosedReason> {
-        self.inner.rx_round().await
+    pub fn rx_round(&self) -> impl Future<Output = Result<(), ClosedReason>> + Send + 'static {
+        let inner = self.inner.clone();
+        async move { inner.rx_round().await }
+    }
+
+    /// Repeatedly receive and transmit until we are closed.
+    pub fn rxtx_loop(&self) -> impl Future<Output = Result<(), ClosedReason>> + Send + 'static {
+        let rx = self.inner.clone();
+        let tx = self.inner.clone();
+
+        async move {
+            let rx = async move {
+                loop {
+                    match rx.rx_round().await {
+                        Ok(()) => (),
+                        Err(e) => return e,
+                    }
+                }
+            };
+            let tx = async move {
+                loop {
+                    match tx.tx_round().await {
+                        Ok(()) => (),
+                        Err(e) => return e,
+                    }
+                }
+            };
+            let e = tokio::select! {
+                e = rx => e,
+                e = tx => e,
+            };
+            Err(e)
+        }
     }
 
     /// Perform a single round each of sending and receiving. Only useful for testing!
-    async fn rxtx_round(&self) -> Result<(), ClosedReason> {
-        tokio::try_join!(self.inner.rx_round(), self.inner.tx_round(),)?;
-        Ok(())
+    #[cfg(test)]
+    fn rxtx_round(&self) -> impl Future<Output = Result<(), ClosedReason>> + Send + 'static {
+        let inner = self.inner.clone();
+        async move {
+            let i = inner.clone();
+            tokio::try_join!(i.rx_round(), inner.tx_round())?;
+            Ok(())
+        }
     }
-
 
     pub async fn open_channel(
         &self,
@@ -194,6 +230,7 @@ where
                 Err(e) => Err(ClosedReason::TransportFailure(Arc::new(e)))?,
             };
             drop(rxs);
+            println!("{f:?}");
 
             // the reply is always going to be high-priority
             if let Some(r) = self.state.lock().unwrap().on_recv(f) {
@@ -212,52 +249,55 @@ where
     }
 
     /// Do a single round of sends
-    async fn tx_round(&self) -> Result<(), ClosedReason> {
+    fn tx_round(&self) -> impl Future<Output = Result<(), ClosedReason>> + Send + '_ {
         let mut cx = Context::from_waker(Waker::noop());
-        let polled_frames = self.state.lock().unwrap().poll_sends(&mut cx)?;
+        let polled_frames = self.state.lock().unwrap().poll_sends(&mut cx);
+        drop(cx);
 
-        // sort polled frames into high-pri and low-pri
-        let mut lpframes = vec![];
-        for f in polled_frames {
-            match f {
-                f @ Frame::MuxControl(_) | f @ Frame::ChannelControl(_, _) => self
-                    .priority_txq
-                    .send(f)
-                    .expect("insert into priority txq should never fail"),
-                f @ Frame::ChannelData(_, _) => lpframes.push(f),
+        async move {
+            // sort polled frames into high-pri and low-pri
+            let mut lpframes = vec![];
+            for f in polled_frames? {
+                match f {
+                    f @ Frame::MuxControl(_) | f @ Frame::ChannelControl(_, _) => self
+                        .priority_txq
+                        .send(f)
+                        .expect("insert into priority txq should never fail"),
+                    f @ Frame::ChannelData(_, _) => lpframes.push(f),
+                }
             }
-        }
 
-        let fut = async move {
-            // hold the tx state lock over this loop
-            let mut txs = self.tx_state.lock().await;
-            let mut lpframes = lpframes.into_iter();
-            loop {
-                let f = match txs.priority_txq.try_recv() {
-                    Ok(f) => Some(f),
-                    Err(mpsc::error::TryRecvError::Empty) => lpframes.next(),
-                    Err(mpsc::error::TryRecvError::Disconnected) => {
-                        panic!("this should never fail");
-                    }
-                };
+            let fut = async move {
+                // hold the tx state lock over this loop
+                let mut txs = self.tx_state.lock().await;
+                let mut lpframes = lpframes.into_iter();
+                loop {
+                    let f = match txs.priority_txq.try_recv() {
+                        Ok(f) => Some(f),
+                        Err(mpsc::error::TryRecvError::Empty) => lpframes.next(),
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
+                            panic!("this should never fail");
+                        }
+                    };
 
-                let Some(f) = f else {
-                    break;
-                };
+                    let Some(f) = f else {
+                        break;
+                    };
 
-                txs.tx
-                    .send(f)
-                    .await
-                    .map_err(|e| ClosedReason::TransportFailure(Arc::new(e)))?;
+                    txs.tx
+                        .send(f)
+                        .await
+                        .map_err(|e| ClosedReason::TransportFailure(Arc::new(e)))?;
+                }
+                Ok::<(), ClosedReason>(())
+            };
+
+            if let Err(e) = fut.await {
+                self.close(e);
             }
-            Ok::<(), ClosedReason>(())
-        };
 
-        if let Err(e) = fut.await {
-            self.close(e);
+            Ok(())
         }
-
-        Ok(())
     }
 
     /// Close the mux with a result
@@ -385,8 +425,10 @@ impl ChannelBuffer for MpscChannelBuffer {
 mod tests {
     use std::pin::Pin;
 
+    use assert_matches::assert_matches;
     use bytes::Bytes;
-    use futures::{StreamExt, sink, stream::BoxStream};
+    use futures::{FutureExt, StreamExt, sink, stream::BoxStream};
+    use tokio::sync::Barrier;
     use tokio_stream::wrappers::ReceiverStream;
 
     use crate::frame::ChannelControlHeader;
@@ -706,6 +748,120 @@ mod tests {
                 for _ in 0..BUFFER {
                     sut.tx_round().await.unwrap();
                 }
+            },
+        )
+        .await
+    }
+
+    #[ignore]
+    #[tokio::test]
+    #[test_log::test]
+    async fn backpressured_sends() {
+        const CHANNEL: ChannelId = ChannelId(10);
+        const COUNT: usize = 128;
+        const BUFFER: usize = 4;
+
+        run_double_test(
+            |sut| async move {
+                let bg = tokio::spawn(sut.rxtx_loop());
+
+                println!("sut: opening ch");
+                let mut ch = sut.open_channel(CHANNEL, BUFFER).await.unwrap();
+                println!("sut: ch is open");
+
+                for _ in 0..COUNT {
+                    let f = ch.next().await.unwrap();
+                    assert_eq!(f, Bytes::from_static(b"foobar"));
+                }
+                bg.abort();
+            },
+            |sut| async move {
+                let bg = tokio::spawn(sut.rxtx_loop());
+
+                println!("sut: opening ch");
+                let mut ch = sut.open_channel(CHANNEL, BUFFER).await.unwrap();
+                println!("sut: ch is open");
+
+                for _ in 0..COUNT {
+                    ch.send(Bytes::from_static(b"foobar")).await.unwrap();
+                }
+                bg.abort();
+            },
+        )
+        .await
+    }
+
+    #[ignore]
+    #[tokio::test]
+    #[test_log::test]
+    async fn backpressure_works() {
+        const CHANNEL: ChannelId = ChannelId(10);
+        const BUFFER: usize = 4;
+        let barrier = Arc::new(Barrier::new(2));
+        let barrier2 = barrier.clone();
+
+        run_double_test(
+            move |sut| async move {
+                println!("sut: opening ch");
+                let (ch, r) = tokio::join!(sut.open_channel(CHANNEL, BUFFER), sut.rxtx_round(),);
+                let (mut ch, _) = (ch.unwrap(), r.unwrap());
+                println!("sut: ch is open");
+
+                // exchange adms
+                sut.rxtx_round().await.unwrap();
+
+                // read the full buffer
+                for _ in 0..BUFFER {
+                    let (bs, r) = tokio::join!(ch.next(), sut.rx_round());
+                    r.unwrap();
+                    assert_eq!(bs.unwrap(), Bytes::from_static(b"before the line"));
+                }
+
+                // wait for the next thing
+                barrier.wait().await;
+
+                // send adm
+                sut.tx_round().await.unwrap();
+
+                // get the last message
+                let (bs, r) = tokio::join!(ch.next(), sut.rx_round());
+                r.unwrap();
+                assert_eq!(bs.unwrap(), Bytes::from_static(b"OVER THE LINE"));
+            },
+            move |sut| async move {
+                let barrier = barrier2;
+                println!("sut: opening ch");
+                let (ch, r) = tokio::join!(sut.open_channel(CHANNEL, BUFFER), sut.rxtx_round(),);
+                let (mut ch, _) = (ch.unwrap(), r.unwrap());
+                println!("sut: ch is open");
+
+                // exchange adms
+                sut.rxtx_round().await.unwrap();
+
+                // fill buffer with sends
+                for _ in 0..BUFFER {
+                    ch.send(Bytes::from_static(b"before the line"))
+                        .await
+                        .unwrap();
+                }
+
+                // this one should go over the buffer
+                let mut fut = ch.send(Bytes::from_static(b"OVER THE LINE"));
+                assert_matches!(
+                    fut.poll_unpin(&mut Context::from_waker(Waker::noop())),
+                    Poll::Pending
+                );
+
+                // actually send and drain the buffer
+                for _ in 0..BUFFER {
+                    sut.tx_round().await.unwrap();
+                }
+
+                barrier.wait().await;
+
+                // now this should go through
+                fut.await.unwrap();
+                sut.tx_round().await.unwrap();
             },
         )
         .await
