@@ -10,8 +10,8 @@ use futures::{Sink, SinkExt, Stream, TryStream, TryStreamExt as _};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::PollSender;
 
+use super::channel::{AcceptRxError, ChannelBuffer, OpenChannelError};
 use crate::{
-    channel::state::{AcceptRxError, ChannelBuffer, OpenChannelError},
     frame::{ChannelControlHeader, ChannelId, Frame, MuxControlHeader},
     mux::state::{ClosedReason, MuxNotOpen, MuxState},
 };

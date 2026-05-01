@@ -4,11 +4,8 @@ use std::sync::Arc;
 use std::task::Context;
 use std::{collections::HashMap, task::Poll};
 
-use crate::channel::state::{ChannelBufferFactory, OpenChannelError};
-use crate::{
-    channel::state::{ChannelBuffer, ChannelState},
-    frame::{ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader},
-};
+use super::channel::{ChannelBuffer, ChannelBufferFactory, ChannelState, OpenChannelError};
+use crate::frame::{ChannelControlHeader, ChannelDataFrame, ChannelId, Frame, MuxControlHeader};
 
 pub enum MuxState<B: ChannelBuffer> {
     Active(ActiveData<B>),
@@ -309,9 +306,10 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
     use crate::{
-        channel::state::NullChannelBuffer,
         frame::{Frame, MuxControlHeader},
+        mux::channel::NullChannelBuffer,
     };
 
     type MuxState = super::MuxState<NullChannelBuffer>;
