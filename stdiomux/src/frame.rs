@@ -69,7 +69,28 @@ pub enum MuxControlHeader {
 pub enum ChannelControlHeader {
     Reset,
     Open,
-    Admit(u8),
+    Admit(ChannelAdmit),
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy, derive_more::From, derive_more::Into)]
+#[cfg_attr(test, derive(proptest_derive::Arbitrary), proptest(params = "()"))]
+pub struct ChannelAdmit(pub u8);
+
+impl ChannelAdmit {
+    pub fn permits(&self) -> usize {
+        self.0 as usize
+    }
+
+    /// Create a [ChannelAdmit] that grants at most the desired number of permits, or
+    /// [None] if the permits requested was zero.
+    ///
+    /// Note that this may be less than the permits requested!
+    pub fn grant_up_to(permits: usize) -> Option<ChannelAdmit> {
+        if permits == 0 {
+            return None;
+        }
+        Some(ChannelAdmit(u8::try_from(permits).unwrap_or(u8::MAX)))
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, derive_more::From, derive_more::Into)]
@@ -116,7 +137,7 @@ impl Header {
                 let argument: u8 = match f {
                     ChannelControlHeader::Reset => 0,
                     ChannelControlHeader::Open => 0,
-                    ChannelControlHeader::Admit(permits) => *permits,
+                    ChannelControlHeader::Admit(permits) => permits.0,
                 };
                 opcode << 24 | (argument as u32) << 16 | id.0 as u32
             }
@@ -163,7 +184,7 @@ impl Header {
                         ChannelControlOpcode::Reset => ChannelControlHeader::Reset,
                         ChannelControlOpcode::Open => ChannelControlHeader::Open,
                         ChannelControlOpcode::Admit => {
-                            ChannelControlHeader::Admit(channel_argument)
+                            ChannelControlHeader::Admit(ChannelAdmit(channel_argument))
                         }
                     },
                 )

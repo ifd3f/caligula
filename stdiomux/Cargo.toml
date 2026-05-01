@@ -11,6 +11,7 @@ derive_more = { version = "2.1.1", features = ["from", "into"] }
 futures = "0.3.32"
 libc = "0.2.186"
 proptest = "1.11.0"
+ringbuf = "0.4.8"
 strum = { version = "0.28.0", features = ["derive"] }
 test-strategy = "0.4.5"
 thiserror = "2.0.18"
