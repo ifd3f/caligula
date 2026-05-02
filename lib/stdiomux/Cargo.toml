@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-io-futures = ["futures/std"]
 io-std = []
 io-tokio = ["dep:tokio", "dep:tokio-util", "tokio/io-std", "tokio/io-util", "tokio/macros"]
 proptest = ["dep:proptest", "dep:proptest-derive"]
@@ -14,7 +13,7 @@ _test_exports = []
 byte-strings = "0.3.1"
 bytes = "1.11.1"
 dashmap = "6.1.0"
-futures = { version = "0.3.32", default-features = false }
+futures = { version = "0.3.32", default-features = false, features = ["alloc"] }
 libc = "0.2.186"
 lockfree = "0.5.1"
 pin-project = "1.1.11"
@@ -23,9 +22,12 @@ proptest-derive = { version = "0.8.0", optional = true }
 thiserror = "2.0.18"
 tokio = { version = "1.52.1", optional = true }
 tokio-util = { version = "0.7.18", optional = true }
+tower-service = "0.3.3"
 
 [dev-dependencies]
-stdiomux = { path = ".", features = ["io-std", "io-tokio", "io-futures", "proptest", "_test_exports"] }
+stdiomux = { path = ".", features = ["io-std", "io-tokio", "proptest", "_test_exports"] }
 proptest = "1.11.0"
 test-strategy = "0.4.5"
 tokio = { version = "1.52.1", features = ["rt", "rt-multi-thread"] }
+tokio-pipe = "0.2.12"
+tower = { version = "0.5.3", features = ["tokio"] }

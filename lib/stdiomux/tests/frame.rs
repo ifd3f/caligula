@@ -34,23 +34,6 @@ pub async fn test_serialize_roundtrip_io_tokio<F: Frame>(fs: Vec<F>) {
     }
 }
 
-pub async fn test_serialize_roundtrip_io_futures<F: Frame>(fs: Vec<F>) {
-    let mut buf = vec![];
-    let mut w = futures::FrameWriter::new(&mut buf);
-
-    for f in fs.clone() {
-        w.write_frame(f).await.unwrap();
-    }
-
-    let buf = &buf[..];
-    let mut r = futures::FrameReader::new(buf);
-
-    for (i, f) in fs.iter().enumerate() {
-        let result: F = r.read_frame().await.unwrap();
-        assert_eq!(f, &result, "mismatch at frame {i}")
-    }
-}
-
 macro_rules! generate_roundtrip_tests {
     ($mod_name:ident, $frame:ty) => {
         mod $mod_name {
@@ -62,11 +45,6 @@ macro_rules! generate_roundtrip_tests {
             #[test_strategy::proptest(async = "tokio")]
             async fn roundtrip_tokio(fs: Vec<$frame>) {
                 super::test_serialize_roundtrip_io_tokio(fs).await;
-            }
-
-            #[test_strategy::proptest(async = "tokio")]
-            async fn roundtrip_futures(fs: Vec<$frame>) {
-                super::test_serialize_roundtrip_io_futures(fs).await;
             }
         }
     };
