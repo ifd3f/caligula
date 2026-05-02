@@ -4,8 +4,6 @@
 //! guarantees! End users of this library should not be implementing these traits or using
 //! these types directly!
 
-#[cfg(feature = "io-futures")]
-pub mod futures;
 pub mod simple;
 #[cfg(feature = "io-std")]
 pub mod sync;
