@@ -5,13 +5,15 @@ use std::{
     task::{Context, Poll},
 };
 
+use auto_impl::auto_impl;
 use bytes::Bytes;
 
 /// Generic trait for an object controlling the multiplexing of data over a single channel.
 ///
 /// [`MuxController`]s must run all necessary tasks in the background until they are dropped,
 /// or an early termination condition is reached.
-pub trait MuxController: Sync {
+#[auto_impl(&, Box, Arc)]
+pub trait MuxController: Send + Sync + 'static {
     /// Handle for channels being muxed by this mux controller.
     type ChannelHandle: ChannelHandle;
 
@@ -45,7 +47,8 @@ pub trait MuxController: Sync {
 /// Handle to a single channel inside a [`MuxController`].
 ///
 /// When dropped, the channel is closed.
-pub trait ChannelHandle: Sync + Sized {
+#[auto_impl(&, Box, Arc)]
+pub trait ChannelHandle: Send + Sync + Sized + 'static {
     /// Largest item allowed to be sent or received. Panics may occur if an item larger
     /// than this is placed in.
     const MAX: usize;
