@@ -45,7 +45,7 @@ pub trait MuxController: Sync {
 /// Handle to a single channel inside a [`MuxController`].
 ///
 /// When dropped, the channel is closed.
-pub trait ChannelHandle: Sync {
+pub trait ChannelHandle: Sync + Sized {
     /// Largest item allowed to be sent or received. Panics may occur if an item larger
     /// than this is placed in.
     const MAX: usize;
@@ -58,11 +58,11 @@ pub trait ChannelHandle: Sync {
 
     /// Attempt to queue the provided item for sending.
     ///
-    /// If cancelled, the item will not be queued at all.
+    /// Items will only be queued if [`Poll::Ready`] is returned.
     fn poll_send(&self, cx: &mut Context<'_>, bs: &Bytes) -> Poll<Result<(), Self::ClosedReason>>;
 
     /// Attempt to pull an item from the request queue.
     ///
-    /// If cancelled, the item will not be removed at all.
+    /// Items will only be removed from the queue if [`Poll::Ready`] is returned.
     fn poll_recv(&self, cx: &mut Context<'_>) -> Poll<Result<Bytes, Self::ClosedReason>>;
 }

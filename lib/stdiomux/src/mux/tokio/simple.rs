@@ -220,14 +220,14 @@ impl ChannelHandle for SimpleChannelHandle {
         self.error.assert_ok()
     }
 
-    fn poll_send(&self, _cx: &mut Context<'_>, bs: &Bytes) -> Poll<Result<(), Self::ClosedReason>> {
+    fn poll_send(&self, _cx: &mut Context<'_>, bs: &Bytes) -> Poll<Result<(), Arc<ClosedReason>>> {
         self.error.assert_ok()?;
-        let Ok(_) = self.txq.send(SimpleMuxFrame {
-            channel: self.channel,
-            body: bs.clone(),
-        }) else {
-            return Poll::Ready(Err(self.error.announce(ClosedReason::Dropped)));
-        };
+        self.txq
+            .send(SimpleMuxFrame {
+                channel: self.channel,
+                body: bs.clone(),
+            })
+            .map_err(|_| self.error.announce(ClosedReason::Dropped))?;
         Poll::Ready(Ok(()))
     }
 
