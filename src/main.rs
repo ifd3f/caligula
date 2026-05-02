@@ -15,6 +15,7 @@ mod native;
 mod tty;
 mod ui;
 mod util;
+mod herder_service;
 
 /// A lightweight, user-friendly disk imaging tool
 #[derive(clap::Parser, Debug)]

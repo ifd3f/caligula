@@ -6,6 +6,8 @@ use crate::herder_facade::DaemonError;
 use crate::herder_facade::client::{HerderClient, HerderClientFactory, RawHerderClient};
 use crate::ipc_common::read_msg_async;
 use futures::StreamExt;
+use http::request;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use std::collections::HashMap;
 use std::hash::Hash;
 use std::process::Stdio;
@@ -200,6 +202,18 @@ async fn spawn_herder(
                 .map_err(|e| DaemonError::DaemonSpawnFailure(false, e.into()))?
         }
     };
+
+    let (mut a, b) = hyper::client::conn::http2::Builder::new(TokioExecutor::new())
+        .handshake(TokioIo::new(tokio_duplex::Duplex::new(
+            tokio::io::stdin(),
+            tokio::io::stdout(),
+        )))
+        .await
+        .unwrap();
+    let task = tokio::spawn(b);
+    a.send_request(request::Builder::new().uri("/foo").body("foo".to_string()).unwrap())
+        .await
+        .unwrap();
 
     // make the input pusher
     let child_rx = child.stdout.take().unwrap();
