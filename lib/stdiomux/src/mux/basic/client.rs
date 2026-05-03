@@ -54,7 +54,7 @@ where
 
     // create driver task composed of parallel rx and tx drivers
     let rx_task = drive_rx(r, rx_map.clone());
-    let tx_task = super::drive_tx(w, txq_rx);
+    let tx_task = super::drive_unbounded_txq_tx(w, txq_rx);
     let driver = Box::pin({
         let error = error.clone();
         async move {
@@ -62,7 +62,9 @@ where
                 r = rx_task => r,
                 r = tx_task => r.map_err(Error::Tx),
             };
-            error.announce_result(e)
+            let result = error.announce_result(e);
+            tracing::debug!(?result, "client driver closing");
+            result
         }
     });
 
@@ -79,6 +81,7 @@ where
     Ok((client, driver))
 }
 
+#[tracing::instrument(skip_all, level = "debug")]
 async fn drive_rx(
     r: impl AsyncRead + Unpin,
     rx_map: Arc<DashMap<u16, mpsc::UnboundedSender<Bytes>>>,
@@ -88,19 +91,25 @@ async fn drive_rx(
         // read a frame
         let f = r.read_frame().await?;
 
+        let _span = tracing::trace_span!("handling frame", ?f).entered();
+
         let dashmap::Entry::Occupied(occ) = rx_map.entry(f.channel) else {
             // receiver is dead -- drop the frame
+            tracing::warn!(?f, "got frame addressed to dead receiver");
             continue;
         };
 
         if f.body_len() == 0 {
             // 0-len body means close
+            tracing::trace!("closing rx channel");
             occ.remove();
             continue;
         }
 
+        tracing::trace!("sending frame to receiver");
         let Ok(()) = occ.get().send(f.body) else {
             // receiver is dead
+            tracing::warn!("got frame addressed to dead receiver");
             occ.remove();
             continue;
         };
@@ -165,17 +174,27 @@ impl Service<ByteStream> for BasicMuxClient {
         Poll::Ready(Ok(()))
     }
 
+    #[tracing::instrument(skip_all, level = "debug")]
     fn call(&mut self, req: ByteStream) -> Self::Future {
+        // Ensure we aren't errored
         if let Err(e) = self.error.assert_ok() {
             return std::future::ready(Err(e));
         }
 
+        // Allocate a channel ID
+        // TODO: actually check for overlapping channel numbers
         let id = self.next_channel;
         self.next_channel += self.next_channel.wrapping_add(1);
 
+        // Add a rxq to the rx map
         let (res_tx, res_rx) = mpsc::unbounded_channel();
         self.rx_map.insert(id, res_tx);
+
+        // Clone off the txq and send an initial 0-length frame to signal that it's being opened
         let txq = self.txq.clone();
+        txq.send((id, Bytes::new())).ok();
+
+        // Spawn the driver in the background
         tokio::spawn(super::drive_user_provided_stream(req, id, txq));
         std::future::ready(Ok(ResponseStream { rxq: res_rx }))
     }

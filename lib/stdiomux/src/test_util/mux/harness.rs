@@ -1,13 +1,12 @@
 use std::{
     convert::Infallible,
     fmt::Debug,
-    pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
 };
 
 use bytes::Bytes;
-use futures::{FutureExt, Stream, StreamExt, stream};
+use futures::{Stream, StreamExt, stream};
 use tokio::sync::{
     mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     oneshot,
@@ -21,7 +20,7 @@ use crate::mux::ByteStream;
 pub async fn test_single_channel<C, F, Fut>(
     mut mux_client: C,
     run_server: F,
-    actions: impl IntoIterator<Item = SidedAction<ChannelAction>>,
+    actions: Vec<SidedAction<ChannelAction>>,
 ) where
     C: Service<ByteStream, Response = ByteStream> + Sync,
     C::Error: Debug,
@@ -33,6 +32,7 @@ pub async fn test_single_channel<C, F, Fut>(
 
     let (server_req_tx, server_req_rx) = oneshot::channel();
 
+    println!("=== spawning server task ===");
     let server = tokio::spawn(run_server(TestServer {
         inner: Arc::new(Mutex::new(Some(Inner {
             res_stream_rx,
@@ -40,6 +40,7 @@ pub async fn test_single_channel<C, F, Fut>(
         }))),
     }));
 
+    println!("=== making client request ===");
     let mut client_res = mux_client
         .call(Box::pin(UnboundedReceiverStream::new(req_stream_rx)))
         .await
@@ -68,13 +69,18 @@ pub async fn test_single_channel<C, F, Fut>(
 
     let mut req_stream_tx = Some(req_stream_tx);
     let mut res_stream_tx = Some(res_stream_tx);
-    for a in actions {
+    let count = actions.len();
+    println!("=== executing {count} actions ===");
+    for (i, a) in actions.into_iter().enumerate() {
+        let i = i + 1;
+        println!("executing instruction {i}/{count}: {a:?}");
+
         match a {
             SidedAction::Client(a) => {
-                execute_action_on_channel(&mut req_stream_tx, &mut client_res, a).await
+                execute_action_on_channel(i, &mut req_stream_tx, &mut client_res, a).await
             }
             SidedAction::Server(a) => {
-                execute_action_on_channel(&mut res_stream_tx, &mut server_req, a).await
+                execute_action_on_channel(i, &mut res_stream_tx, &mut server_req, a).await
             }
         }
     }
@@ -83,6 +89,7 @@ pub async fn test_single_channel<C, F, Fut>(
 }
 
 async fn execute_action_on_channel(
+    i: usize,
     tx: &mut Option<UnboundedSender<Bytes>>,
     rx: &mut ByteStream,
     a: ChannelAction,
@@ -93,9 +100,16 @@ async fn execute_action_on_channel(
             .expect("unexpectedly dropped tx already! error in channel action sequence generation")
             .send(bytes)
             .expect("failed to send tx!"),
-        ChannelAction::Rx(bytes) => assert_eq!(rx.next().await.expect("failed to receive!"), bytes),
+        ChannelAction::Rx(bytes) => assert_eq!(
+            rx.next().await.expect("failed to receive!"),
+            bytes,
+            "failed on instruction {i}: received unexpected bytes"
+        ),
         ChannelAction::CloseTx => drop(tx.take()),
-        ChannelAction::AssertRxClosed => assert!(rx.next().await.is_none()),
+        ChannelAction::AssertRxClosed => assert!(
+            rx.next().await.is_none(),
+            "failed on instruction {i}: rx is not closed"
+        ),
     }
 }
 
@@ -122,7 +136,9 @@ where
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, mut req: BS) -> Self::Future {
+    fn call(&mut self, req: BS) -> Self::Future {
+        println!("Harness service is called");
+
         let inner = self
             .inner
             .lock()

@@ -1,3 +1,5 @@
+use std::usize;
+
 use proptest::prelude::*;
 use stdiomux::{
     mux::{
@@ -17,17 +19,16 @@ use tower::ServiceExt;
 
 #[test_strategy::proptest(
     ProptestConfig {
-        // Setting both fork and timeout is redundant since timeout implies
-        // fork, but both are shown for clarity.
-        fork: true,
         timeout: 10,
-        cases: 10,
         .. ProptestConfig::default()
     },
     async = "tokio"
 )]
-async fn basic_mux(
-    #[strategy(random_channel_strat(0..10, 0..24))] actions: Vec<SidedAction<ChannelAction>>,
+#[test_log::test]
+async fn basic_mux_works_single_channel(
+    #[strategy(random_channel_strat(0..10, 1..24, usize::MAX))] actions: Vec<
+        SidedAction<ChannelAction>,
+    >,
 ) {
     let (_controller, pipes) = duplex_kill_pipe().unwrap();
 
@@ -44,7 +45,10 @@ async fn basic_mux(
     test_single_channel(
         client.map_response(|r| -> ByteStream { Box::pin(r) }),
         move |s| async move {
-            server.run_with(s.clone().map_request(|r| Box::pin(r))).await.unwrap();
+            server
+                .run_with(s.clone().map_request(|r| Box::pin(r)))
+                .await
+                .unwrap();
         },
         actions,
     )
