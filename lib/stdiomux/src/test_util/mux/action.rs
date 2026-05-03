@@ -20,7 +20,7 @@ pub enum ChannelAction {
     AssertRxClosed,
 }
 
-/// Actions to perform on either end of a single-direction stream.
+/// Actions to perform on both ends of a single-direction stream.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum StreamAction {
     /// Transmit the given payload.

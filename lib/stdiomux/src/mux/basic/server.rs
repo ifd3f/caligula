@@ -61,11 +61,12 @@ where
     }
 
     /// Execute the opened [`BasicMuxServer`] with the given [`ByteStreamService`]
+    #[tracing::instrument(skip_all, level = "debug")]
     pub async fn run_with<S>(self, s: S) -> Result<(), Arc<Error<S::Error>>>
     where
         S: Service<RequestStream, Response = ByteStream> + Send + Clone + 'static,
         S::Future: Send,
-        S::Error: Sync + Send + 'static,
+        S::Error: Sync + Send + std::error::Error + 'static,
     {
         // create shared objects
         let error = AnnounceError::new();
@@ -80,19 +81,22 @@ where
                 error.announce_result(fut.await).ok();
             });
         });
-        let tx_task = super::drive_tx(self.w, txq_rx);
+        let tx_task = super::drive_unbounded_txq_tx(self.w, txq_rx);
 
         // drive it
         let r = select! {
             r = rx_task => r,
             r = tx_task => r.map_err(Error::Tx),
         };
-        error.announce_result(r)?;
+        let result = error.announce_result(r);
+        tracing::debug!(?result, "client driver closing");
 
-        Ok(())
+        result
     }
 }
 
+/// driver task for a single request.
+#[tracing::instrument(skip_all, level = "debug", fields(?id))]
 async fn drive_request<S>(
     mut s: S,
     id: u16,
@@ -114,6 +118,7 @@ where
 /// server rx driver task.
 ///
 /// `handle_new_connection` is called on new connections.
+#[tracing::instrument(skip_all, level = "debug")]
 async fn drive_rx<E>(
     r: impl AsyncRead + Unpin,
     mut handle_new_connection: impl FnMut(u16, RequestStream),
@@ -124,11 +129,14 @@ async fn drive_rx<E>(
         // read a frame
         let f = r.read_frame().await?;
 
+        let _span = tracing::trace_span!("handling frame", ?f).entered();
         match rx_map.entry(f.channel) {
             // channel is currently being serviced
             hash_map::Entry::Occupied(occ) => {
+                let _span = tracing::trace_span!("channel is present").entered();
+
                 if f.body_len() == 0 {
-                    // 0-len body means close
+                    // 0-len body means close request.
                     occ.remove();
                     continue;
                 }
@@ -142,22 +150,22 @@ async fn drive_rx<E>(
 
             // channel is not currently being serviced
             hash_map::Entry::Vacant(vac) => {
-                if f.body_len() == 0 {
-                    // 0-len body means close, don't even insert
-                    continue;
-                }
+                tracing::debug!(channel = ?f.channel, "handling new request");
 
-                // try creating a new connection
+                // open a new channel pair
                 let (rxq_tx, rxq_rx) = mpsc::unbounded_channel();
-                (handle_new_connection)(f.channel, RequestStream { rxq: rxq_rx });
 
-                let Ok(()) = rxq_tx.send(f.body) else {
-                    // receiver died as soon as we made it :(
-                    continue;
-                };
+                // 0-len body means toggle openness, but in case we got a non-0-len body, store it in the rxq anyway
+                if f.body_len() != 0 {
+                    tracing::warn!(?f, "got nonzero length body -- sending to receiver anyway");
+                    rxq_tx.send(f.body).unwrap();
+                }
 
                 // it's good to insert
                 vac.insert(rxq_tx);
+
+                // call the callback
+                (handle_new_connection)(f.channel, RequestStream { rxq: rxq_rx });
             }
         }
     }

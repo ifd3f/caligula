@@ -39,6 +39,7 @@ tokio-stream = { version = "0.1.18", optional = true }
 tokio-util = { version = "0.7.18", optional = true }
 tower = { version = "0.5.3", optional = true }
 tower-service = "0.3.3"
+tracing = "0.1.44"
 
 [dev-dependencies]
 stdiomux = { path = ".", features = ["io-std", "io-tokio", "test-util"] }
@@ -47,3 +48,5 @@ test-strategy = "0.4.5"
 tokio = { version = "1.52.1", features = ["rt", "rt-multi-thread", "time"] }
 tokio-pipe = "0.2.12"
 tower = { version = "0.5.3", features = ["tokio"] }
+test-log = { version = "0.2.20", features = ["trace"] }
+tracing-subscriber = "0.3.23"

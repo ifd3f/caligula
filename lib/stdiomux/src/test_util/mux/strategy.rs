@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::convert::identity;
 use std::fmt::Debug;
+use std::iter;
 use std::sync::Arc;
 
 use super::action::*;
@@ -14,20 +15,23 @@ use proptest::test_runner::TestRng;
 pub fn random_channel_strat(
     stream_len: impl Into<SizeRange> + Clone,
     payload_size: impl Into<SizeRange> + Clone,
+    max_concurrency: usize,
 ) -> impl Strategy<Value = Vec<SidedAction<ChannelAction>>> + Clone {
-    random_duplex_stream_actions_strat(stream_len, payload_size).prop_flat_map(|(req, res)| {
-        interlace_strategy(vec![
-            proptest::strategy::Just(
-                wrap_sided(SidedAction::Client, SidedAction::Server, req.into_iter())
-                    .collect::<Vec<_>>(),
-            ),
-            proptest::strategy::Just(
-                wrap_sided(SidedAction::Server, SidedAction::Client, res.into_iter())
-                    .collect::<Vec<_>>(),
-            ),
-        ])
-        .prop_map(|xs| xs.into_iter().map(|(_, x)| x).collect())
-    })
+    random_duplex_stream_actions_strat(stream_len, payload_size, max_concurrency).prop_flat_map(
+        |(req, res)| {
+            interlace_strategy(vec![
+                proptest::strategy::Just(
+                    wrap_sided(SidedAction::Client, SidedAction::Server, req.into_iter())
+                        .collect::<Vec<_>>(),
+                ),
+                proptest::strategy::Just(
+                    wrap_sided(SidedAction::Server, SidedAction::Client, res.into_iter())
+                        .collect::<Vec<_>>(),
+                ),
+            ])
+            .prop_map(|xs| xs.into_iter().map(|(_, x)| x).collect())
+        },
+    )
 }
 
 fn wrap_sided<'a, I, T, R>(
@@ -57,10 +61,11 @@ where
 pub fn random_duplex_stream_actions_strat(
     stream_len: impl Into<SizeRange> + Clone,
     payload_size: impl Into<SizeRange> + Clone,
+    max_concurrency: usize,
 ) -> impl Strategy<Value = (Vec<StreamAction>, Vec<StreamAction>)> + Clone {
     proptest::strategy::Just((
-        random_stream_actions_strat(stream_len.clone(), payload_size.clone()),
-        random_stream_actions_strat(stream_len.clone(), payload_size.clone()),
+        random_stream_actions_strat(stream_len.clone(), payload_size.clone(), max_concurrency),
+        random_stream_actions_strat(stream_len.clone(), payload_size.clone(), max_concurrency),
     ))
     .prop_ind_flat_map(identity)
 }
@@ -71,30 +76,64 @@ pub fn random_duplex_stream_actions_strat(
 pub fn random_stream_actions_strat(
     stream_len: impl Into<SizeRange> + Clone,
     payload_size: impl Into<SizeRange> + Clone,
+    max_concurrency: usize,
 ) -> impl Strategy<Value = Vec<StreamAction>> + Clone {
-    random_bytes_list(stream_len, payload_size)
-        .prop_map(|bss| {
-            bss.into_iter()
-                .map(|bs| vec![StreamAction::Tx(bs.clone()), StreamAction::Rx(bs)])
-                .map(proptest::strategy::Just)
-                .collect::<Vec<_>>()
-        })
-        .prop_flat_map(|tx_rx_pairs| {
-            interlace_strategy(tx_rx_pairs)
-                .prop_map(|out| out.into_iter().map(|(_, action)| action).collect())
-        })
+    random_bytes_list(stream_len, payload_size).prop_perturb(move |bss, mut rng| {
+        random_req_res(bss, &mut rng, max_concurrency).collect::<Vec<_>>()
+    })
 }
 
-/// Returns a proptest Strategy that generates a pair of random streams of [`Bytes`] of the given size ranges.
-pub fn random_req_res(
-    stream_len: impl Into<SizeRange> + Clone,
-    payload_size: impl Into<SizeRange> + Clone,
-) -> impl Strategy<Value = (Vec<Bytes>, Vec<Bytes>)> {
-    proptest::strategy::Just((
-        random_bytes_list(stream_len.clone(), payload_size.clone()),
-        random_bytes_list(stream_len.clone(), payload_size.clone()),
-    ))
-    .prop_ind_flat_map(identity)
+/// Given a stream of bytes, returns a sequence of transmits and receives in the expected order.
+pub fn random_req_res<'a>(
+    stream_len: impl IntoIterator<Item = Bytes> + 'a,
+    rng: &'a mut TestRng,
+    max_concurrency: usize,
+) -> impl Iterator<Item = StreamAction> + 'a {
+    let mut rxq = VecDeque::<Bytes>::new();
+    let mut txq = stream_len.into_iter().collect::<VecDeque<Bytes>>();
+
+    iter::from_fn(move || {
+        // check what actions are available
+        let tx = if rxq.len() < max_concurrency {
+            txq.pop_front()
+        } else {
+            None
+        };
+        let rx = rxq.pop_front();
+
+        match (tx, rx) {
+            // no more actions -- quit
+            (None, None) => None,
+
+            // only rx: drain the rx by one
+            (None, Some(rx)) => Some(StreamAction::Rx(rx)),
+
+            // only tx: return tx but also add it to the rxq
+            (Some(tx), None) => {
+                rxq.push_back(tx.clone());
+                Some(StreamAction::Tx(tx))
+            }
+
+            // if both are available, randomly pick one and return the other back into its respective queue
+            (Some(tx), Some(rx)) => match rng.next_u32() % 2 {
+                0 => {
+                    // put rx back
+                    rxq.push_front(rx);
+
+                    // do a tx
+                    rxq.push_back(tx.clone());
+                    Some(StreamAction::Tx(tx))
+                }
+                _ => {
+                    // put tx back
+                    txq.push_front(tx);
+
+                    // do a rx
+                    Some(StreamAction::Rx(rx))
+                }
+            },
+        }
+    })
 }
 
 /// Returns a proptest Strategy that generates a random stream of [`Bytes`] of the given size ranges.
@@ -241,4 +280,34 @@ where
         }
         None
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_strategy::proptest(
+        ProptestConfig {
+            timeout: 10,
+            .. ProptestConfig::default()
+        },
+    )]
+    #[test_log::test]
+    fn random_stream_actions_strat_has_tx_for_every_rx_in_correct_order(
+        #[strategy(random_stream_actions_strat(0..10, 1..24, usize::MAX))] actions: Vec<
+            StreamAction,
+        >,
+    ) {
+        let mut in_flight = VecDeque::new();
+        for a in actions {
+            match a {
+                StreamAction::Tx(bytes) => in_flight.push_back(bytes),
+                StreamAction::Rx(bytes) => {
+                    let actual = in_flight.pop_front().expect("bytes are missing");
+                    assert_eq!(actual, bytes)
+                }
+            }
+        }
+        assert!(in_flight.is_empty(), "there are more txs than rxs");
+    }
 }
