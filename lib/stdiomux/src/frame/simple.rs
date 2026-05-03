@@ -8,15 +8,15 @@ use bytes::{Buf as _, BufMut, Bytes};
 /// Methods will panic if the provided body exceeds [u32::MAX]!
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[cfg_attr(
-    feature = "proptest",
+    feature = "test-util",
     derive(proptest_derive::Arbitrary),
     proptest(params = "()")
 )]
 pub struct SimpleLengthFrame(
-    #[cfg_attr(feature = "proptest", proptest(strategy = "payload_strategy()"))] pub Bytes,
+    #[cfg_attr(feature = "test-util", proptest(strategy = "payload_strategy()"))] pub Bytes,
 );
 
-#[cfg(feature = "proptest")]
+#[cfg(feature = "test-util")]
 fn payload_strategy() -> impl proptest::prelude::Strategy<Value = Bytes> {
     use proptest::prelude::Strategy as _;
 
@@ -83,13 +83,13 @@ impl Frame for SimpleLengthFrame {
 /// a 16-bit channel ID and a 16-bit body length.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
-    feature = "proptest",
+    feature = "test-util",
     derive(proptest_derive::Arbitrary),
     proptest(params = "()")
 )]
 pub struct SimpleMuxFrame {
     pub channel: u16,
-    #[cfg_attr(feature = "proptest", proptest(strategy = "payload_strategy()"))]
+    #[cfg_attr(feature = "test-util", proptest(strategy = "payload_strategy()"))]
     pub body: Bytes,
 }
 
