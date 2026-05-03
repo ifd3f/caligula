@@ -7,7 +7,12 @@ use bytes::Bytes;
 use futures::Stream;
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use crate::mux::{ByteStream, ByteStreamService};
+use crate::{
+    mux::{ByteStream, ByteStreamService, basic::client},
+    utils::{HandshakeError, exchange_handshake, make_hello_with_crate_version},
+};
+
+pub(crate) const HELLO: &[u8] = make_hello_with_crate_version!("basic mux server");
 
 pub struct BasicMuxServer<R, W>
 where
@@ -23,7 +28,8 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    pub async fn open(r: R, w: W) -> Result<Self, std::io::Error> {
+    pub async fn open(mut r: R, mut w: W) -> Result<Self, HandshakeError> {
+        exchange_handshake(&mut r, &mut w, HELLO, client::HELLO).await?;
         Ok(Self { r, w })
     }
 
