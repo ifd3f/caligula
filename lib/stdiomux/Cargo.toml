@@ -26,6 +26,6 @@ tower-service = "0.3.3"
 stdiomux = { path = ".", features = ["io-std", "io-tokio", "proptest", "_test_exports"] }
 proptest = "1.11.0"
 test-strategy = "0.4.5"
-tokio = { version = "1.52.1", features = ["rt", "rt-multi-thread"] }
+tokio = { version = "1.52.1", features = ["rt", "rt-multi-thread", "time"] }
 tokio-pipe = "0.2.12"
 tower = { version = "0.5.3", features = ["tokio"] }

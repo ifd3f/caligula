@@ -1,6 +1,7 @@
 use std::{
     convert::Infallible,
     task::{Context, Poll},
+    time::Duration,
 };
 
 use bytes::Bytes;
@@ -13,6 +14,7 @@ use stdiomux::mux::{
     ByteStream,
     basic::{client::open, server::BasicMuxServer},
 };
+use tokio::time::interval;
 use tower_service::Service;
 
 #[tokio::main]
@@ -24,12 +26,18 @@ async fn main() {
         let (mut c, d) = open(s2cr, c2sw).await.expect("failed to open client");
         tokio::spawn(d);
 
+        let mut i = 0u32;
+        let mut interval = interval(Duration::from_secs(1));
         loop {
+            interval.tick().await;
+
+            println!("interval {i}");
             poll_fn(|cx| c.poll_ready(cx))
                 .await
                 .expect("expected client to be up");
             let request = vec![Bytes::from_static(b"foobar"), Bytes::from_static(b"spam")];
             println!("sending request {request:?}");
+
             let response = c
                 .call(Box::pin(stream::iter(request)))
                 .await
@@ -37,6 +45,8 @@ async fn main() {
 
             let response: Vec<Bytes> = response.collect().await;
             println!("got response {response:?}");
+
+            i += 1;
         }
     });
 
@@ -53,6 +63,7 @@ async fn main() {
     c.await.unwrap();
 }
 
+#[derive(Debug, Clone)]
 struct EchoServer;
 
 impl<Req> Service<Req> for EchoServer
