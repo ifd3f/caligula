@@ -12,11 +12,12 @@ use tokio::{
     select,
     sync::mpsc,
 };
+use tower_service::Service;
 
 use crate::{
     frame::{ReadFrameError, WriteFrameError, simple::SimpleMuxFrame, tokio::FrameReader},
     mux::{
-        ByteStream, ByteStreamService,
+        ByteStream,
         basic::{client, drive_user_provided_stream},
     },
     utils::{AnnounceError, HandshakeError, exchange_handshake, make_hello_with_crate_version},
@@ -62,7 +63,7 @@ where
     /// Execute the opened [`BasicMuxServer`] with the given [`ByteStreamService`]
     pub async fn run_with<S>(self, s: S) -> Result<(), Arc<Error<S::Error>>>
     where
-        S: ByteStreamService<RequestStream, ByteStream> + Send + Clone + 'static,
+        S: Service<RequestStream, Response = ByteStream> + Send + Clone + 'static,
         S::Future: Send,
         S::Error: Sync + Send + 'static,
     {
@@ -99,7 +100,7 @@ async fn drive_request<S>(
     txq: mpsc::UnboundedSender<(u16, Bytes)>,
 ) -> Result<(), Error<S::Error>>
 where
-    S: ByteStreamService<RequestStream, ByteStream>,
+    S: Service<RequestStream, Response = ByteStream>,
 {
     poll_fn(|cx| s.poll_ready(cx))
         .await
