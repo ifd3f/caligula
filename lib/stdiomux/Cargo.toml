@@ -14,8 +14,6 @@ byte-strings = "0.3.1"
 bytes = "1.11.1"
 dashmap = "6.1.0"
 futures = { version = "0.3.32", default-features = false, features = ["alloc"] }
-libc = "0.2.186"
-lockfree = "0.5.1"
 pin-project = "1.1.11"
 proptest = { version = "1.11.0", optional = true, features = ["proptest-macro"] }
 proptest-derive = { version = "0.8.0", optional = true }

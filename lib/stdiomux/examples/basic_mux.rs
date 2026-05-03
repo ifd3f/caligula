@@ -11,7 +11,7 @@ use futures::{
 };
 use stdiomux::mux::{
     ByteStream,
-    basic::{client::open_client, server::BasicMuxServer},
+    basic::{client::open, server::BasicMuxServer},
 };
 use tower_service::Service;
 
@@ -21,9 +21,7 @@ async fn main() {
     let (s2cr, s2cw) = tokio_pipe::pipe().unwrap();
 
     let c = tokio::spawn(async move {
-        let (mut c, d) = open_client(s2cr, c2sw)
-            .await
-            .expect("failed to open client");
+        let (mut c, d) = open(s2cr, c2sw).await.expect("failed to open client");
         tokio::spawn(d);
 
         loop {
