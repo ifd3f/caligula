@@ -7,7 +7,7 @@ use std::{
 
 use bytes::Bytes;
 use dashmap::DashMap;
-use futures::{FutureExt, Stream, StreamExt, future::BoxFuture};
+use futures::{FutureExt, Stream, future::BoxFuture};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     select,
@@ -16,18 +16,14 @@ use tokio::{
 use tower_service::Service;
 
 use crate::{
-    frame::{
-        ReadFrameError, WriteFrameError,
-        simple::SimpleMuxFrame,
-        tokio::{FrameReader, FrameWriter},
-    },
-    mux::{ByteStream, basic::server},
-    utils::{HandshakeError, exchange_handshake, make_hello_with_crate_version},
+    frame::{ReadFrameError, WriteFrameError, simple::SimpleMuxFrame, tokio::FrameReader},
+    mux::ByteStream,
+    utils::{AnnounceError, HandshakeError, exchange_handshake, make_hello_with_crate_version},
 };
 
 pub(crate) const HELLO: &[u8] = make_hello_with_crate_version!("basic mux client");
 
-/// Errors that the [`BasicMuxClient`] may encounter.
+/// Errors that the  [`BasicMuxClient`] may encounter.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("Error reading frame: {0}")]
@@ -49,17 +45,24 @@ where
     R: AsyncRead + Unpin + Send + 'static,
     W: AsyncWrite + Unpin + Send + 'static,
 {
-    exchange_handshake(&mut r, &mut w, HELLO, server::HELLO).await?;
+    exchange_handshake(&mut r, &mut w, HELLO, super::server::HELLO).await?;
 
+    // create shared objects
+    let error = AnnounceError::new();
     let rx_map = Arc::new(DashMap::new());
     let (txq_tx, txq_rx) = mpsc::unbounded_channel();
 
+    // create driver task composed of parallel rx and tx drivers
     let rx_task = drive_rx(r, rx_map.clone());
-    let tx_task = drive_tx(w, txq_rx);
-    let driver = Box::pin(async move {
-        select! {
-            r = rx_task => r,
-            r = tx_task => r,
+    let tx_task = super::drive_tx(w, txq_rx);
+    let driver = Box::pin({
+        let error = error.clone();
+        async move {
+            let e = select! {
+                r = rx_task => r,
+                r = tx_task => r.map_err(Error::Tx),
+            };
+            error.announce_result(e)
         }
     });
 
@@ -67,6 +70,7 @@ where
         next_channel: 0,
         txq: txq_tx,
         rx_map,
+        error,
     };
     let driver = BasicMuxClientDriver {
         fut: driver,
@@ -103,21 +107,6 @@ async fn drive_rx(
     }
 }
 
-async fn drive_tx(
-    w: impl AsyncWrite + Unpin,
-    mut txq: mpsc::UnboundedReceiver<(u16, Bytes)>,
-) -> Result<(), Error> {
-    let mut w = FrameWriter::new(w);
-    while let Some((ch, bs)) = txq.recv().await {
-        w.write_frame(SimpleMuxFrame {
-            channel: ch,
-            body: bs,
-        })
-        .await?;
-    }
-    Ok(())
-}
-
 /// A dead simple mux client exposing a [`crate::mux::ByteStreamService`].
 ///
 /// WARNING: This client does unbounded buffering of requests and responses! No backpressure
@@ -126,6 +115,7 @@ async fn drive_tx(
 /// To create one, call [`open()`]. See that function for more info on usage.
 pub struct BasicMuxClient {
     next_channel: u16,
+    error: AnnounceError<Error>,
     txq: mpsc::UnboundedSender<(u16, Bytes)>,
     rx_map: Arc<DashMap<u16, mpsc::UnboundedSender<Bytes>>>,
 }
@@ -147,7 +137,7 @@ impl Stream for ResponseStream {
 /// drive its associated [`BasicMuxClient`]'s multiplexing.
 pub struct BasicMuxClientDriver<R, W> {
     /// This is just a newtype wrapper around this future :)
-    fut: BoxFuture<'static, Result<(), Error>>,
+    fut: BoxFuture<'static, Result<(), Arc<Error>>>,
     _phantom: PhantomData<(R, W)>,
 }
 
@@ -156,7 +146,7 @@ where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
 {
-    type Output = Result<(), Error>;
+    type Output = Result<(), Arc<Error>>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         self.fut.poll_unpin(cx)
@@ -166,32 +156,27 @@ where
 impl Service<ByteStream> for BasicMuxClient {
     type Response = ResponseStream;
 
-    type Error = Error;
+    type Error = Arc<Error>;
 
     type Future = std::future::Ready<Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+    fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.error.assert_ok()?;
         Poll::Ready(Ok(()))
     }
 
-    fn call(&mut self, mut req: ByteStream) -> Self::Future {
+    fn call(&mut self, req: ByteStream) -> Self::Future {
+        if let Err(e) = self.error.assert_ok() {
+            return std::future::ready(Err(e));
+        }
+
         let id = self.next_channel;
-        self.next_channel += 1;
+        self.next_channel += self.next_channel.wrapping_add(1);
 
         let (res_tx, res_rx) = mpsc::unbounded_channel();
         self.rx_map.insert(id, res_tx);
         let txq = self.txq.clone();
-        tokio::spawn(async move {
-            while let Some(req) = req.next().await {
-                if req.len() == 0 {
-                    continue;
-                }
-                let Ok(()) = txq.send((id, req)) else {
-                    break;
-                };
-            }
-            txq.send((id, Bytes::new())).ok();
-        });
+        tokio::spawn(super::drive_user_provided_stream(req, id, txq));
         std::future::ready(Ok(ResponseStream { rxq: res_rx }))
     }
 }
