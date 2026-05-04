@@ -5,7 +5,7 @@ use futures::{Stream, stream::BoxStream};
 use tower_service::Service;
 
 /// Type alias for a [`BoxStream<'static, Bytes>`].
-pub type ByteStream = BoxStream<'static, Bytes>;
+pub type BoxByteStream = BoxStream<'static, Bytes>;
 
 /// Trait alias for a [`Service`] that accepts byte streams and returns byte streams.
 pub trait ByteStreamService<Req>: Service<Req>

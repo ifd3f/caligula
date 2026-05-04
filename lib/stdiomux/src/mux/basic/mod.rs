@@ -4,7 +4,7 @@ use tokio::{io::AsyncWrite, sync::mpsc};
 
 use crate::{
     frame::{WriteFrameError, simple::SimpleMuxFrame, tokio::FrameWriter},
-    mux::ByteStream,
+    mux::BoxByteStream,
 };
 
 pub mod client;
@@ -31,7 +31,7 @@ async fn drive_unbounded_txq_tx(
 
 #[tracing::instrument(skip_all, level = "debug", fields(?id))]
 async fn drive_user_provided_stream(
-    mut bs: ByteStream,
+    mut bs: BoxByteStream,
     id: u16,
     txq: mpsc::UnboundedSender<(u16, Bytes)>,
 ) {

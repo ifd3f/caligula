@@ -3,7 +3,7 @@ use std::usize;
 use proptest::prelude::*;
 use stdiomux::{
     mux::{
-        ByteStream,
+        BoxByteStream,
         basic::{client, server::BasicMuxServer},
     },
     test_util::{
@@ -43,7 +43,7 @@ async fn basic_mux_works_single_channel(
 
     // run the actual test
     test_single_channel(
-        client.map_response(|r| -> ByteStream { Box::pin(r) }),
+        client.map_response(|r| -> BoxByteStream { Box::pin(r) }),
         move |s| async move {
             server
                 .run_with(s.clone().map_request(|r| Box::pin(r)))
