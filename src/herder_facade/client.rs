@@ -1,15 +1,67 @@
+use std::error::Error;
+use std::future::poll_fn;
+
 use crate::herder_daemon::ipc::StartHerd;
 use crate::herder_facade::DaemonError;
+use crate::herder_service::{HerderAction, HerderService, MAX_PAYLOAD, TopLevelHerderAction};
 use crate::ipc_common::write_msg_async;
+use futures::StreamExt;
+use futures::stream::{self, BoxStream};
 use serde::Serialize;
+use stdiomux::codec::Encoder;
+use stdiomux::codec::postcard::{SingleDatagramCodec, SingleDatagramEncoder};
+use stdiomux::mux::basic::client::BasicMuxClient;
+use stdiomux::mux::{BoxByteStream, ByteStreamService};
 use tokio::io::AsyncWrite;
 use tokio::process::Child;
+use tower::{Service};
 use tracing::info;
 
-/// A very raw, low-level, write-only interface to the herder daemon.
-/// Literally doesn't even implement responses.
-pub(super) trait HerderClient {
-    async fn start_writer<A: Serialize>(&mut self, id: u64, action: A) -> Result<(), DaemonError>;
+#[derive(Debug, thiserror::Error)]
+pub enum HerderClientError<Trans: Error, Action: Error> {
+    #[error("Transport error: {0}")]
+    Transport(Trans),
+    #[error("Error starting action: {0}")]
+    Action(Action),
+}
+
+pub struct HerderClient<C> {
+    bss: C,
+}
+
+impl<C> HerderClient<C>
+where
+    C: Service<BoxByteStream, Response = BoxByteStream>,
+{
+    pub fn new(client: C) -> Self {
+        Self { bss: client }
+    }
+}
+
+impl<C, A> HerderService<A> for HerderClient<C>
+where
+    A: HerderAction,
+    C: Service<BoxByteStream, Response = BoxByteStream>,
+    C::Error: Error,
+{
+    type Error = HerderClientError<C::Error, A::Error>;
+
+    fn start_action(
+        &self,
+        a: A,
+    ) -> impl Future<Output = BoxStream<'static, Result<A::Event, A::Error>>> + Send + 'static {
+        async move {
+            poll_fn(|cx| self.bss.poll_ready(cx)).await?;
+            let with_tag = TopLevelHerderAction::from(a);
+            let res = self.bss.call(
+                SingleDatagramEncoder
+                    .serialize(with_tag, MAX_PAYLOAD)
+                    .map(|x| x.expect("Serialization should not fail!"))
+                    .boxed(),
+            );
+            Ok(())
+        }
+    }
 }
 
 /// A [HerderClient] that doesn't actually spawn the real [HerderClient] until it
@@ -24,14 +76,14 @@ pub(super) struct LazyHerderClient<F: HerderClientFactory> {
 /// Unfortunately I can't use an AsyncFnOnce raw because then I'll have so many ugly ugly ugly
 /// explicit type holes and shit to patch in [LazyHerderClient] so this is the less bad option.
 pub(super) trait HerderClientFactory {
-    type Output: HerderClient;
+    type Output: HerderService;
 
     async fn make(&mut self) -> Result<Self::Output, DaemonError>;
 }
 
 impl<H, F> HerderClientFactory for F
 where
-    H: HerderClient,
+    H: HerderService,
     F: AsyncFnMut() -> Result<H, DaemonError>,
 {
     type Output = H;

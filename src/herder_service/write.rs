@@ -16,14 +16,17 @@ pub struct WriteVerifyAction {
 }
 
 impl super::HerderAction for WriteVerifyAction {
+    type Start = WriteVerifyStart;
+
     type Error = WriteVerifyError;
 
     type Event = WriteVerifyEvent;
+    
+    type Success = ();
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WriteVerifyEvent {
-    InitSuccess(WriteVerifyStart),
     TotalBytes {
         src: u64,
         dest: u64,
@@ -37,7 +40,6 @@ pub enum WriteVerifyEvent {
         block_size: usize,
         duration_millis: u64,
     },
-    Success,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -8,7 +8,6 @@ default = []
 test-util = [
     "dep:proptest",
     "dep:proptest-derive",
-    "dep:tokio-stream",
     "dep:tower",
     "dep:tokio-pipe",
     "tower/util",
@@ -29,7 +28,7 @@ serde = "1.0.228"
 thiserror = "2.0.18"
 tokio = { version = "1.52.1", features = ["rt", "io-std", "io-util", "macros"] }
 tokio-pipe = { version = "0.2.12", optional = true }
-tokio-stream = { version = "0.1.18", optional = true }
+tokio-stream = { version = "0.1.18" }
 tokio-util = { version = "0.7.18" }
 tower = { version = "0.5.3", optional = true }
 tower-service = "0.3.3"
