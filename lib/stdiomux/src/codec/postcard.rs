@@ -16,19 +16,35 @@ use serde::{Serialize, de::DeserializeOwned};
 use super::*;
 
 /// A codec that attempts to serialize and deserialize the input value as a single datagram.
-#[derive(Clone)]
 pub struct SingleDatagramCodec;
 
-impl<T: Serialize> Encoder<T> for SingleDatagramCodec {
-    type SerializeStream = stream::Once<future::Ready<Bytes>>;
+impl<'a, T, S> Codec<'a, T, S> for SingleDatagramCodec
+where
+    T: Serialize + DeserializeOwned + 'a,
+    S: Stream<Item = Bytes> + Send + Unpin + 'a,
+{
+    type Encoder = SingleDatagramEncoder;
+
+    type Decoder = SingleDatagramDecoder;
+
+    fn encoder(&self) -> Self::Encoder {
+        SingleDatagramEncoder
+    }
+
+    fn decoder(&self) -> Self::Decoder {
+        SingleDatagramDecoder
+    }
+}
+
+#[derive(Clone)]
+pub struct SingleDatagramEncoder;
+
+impl<'a, T: Serialize + 'a> Encoder<'a, T> for SingleDatagramEncoder {
+    type SerializeStream = stream::Once<future::Ready<Result<Bytes, Self::SerializeError>>>;
 
     type SerializeError = ::postcard::Error;
 
-    fn serialize(
-        &self,
-        value: T,
-        max_payload: usize,
-    ) -> Result<Self::SerializeStream, Self::SerializeError> {
+    fn serialize(&self, value: T, max_payload: usize) -> Self::SerializeStream {
         let mut out = BytesMut::with_capacity(max_payload);
 
         // SAFETY:
@@ -36,16 +52,22 @@ impl<T: Serialize> Encoder<T> for SingleDatagramCodec {
         // yes, technically postcard's impl can read the uninitialized data for whatever,
         // but in practice, if you're worried about that, that's kinda your problem lol
         unsafe { out.set_len(max_payload) };
-        to_slice(&value, &mut out)?;
+        let r = to_slice(&value, &mut out);
 
-        Ok(stream::once(future::ready(out.freeze())))
+        stream::once(future::ready(match r {
+            Ok(_) => Ok(out.freeze()),
+            Err(e) => Err(e),
+        }))
     }
 }
 
-impl<T, S> Decoder<T, S> for SingleDatagramCodec
+/// A decoder that attempts to serialize and deserialize the input value as a single datagram.
+#[derive(Clone)]
+pub struct SingleDatagramDecoder;
+
+impl<'a, T: DeserializeOwned + 'a, S> Decoder<'a, T, S> for SingleDatagramDecoder
 where
-    T: DeserializeOwned,
-    S: Stream<Item = Bytes> + Send + Unpin + 'static,
+    S: Stream<Item = Bytes> + Send + Unpin + 'a,
 {
     type DeserializeFuture = SingleDatagramCodecDeserializeFuture<T, S>;
 
@@ -66,10 +88,10 @@ pub struct SingleDatagramCodecDeserializeFuture<T, S> {
     _phantom: PhantomData<fn() -> T>,
 }
 
-impl<T, S> Future for SingleDatagramCodecDeserializeFuture<T, S>
+impl<'a, T: 'a, S> Future for SingleDatagramCodecDeserializeFuture<T, S>
 where
     T: DeserializeOwned,
-    S: Stream<Item = Bytes> + Send + Unpin + 'static,
+    S: Stream<Item = Bytes> + Send + Unpin + 'a,
 {
     type Output = Result<T, ::postcard::Error>;
 
