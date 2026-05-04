@@ -238,6 +238,9 @@ name = "bytes"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1e748733b7cbc798e1434b6ac524f0c1ff2ab456fe201501e6497c8417a4fc33"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bytesize"
@@ -278,6 +281,7 @@ dependencies = [
  "bincode",
  "bindgen",
  "byteorder",
+ "bytes",
  "bytesize",
  "bzip2",
  "cc",
@@ -307,10 +311,12 @@ dependencies = [
  "sha1",
  "sha2",
  "shell-words",
+ "stdiomux",
  "test-case",
  "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
+ "tower",
  "tracing",
  "tracing-panic",
  "tracing-subscriber",

@@ -19,6 +19,7 @@ base16 = "0.2.1"
 base64 = "0.22.1"
 bincode = "1.3.3"
 byteorder = "1.5.0"
+bytes = { version = "1.11.1", features = ["serde"] }
 bytesize = "1.3.3"
 bzip2 = { version = "0.6.1", features = ["static"] }
 chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
@@ -44,12 +45,12 @@ serde = { version = "1.0.228", features = ["derive"] }
 sha1 = "0.10.6"
 sha2 = "0.10.9"
 shell-words = "1.1.0"
+stdiomux = { path = "lib/stdiomux" }
 thiserror = "1.0.69"
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "process", "io-util", "io-std", "macros", "fs"] }
 tokio-stream = "0.1.18"
-tracing = { version = "0.1.41", default-features = false, features = [
-    "std",
-] }
+tower = "0.5.3"
+tracing = { version = "0.1.41", default-features = false, features = ["std"] }
 tracing-panic = "0.1.2"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }
 tracing-unwrap = "1.0.1"

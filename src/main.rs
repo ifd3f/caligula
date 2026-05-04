@@ -9,6 +9,7 @@ mod hash;
 mod hashfile;
 mod herder_daemon;
 mod herder_facade;
+mod herder_service;
 mod ipc_common;
 mod logging;
 mod native;
