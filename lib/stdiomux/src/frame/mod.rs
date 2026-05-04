@@ -5,9 +5,7 @@
 //! these types directly!
 
 pub mod simple;
-#[cfg(feature = "io-std")]
 pub mod sync;
-#[cfg(feature = "io-tokio")]
 pub mod tokio;
 
 use std::{borrow::Cow, error::Error, fmt::Debug};
