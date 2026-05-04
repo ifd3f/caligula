@@ -15,14 +15,14 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tower::Service;
 
 use super::action::*;
-use crate::mux::ByteStream;
+use crate::mux::BoxByteStream;
 
 pub async fn test_single_channel<C, F, Fut>(
     mut mux_client: C,
     run_server: F,
     actions: Vec<SidedAction<ChannelAction>>,
 ) where
-    C: Service<ByteStream, Response = ByteStream> + Sync,
+    C: Service<BoxByteStream, Response = BoxByteStream> + Sync,
     C::Error: Debug,
     F: FnOnce(TestServer) -> Fut,
     Fut: Future<Output = ()> + Send + 'static,
@@ -47,11 +47,11 @@ pub async fn test_single_channel<C, F, Fut>(
         .expect("request open failed");
 
     enum ServerReqCell {
-        StreamNotSent(oneshot::Receiver<ByteStream>),
-        StreamSent(ByteStream),
+        StreamNotSent(oneshot::Receiver<BoxByteStream>),
+        StreamSent(BoxByteStream),
     }
 
-    let mut server_req: ByteStream = Box::pin(stream::unfold(
+    let mut server_req: BoxByteStream = Box::pin(stream::unfold(
         ServerReqCell::StreamNotSent(server_req_rx),
         move |c| async move {
             let mut stream = match c {
@@ -91,7 +91,7 @@ pub async fn test_single_channel<C, F, Fut>(
 async fn execute_action_on_channel(
     i: usize,
     tx: &mut Option<UnboundedSender<Bytes>>,
-    rx: &mut ByteStream,
+    rx: &mut BoxByteStream,
     a: ChannelAction,
 ) {
     match a {
@@ -119,14 +119,14 @@ pub struct TestServer {
 }
 struct Inner {
     res_stream_rx: UnboundedReceiver<Bytes>,
-    server_req_tx: oneshot::Sender<ByteStream>,
+    server_req_tx: oneshot::Sender<BoxByteStream>,
 }
 
 impl<BS> Service<BS> for TestServer
 where
     BS: Stream<Item = Bytes> + Send + 'static,
 {
-    type Response = ByteStream;
+    type Response = BoxByteStream;
 
     type Error = Infallible;
 
@@ -149,7 +149,7 @@ where
         let Ok(()) = inner.server_req_tx.send(Box::pin(req)) else {
             panic!("harness dropped our oneshot handle");
         };
-        std::future::ready(Ok::<ByteStream, Infallible>(Box::pin(
+        std::future::ready(Ok::<BoxByteStream, Infallible>(Box::pin(
             UnboundedReceiverStream::new(inner.res_stream_rx),
         )))
     }

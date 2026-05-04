@@ -11,7 +11,7 @@ use futures::{
     stream,
 };
 use stdiomux::mux::{
-    ByteStream,
+    BoxByteStream,
     basic::{client::open, server::BasicMuxServer},
 };
 use tokio::time::interval;
@@ -70,7 +70,7 @@ impl<Req> Service<Req> for EchoServer
 where
     Req: Stream<Item = Bytes> + Unpin + Send + 'static,
 {
-    type Response = ByteStream;
+    type Response = BoxByteStream;
 
     type Error = Infallible;
 
@@ -82,7 +82,7 @@ where
 
     fn call(&mut self, req: Req) -> Self::Future {
         Box::pin(async move {
-            let res: ByteStream = Box::pin(stream::unfold(req, |mut req| async move {
+            let res: BoxByteStream = Box::pin(stream::unfold(req, |mut req| async move {
                 let next = req.next().await?;
                 Some((next, req))
             }));

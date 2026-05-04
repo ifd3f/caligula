@@ -17,7 +17,7 @@ use tower_service::Service;
 
 use crate::{
     frame::{ReadFrameError, WriteFrameError, simple::SimpleMuxFrame, tokio::FrameReader},
-    mux::ByteStream,
+    mux::BoxByteStream,
     utils::{AnnounceError, HandshakeError, exchange_handshake, make_hello_with_crate_version},
 };
 
@@ -162,7 +162,7 @@ where
     }
 }
 
-impl Service<ByteStream> for BasicMuxClient {
+impl Service<BoxByteStream> for BasicMuxClient {
     type Response = ResponseStream;
 
     type Error = Arc<Error>;
@@ -175,7 +175,7 @@ impl Service<ByteStream> for BasicMuxClient {
     }
 
     #[tracing::instrument(skip_all, level = "debug")]
-    fn call(&mut self, req: ByteStream) -> Self::Future {
+    fn call(&mut self, req: BoxByteStream) -> Self::Future {
         // Ensure we aren't errored
         if let Err(e) = self.error.assert_ok() {
             return std::future::ready(Err(e));
