@@ -45,9 +45,11 @@ serde = { version = "1.0.228", features = ["derive"] }
 sha1 = "0.10.6"
 sha2 = "0.10.9"
 shell-words = "1.1.0"
+stdiomux = { path = "./lib/stdiomux" }
 thiserror = "1.0.69"
 tokio = { version = "1.48.0", features = ["rt-multi-thread", "process", "io-util", "io-std", "macros", "fs"] }
 tokio-stream = "0.1.18"
+tower = "0.5.3"
 tracing = { version = "0.1.41", default-features = false, features = [
     "std",
 ] }
