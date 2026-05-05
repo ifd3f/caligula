@@ -1,9 +1,8 @@
-use std::path::PathBuf;
-
-use serde::{Deserialize, Serialize};
-
+use super::HerdAction;
 use crate::compression::CompressionFormat;
 use crate::device::Type;
+use serde::{Deserialize, Serialize};
+use std::{fmt::Display, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WriteVerifyAction {
@@ -15,18 +14,13 @@ pub struct WriteVerifyAction {
     pub block_size: Option<u64>,
 }
 
-impl super::HerderAction for WriteVerifyAction {
-    type Start = WriteVerifyStart;
-
-    type Error = WriteVerifyError;
-
+impl HerdAction for WriteVerifyAction {
     type Event = WriteVerifyEvent;
-    
-    type Done = ();
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WriteVerifyEvent {
+    InitSuccess(WriteVerifyStart),
     TotalBytes {
         src: u64,
         dest: u64,
@@ -40,6 +34,29 @@ pub enum WriteVerifyEvent {
         block_size: usize,
         duration_millis: u64,
     },
+    Success,
+    Error(WriteVerifyError),
+}
+
+super::impl_try_from_top_level_herd_event!(Writer => WriteVerifyEvent);
+
+impl super::HerdEvent for WriteVerifyEvent {
+    type StartInfo = WriteVerifyStart;
+    type Failure = WriteVerifyError;
+
+    fn downcast_as_initial_info(self) -> Result<Self::StartInfo, Self> {
+        match self {
+            WriteVerifyEvent::InitSuccess(e) => Ok(e),
+            other => Err(other),
+        }
+    }
+
+    fn downcast_as_failure(self) -> Result<Self::Failure, Self> {
+        match self {
+            WriteVerifyEvent::Error(e) => Ok(e),
+            other => Err(other),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -47,20 +64,15 @@ pub struct WriteVerifyStart {
     pub input_file_bytes: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WriteVerifyError {
-    #[error("Unexpected end of output file. Is your output file too small?")]
     EndOfOutput,
-    #[error("Permission denied while opening file")]
     PermissionDenied,
-    #[error("Disk verification failed!")]
     VerificationFailed,
-    #[error("The child process unexpectedly terminated!")]
     UnexpectedTermination,
-    #[error("Unknown error occurred in child process: {0}")]
     UnknownChildProcError(String),
-    #[error("Failed to unmount disk (exit code {exit_code})\n{message}")]
     FailedToUnmount { message: String, exit_code: i32 },
+    Panicked,
 }
 
 impl From<std::io::Error> for WriteVerifyError {
@@ -68,6 +80,30 @@ impl From<std::io::Error> for WriteVerifyError {
         match value.kind() {
             std::io::ErrorKind::PermissionDenied => Self::PermissionDenied,
             _ => Self::UnknownChildProcError(format!("{value:#}")),
+        }
+    }
+}
+
+impl Display for WriteVerifyError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            WriteVerifyError::EndOfOutput => write!(
+                f,
+                "Unexpected end of output file. Is your output file too small?"
+            ),
+            WriteVerifyError::PermissionDenied => write!(f, "Permission denied while opening file"),
+            WriteVerifyError::VerificationFailed => write!(f, "Disk verification failed!"),
+            WriteVerifyError::UnexpectedTermination => {
+                write!(f, "The child process unexpectedly terminated!")
+            }
+            WriteVerifyError::UnknownChildProcError(err) => {
+                write!(f, "Unknown error occurred in child process: {err}")
+            }
+            WriteVerifyError::FailedToUnmount { message, exit_code } => write!(
+                f,
+                "Failed to unmount disk (exit code {exit_code})\n{message}"
+            ),
+            WriteVerifyError::Panicked => write!(f, "Orchestrator panicked!"),
         }
     }
 }

@@ -8,7 +8,7 @@ use tracing::info;
 use tracing_unwrap::ResultExt;
 
 use crate::{
-    herder_api::write_verify::WriteVerifyAction,
+    herder_api::{StartHerd, TopLevelHerdEvent, write_verify::WriteVerifyAction},
     ipc_common::{read_msg_async, write_msg},
 };
 
