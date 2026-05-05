@@ -1,3 +1,4 @@
+mod util;
 pub mod write_verify;
 use bytes::{Bytes, BytesMut};
 use futures::{
@@ -5,11 +6,9 @@ use futures::{
     stream::{self, BoxStream},
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use std::{
-    error::Error,
-    fmt::{Debug, Display},
-    future,
-};
+use std::{error::Error, fmt::Debug, future};
+
+pub use util::HerderTowerService;
 
 /// Maximum payload that can be sent.
 pub const MAX_PAYLOAD: usize = stdiomux::mux::basic::MAX_PAYLOAD;
@@ -68,7 +67,7 @@ pub trait HerdEvent: Message + TryFrom<TopLevelHerdEvent, Error = TopLevelHerdEv
 
     /// A failure variant indicating that this herd has terminated unexpectedly and fatally
     /// without any hope of recovery.
-    type Failure: Display + Debug + Message;
+    type Failure: Error + Message;
 
     /// Downcast this event trait into its InitialInfo variant.
     fn downcast_as_initial_info(self) -> Result<Self::StartInfo, Self>;
