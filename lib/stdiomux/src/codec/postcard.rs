@@ -15,6 +15,27 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use super::*;
 
+pub fn serialize<'a, T: Serialize + 'a>(
+    value: T,
+    max_payload: usize,
+) -> Result<Bytes, ::postcard::Error> {
+    let mut out = BytesMut::with_capacity(max_payload);
+
+    // SAFETY:
+    // setting the length is safe because we are filling these bytes before they get read.
+    // yes, technically postcard's impl can read the uninitialized data for whatever,
+    // but in practice, if you're worried about that, that's kinda your problem lol
+    unsafe { out.set_len(max_payload) };
+    to_slice(&value, &mut out)?;
+
+    Ok(out.freeze())
+}
+
+pub fn deserialize<T: DeserializeOwned>(bs: Bytes) -> Result<T, ::postcard::Error> {
+    let (t, _x) = take_from_bytes(&bs)?;
+    Ok(t)
+}
+
 /// A codec that attempts to serialize and deserialize the input value as a single datagram.
 pub struct SingleDatagramCodec;
 
@@ -45,22 +66,10 @@ impl<'a, T: Serialize + 'a> Encoder<'a, T> for SingleDatagramEncoder {
     type SerializeError = ::postcard::Error;
 
     fn serialize(&self, value: T, max_payload: usize) -> Self::SerializeStream {
-        let mut out = BytesMut::with_capacity(max_payload);
-
-        // SAFETY:
-        // setting the length is safe because we are filling these bytes before they get read.
-        // yes, technically postcard's impl can read the uninitialized data for whatever,
-        // but in practice, if you're worried about that, that's kinda your problem lol
-        unsafe { out.set_len(max_payload) };
-        let r = to_slice(&value, &mut out);
-
-        stream::once(future::ready(match r {
-            Ok(_) => Ok(out.freeze()),
-            Err(e) => Err(e),
-        }))
+        let out = serialize(value, max_payload);
+        stream::once(future::ready(out))
     }
 }
-
 /// A decoder that attempts to serialize and deserialize the input value as a single datagram.
 #[derive(Clone)]
 pub struct SingleDatagramDecoder;
@@ -96,10 +105,9 @@ where
     type Output = Result<T, ::postcard::Error>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.project().bss.poll_next_unpin(cx).map(|bs| {
-            let bs = bs.unwrap_or_default();
-            let (t, _x) = take_from_bytes(&bs)?;
-            Ok(t)
-        })
+        self.project()
+            .bss
+            .poll_next_unpin(cx)
+            .map(|bs| deserialize(bs.unwrap_or_default()))
     }
 }

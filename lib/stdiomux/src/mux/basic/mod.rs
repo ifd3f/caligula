@@ -3,12 +3,18 @@ use futures::StreamExt as _;
 use tokio::{io::AsyncWrite, sync::mpsc};
 
 use crate::{
-    frame::{WriteFrameError, simple::SimpleMuxFrame, tokio::FrameWriter},
+    frame::{
+        Frame, Header, WriteFrameError,
+        simple::{SimpleMuxFrame, SimpleMuxHeader},
+        tokio::FrameWriter,
+    },
     mux::BoxByteStream,
 };
 
 pub mod client;
 pub mod server;
+
+pub const MAX_PAYLOAD: usize = SimpleMuxFrame::MTU - SimpleMuxHeader::SIZE;
 
 /// Forward frames from a transmission queue into the given writer.
 #[tracing::instrument(skip_all, level = "debug")]

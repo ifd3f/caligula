@@ -5,6 +5,7 @@ use tokio::{
     sync::watch,
 };
 
+/// Errors that occur during a handshake exchange.
 #[derive(Debug, thiserror::Error)]
 pub enum HandshakeError {
     #[error("{0}")]

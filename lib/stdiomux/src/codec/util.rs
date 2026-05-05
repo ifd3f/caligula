@@ -224,7 +224,7 @@ pub trait EncoderExt<'a, T: 'a>: Encoder<'a, T> {
     ///
     /// WARNING: If this encoder consumes all data, then only the first `T` in the stream will be
     /// serialized!
-    fn concat<S>(self) -> impl Encoder<'a, S>
+    fn repeated<S>(self) -> impl Encoder<'a, S>
     where
         Self: 'static,
         S: Stream<Item = T> + Unpin + 'a,
@@ -263,7 +263,7 @@ where
 ///
 /// WARNING: If this decoder consumes all data, then only the first `T` in the stream will be
 /// deserialized!
-pub fn concat<D, T, S>(
+pub fn repeated_deserialize<D, T, S>(
     d: D,
 ) -> impl Decoder<
     'static,

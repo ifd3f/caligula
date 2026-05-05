@@ -5,3 +5,5 @@ mod utils;
 
 #[cfg(feature = "test-util")]
 pub mod test_util;
+
+pub use utils::HandshakeError;

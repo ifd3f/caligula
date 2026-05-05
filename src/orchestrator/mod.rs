@@ -11,6 +11,7 @@ mod herder_facade;
 mod real;
 pub mod watch;
 mod write_verify;
+mod client;
 
 /// Main facade for UI implementations to interact with the rest of the program's logic.
 ///
