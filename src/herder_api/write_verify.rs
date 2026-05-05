@@ -1,10 +1,8 @@
-use std::{fmt::Display, path::PathBuf};
-
-use serde::{Deserialize, Serialize};
-
+use super::HerdAction;
 use crate::compression::CompressionFormat;
 use crate::device::Type;
-use crate::herder_daemon::ipc::{self, HerdAction};
+use serde::{Deserialize, Serialize};
+use std::{fmt::Display, path::PathBuf};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WriteVerifyAction {
@@ -40,9 +38,9 @@ pub enum WriteVerifyEvent {
     Error(WriteVerifyError),
 }
 
-ipc::impl_try_from_top_level_herd_event!(Writer => WriteVerifyEvent);
+super::impl_try_from_top_level_herd_event!(Writer => WriteVerifyEvent);
 
-impl ipc::HerdEvent for WriteVerifyEvent {
+impl super::HerdEvent for WriteVerifyEvent {
     type StartInfo = WriteVerifyStart;
     type Failure = WriteVerifyError;
 
@@ -74,6 +72,7 @@ pub enum WriteVerifyError {
     UnexpectedTermination,
     UnknownChildProcError(String),
     FailedToUnmount { message: String, exit_code: i32 },
+    Panicked,
 }
 
 impl From<std::io::Error> for WriteVerifyError {
@@ -104,6 +103,7 @@ impl Display for WriteVerifyError {
                 f,
                 "Failed to unmount disk (exit code {exit_code})\n{message}"
             ),
+            WriteVerifyError::Panicked => write!(f, "Orchestrator panicked!"),
         }
     }
 }

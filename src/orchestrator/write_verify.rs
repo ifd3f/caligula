@@ -1,11 +1,57 @@
-use std::time::Instant;
-
-use tracing::{info, trace};
-
+use super::watch::Watch;
 use crate::{
     byteseries::{ByteSeries, EstimatedTime},
-    herder_daemon::ipc::{WriteVerifyError, WriteVerifyEvent},
+    compression::CompressionFormat,
+    device::WriteTarget,
+    herder_api::write_verify::*,
 };
+use bytesize::ByteSize;
+use std::time::Instant;
+use std::{fs::File, path::PathBuf};
+use tracing::{info, trace};
+
+/// Params for starting a write + verify workflow.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct WriteVerifyParams {
+    pub input_file: PathBuf,
+    pub input_file_size: ByteSize,
+    pub compression: CompressionFormat,
+    pub target: WriteTarget,
+}
+
+/// Result of starting a write + verify workflow.
+#[derive(Debug, Clone)]
+pub struct WriteVerifyStarted {
+    pub start: WriteVerifyStart,
+    pub state: Watch<WriterState>,
+}
+
+impl WriteVerifyParams {
+    pub fn new(
+        input_file: PathBuf,
+        compression: CompressionFormat,
+        target: WriteTarget,
+    ) -> std::io::Result<Self> {
+        let input_file_size = ByteSize::b(File::open(&input_file)?.metadata()?.len());
+        Ok(Self {
+            input_file,
+            input_file_size,
+            compression,
+            target,
+        })
+    }
+
+    pub fn make_child_config(&self) -> WriteVerifyAction {
+        WriteVerifyAction {
+            dest: self.target.devnode.clone(),
+            src: self.input_file.clone(),
+            verify: true,
+            compression: self.compression,
+            target_type: self.target.target_type,
+            block_size: self.target.block_size.0.map(|s| s.as_u64()),
+        }
+    }
+}
 
 /// A state machine for tracking the state of the writer, based on received
 /// messages.
@@ -128,6 +174,20 @@ impl WriterState {
     }
 }
 
+impl Default for WriterState {
+    /// Suitable value to put into the cell when [`std::mem::take()`] is called.
+    fn default() -> Self {
+        let now = Instant::now();
+        Self::Finished {
+            finish_time: now,
+            error: Some(WriteVerifyError::Panicked),
+            write_hist: ByteSeries::new(now),
+            verify_hist: None,
+            total_write_bytes: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Writing {
     pub write_hist: ByteSeries,
@@ -192,10 +252,7 @@ impl Writing {
 mod tests {
     use std::time::{Duration, Instant};
 
-    use crate::{
-        byteseries::ByteSeries,
-        herder_daemon::ipc::{WriteVerifyError, WriteVerifyEvent},
-    };
+    use crate::{byteseries::ByteSeries, herder_api::write_verify::*};
 
     use super::WriterState;
 

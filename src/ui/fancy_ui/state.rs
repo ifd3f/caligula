@@ -1,68 +1,69 @@
-use std::time::Instant;
-
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use tracing::info;
 
-use crate::{
-    herder_daemon::ipc::WriteVerifyEvent,
-    ui::{start::BeginParams, writer_tracking::WriterState},
-};
+use crate::orchestrator::{WriteVerifyParams, WriterState};
 
 use super::widgets::{QuitModal, QuitModalResult, SpeedChartState};
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum UIEvent {
     SleepTimeout,
-    RecvChildStatus(Instant, Option<WriteVerifyEvent>),
-    RecvTermEvent(Event),
+    RecvTermEvent(Result<Event, (String, std::io::ErrorKind)>),
 }
 
 #[derive(Debug, Clone)]
 pub struct State {
     pub input_filename: String,
     pub target_filename: String,
-    pub child: WriterState,
     pub graph_state: SpeedChartState,
     pub quit_modal: Option<QuitModal>,
 }
 
 impl State {
-    pub fn initial(now: Instant, params: &BeginParams, input_file_bytes: u64) -> Self {
+    pub fn initial(params: &WriteVerifyParams) -> Self {
         State {
             input_filename: params.input_file.to_string_lossy().to_string(),
             target_filename: params.target.devnode.to_string_lossy().to_string(),
-            child: WriterState::initial(now, !params.compression.is_identity(), input_file_bytes),
             graph_state: SpeedChartState::default(),
             quit_modal: None,
         }
     }
 
     #[tracing::instrument(skip_all, level = "debug", fields(ev))]
-    pub fn on_event(self, ev: UIEvent) -> anyhow::Result<Self> {
+    pub fn on_event(self, child: &WriterState, ev: UIEvent) -> anyhow::Result<Self> {
         Ok(match ev {
             UIEvent::SleepTimeout => self,
-            UIEvent::RecvChildStatus(t, m) => Self {
-                child: self.child.on_status(t, m),
-                ..self
-            },
-            UIEvent::RecvTermEvent(e) => self.on_term_event(e)?,
+            UIEvent::RecvTermEvent(e) => self.on_term_event(child, e)?,
         })
     }
 
     #[tracing::instrument(skip_all, level = "debug", fields(ev))]
-    fn on_term_event(self, ev: Event) -> anyhow::Result<Self> {
+    fn on_term_event(
+        self,
+        child: &WriterState,
+        ev: Result<Event, (String, std::io::ErrorKind)>,
+    ) -> anyhow::Result<Self> {
         match ev {
-            Event::Key(KeyEvent {
+            Ok(Event::Key(KeyEvent {
                 kind: KeyEventKind::Press,
                 code,
                 modifiers,
                 ..
-            }) => self.handle_key_down((code, modifiers)),
+            })) => self.handle_key_down(child, code, modifiers),
+            Err((msg, kind)) => {
+                tracing::error!("Error getting term event ({kind}): {msg}");
+                Err(Quit)?
+            }
             _ => Ok(self),
         }
     }
 
-    fn handle_key_down(mut self, (kc, km): (KeyCode, KeyModifiers)) -> anyhow::Result<Self> {
+    fn handle_key_down(
+        mut self,
+        child: &WriterState,
+        kc: KeyCode,
+        km: KeyModifiers,
+    ) -> anyhow::Result<Self> {
         if let Some(qm) = &self.quit_modal {
             return match qm.handle_key_down(kc) {
                 Some(QuitModalResult::Quit) => Err(Quit.into()),
@@ -78,7 +79,7 @@ impl State {
             (KeyCode::Char('c'), KeyModifiers::CONTROL)
             | (KeyCode::Esc, _)
             | (KeyCode::Char('q'), _) => {
-                if self.child.is_finished() {
+                if child.is_finished() {
                     info!("Writing and verification finished; quitting immediately");
                     Err(Quit.into())
                 } else {

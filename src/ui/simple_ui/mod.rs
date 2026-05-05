@@ -4,16 +4,14 @@
 //! As pretty as ratatui looks, sometimes you can't use a full-featured terminal.
 //! This is what this module is for.
 
-use std::time::Instant;
+use std::time::Duration;
 
-use futures::StreamExt;
 use indicatif::ProgressBar;
 use indicatif::ProgressStyle;
 
-use crate::compression::CompressionFormat;
 use crate::device::WriteTarget;
-use crate::herder_daemon::ipc::WriteVerifyEvent;
-use crate::ui::writer_tracking::WriterState;
+use crate::herder_api::write_verify::WriteVerifyStart;
+use crate::orchestrator::{WriteVerifyParams, WriterState, watch::Watch};
 
 use self::ask_hash::ask_hash;
 use self::ask_outfile::ask_compression;
@@ -21,22 +19,23 @@ use self::ask_outfile::ask_outfile;
 use self::ask_outfile::confirm_write;
 
 use super::cli::BurnArgs;
-use super::start::BeginParams;
-use crate::herder_facade::HerdHandle;
 
 mod ask_hash;
 mod ask_outfile;
 
+/// How often we refresh the display
+const REFRESH_PERIOD: Duration = Duration::from_millis(250);
+
 /// Returns the [BeginParams] if the user confirms, and None if the user doesn't.
 #[tracing::instrument(skip_all)]
-pub fn do_setup_wizard(args: &BurnArgs) -> Result<Option<BeginParams>, anyhow::Error> {
+pub fn do_setup_wizard(args: &BurnArgs) -> Result<Option<WriteVerifyParams>, anyhow::Error> {
     let compression = ask_compression(args)?;
     let _hash_info = ask_hash(args, compression)?;
     let target = match &args.out {
         Some(f) => WriteTarget::try_from(f.as_ref())?,
         None => ask_outfile(args)?,
     };
-    let begin_params = BeginParams::new(args.image.clone(), compression, target)?;
+    let begin_params = WriteVerifyParams::new(args.image.clone(), compression, target)?;
     if !confirm_write(args, &begin_params)? {
         eprintln!("Aborting.");
         return Ok(None);
@@ -44,12 +43,15 @@ pub fn do_setup_wizard(args: &BurnArgs) -> Result<Option<BeginParams>, anyhow::E
     Ok(Some(begin_params))
 }
 
+pub struct Params<'a> {
+    pub initial_info: &'a WriteVerifyStart,
+    pub child_state: Watch<WriterState>,
+}
+
+/// Run the simple TUI.
 #[tracing::instrument(skip_all)]
-pub async fn run_simple_burning_ui(
-    mut handle: HerdHandle<WriteVerifyEvent>,
-    cf: CompressionFormat,
-) -> anyhow::Result<()> {
-    let input_file_bytes = handle.initial_info.input_file_bytes;
+pub async fn run<'a>(params: Params<'a>) -> anyhow::Result<()> {
+    let input_file_bytes = params.initial_info.input_file_bytes;
     let write_progress = ProgressBar::new(100).with_message("Burning").with_style(
         ProgressStyle::with_template(
             "[{elapsed_precise}] {msg:>10} {wide_bar:.green/black} {percent:>3}%",
@@ -63,12 +65,12 @@ pub async fn run_simple_burning_ui(
         .unwrap(),
     );
 
-    let mut child_state = WriterState::initial(Instant::now(), !cf.is_identity(), input_file_bytes);
-
+    let mut interval = tokio::time::interval(REFRESH_PERIOD);
     loop {
-        let x = handle.events.next().await;
-        child_state = child_state.on_status(Instant::now(), x);
-        match &child_state {
+        interval.tick().await;
+
+        let child_state = params.child_state.borrow();
+        match &*child_state {
             WriterState::Writing(b) => {
                 write_progress.set_position((b.approximate_ratio() * 1000.0) as u64)
             }

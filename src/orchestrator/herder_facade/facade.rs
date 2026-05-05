@@ -1,9 +1,9 @@
+use super::DaemonError;
 use super::client::LazyHerderClient;
+use super::client::{HerderClient, HerderClientFactory, RawHerderClient};
 use super::{HerdHandle, HerderFacade, StartWriterError};
 use crate::escalation::run_escalate;
-use crate::herder_daemon::ipc::{HerdAction, HerdEvent, TopLevelHerdEvent};
-use crate::herder_facade::DaemonError;
-use crate::herder_facade::client::{HerderClient, HerderClientFactory, RawHerderClient};
+use crate::herder_api::{HerdAction, HerdEvent, TopLevelHerdEvent};
 use crate::ipc_common::read_msg_async;
 use futures::StreamExt;
 use std::collections::HashMap;
@@ -122,6 +122,10 @@ where
             events: Box::pin(event_rx),
             initial_info,
         })
+    }
+
+    async fn ensure_escalated_daemon(&mut self) -> Result<(), DaemonError> {
+        self.escalated_daemon.ensure_escalated_daemon().await
     }
 }
 

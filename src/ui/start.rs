@@ -1,66 +1,27 @@
-use std::{fmt::Display, fs::File, path::PathBuf, sync::Arc};
+use std::{fmt::Display, sync::Arc};
 
-use bytesize::ByteSize;
 use inquire::Confirm;
 use tracing::debug;
 
 use crate::{
-    compression::CompressionFormat,
-    device::{self, WriteTarget},
-    herder_daemon::ipc::{WriteVerifyAction, WriteVerifyError, WriteVerifyEvent},
-    herder_facade::{HerdHandle, HerderFacade, StartWriterError},
+    device,
+    herder_api::write_verify::{WriteVerifyError, WriteVerifyEvent},
     logging::LogPaths,
+    orchestrator::{Orchestrator, StartWriterError, WriteVerifyParams, WriteVerifyStarted},
     ui::{
         cli::{Interactive, UseSudo},
-        fancy_ui::FancyUI,
-        simple_ui::run_simple_burning_ui,
         utils::TUICapture,
     },
 };
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct BeginParams {
-    pub input_file: PathBuf,
-    pub input_file_size: ByteSize,
-    pub compression: CompressionFormat,
-    pub target: WriteTarget,
-}
-
-impl BeginParams {
-    pub fn new(
-        input_file: PathBuf,
-        compression: CompressionFormat,
-        target: WriteTarget,
-    ) -> std::io::Result<Self> {
-        let input_file_size = ByteSize::b(File::open(&input_file)?.metadata()?.len());
-        Ok(Self {
-            input_file,
-            input_file_size,
-            compression,
-            target,
-        })
-    }
-
-    pub fn make_child_config(&self) -> WriteVerifyAction {
-        WriteVerifyAction {
-            dest: self.target.devnode.clone(),
-            src: self.input_file.clone(),
-            verify: true,
-            compression: self.compression,
-            target_type: self.target.target_type,
-            block_size: self.target.block_size.0.map(|s| s.as_u64()),
-        }
-    }
-}
-
 #[tracing::instrument(skip_all, fields(root, interactive))]
 pub async fn try_start_burn(
-    herder: &mut impl HerderFacade,
-    args: &WriteVerifyAction,
+    orc: &mut impl Orchestrator,
+    args: &WriteVerifyParams,
     root: UseSudo,
     interactive: bool,
-) -> anyhow::Result<HerdHandle<WriteVerifyEvent>> {
-    let err = match herder.start_herd(args.clone(), false).await {
+) -> Result<WriteVerifyStarted, StartWriterError<WriteVerifyEvent>> {
+    let err = match orc.start_write_verify(args.clone()).await {
         Ok(p) => {
             return Ok(p);
         }
@@ -74,20 +35,23 @@ pub async fn try_start_burn(
 
                 let response = Confirm::new(&format!(
                     "We don't have permissions on {}. Escalate using sudo?",
-                    args.dest.to_string_lossy()
+                    args.target.name
                 ))
                 .with_default(true)
                 .with_help_message(
                     "We will use the sudo command, which may prompt you for a password.",
                 )
-                .prompt()?;
+                .prompt()
+                .expect("prompting the user should not fail");
 
                 if response {
-                    return Ok(herder.start_herd(args.clone(), true).await?);
+                    orc.escalate(None).await?;
+                    return Ok(orc.start_write_verify(args.clone()).await?);
                 }
             }
             (UseSudo::Always, _) => {
-                return Ok(herder.start_herd(args.clone(), true).await?);
+                orc.escalate(None).await?;
+                return Ok(orc.start_write_verify(args.clone()).await?);
             }
             _ => {}
         }
@@ -98,30 +62,40 @@ pub async fn try_start_burn(
 
 pub async fn begin_writing(
     interactive: Interactive,
-    params: BeginParams,
-    handle: HerdHandle<WriteVerifyEvent>,
+    params: WriteVerifyParams,
+    started: WriteVerifyStarted,
     log_paths: Arc<LogPaths>,
 ) -> anyhow::Result<()> {
     debug!("Opening TUI");
+
     if interactive.is_interactive() {
         debug!("Using fancy interactive TUI");
         let mut tui = TUICapture::new()?;
         let terminal = tui.terminal();
 
         // create app and run it
-        FancyUI::new(&params, handle, terminal, log_paths)
-            .show()
-            .await?;
+        super::fancy_ui::run(super::fancy_ui::Params {
+            terminal,
+            begin: &params,
+            child_state: started.state,
+            terminal_events: crossterm::event::EventStream::new(),
+            log_paths: &log_paths,
+        })
+        .await?;
         debug!("Closing TUI");
     } else {
         debug!("Using simple TUI");
-        run_simple_burning_ui(handle, params.compression).await?;
+        super::simple_ui::run(super::simple_ui::Params {
+            initial_info: &started.start,
+            child_state: started.state,
+        })
+        .await?;
     }
 
     Ok(())
 }
 
-impl Display for BeginParams {
+impl Display for WriteVerifyParams {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Input: {}", self.input_file.to_string_lossy())?;
         if self.compression.is_identity() {

@@ -1,5 +1,5 @@
-use crate::herder_daemon::ipc::StartHerd;
-use crate::herder_facade::DaemonError;
+use super::DaemonError;
+use crate::herder_api::StartHerd;
 use crate::ipc_common::write_msg_async;
 use serde::Serialize;
 use tokio::io::AsyncWrite;
@@ -10,6 +10,7 @@ use tracing::info;
 /// Literally doesn't even implement responses.
 pub(super) trait HerderClient {
     async fn start_writer<A: Serialize>(&mut self, id: u64, action: A) -> Result<(), DaemonError>;
+    async fn ensure_escalated_daemon(&mut self) -> Result<(), DaemonError>;
 }
 
 /// A [HerderClient] that doesn't actually spawn the real [HerderClient] until it
@@ -70,6 +71,11 @@ impl<F: HerderClientFactory> HerderClient for LazyHerderClient<F> {
         self.ensure_daemon().await?.start_writer(id, action).await?;
         Ok(())
     }
+
+    async fn ensure_escalated_daemon(&mut self) -> Result<(), DaemonError> {
+        self.ensure_daemon().await?;
+        Ok(())
+    }
 }
 
 /// A low-level handle to a child process herder daemon.
@@ -94,6 +100,10 @@ impl<W: AsyncWrite + Unpin> HerderClient for RawHerderClient<W> {
             .await
             .map_err(DaemonError::TransportFailure)?;
         Ok(())
+    }
+
+    async fn ensure_escalated_daemon(&mut self) -> Result<(), DaemonError> {
+        unimplemented!("not implemented")
     }
 }
 
@@ -141,6 +151,10 @@ mod tests {
         ) -> Result<(), DaemonError> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
             Ok(())
+        }
+
+        async fn ensure_escalated_daemon(&mut self) -> Result<(), DaemonError> {
+            unimplemented!()
         }
     }
 

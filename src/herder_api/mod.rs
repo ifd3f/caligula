@@ -1,8 +1,8 @@
+pub mod write_verify;
+
 use std::fmt::{Debug, Display};
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-
-pub use super::writer_process::ipc::{WriteVerifyAction, WriteVerifyError, WriteVerifyEvent};
 
 /// Tell the herder to start a herd for performing an arbitrary action.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -52,18 +52,18 @@ pub trait HerdEvent:
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, derive_more::From)]
 #[non_exhaustive]
 pub enum TopLevelHerdEvent {
-    Writer(WriteVerifyEvent),
+    Writer(write_verify::WriteVerifyEvent),
 }
 
 macro_rules! impl_try_from_top_level_herd_event {
     ($arm:ident => $event_type:ty) => {
-        impl TryFrom<crate::herder_daemon::ipc::TopLevelHerdEvent> for $event_type {
-            type Error = crate::herder_daemon::ipc::TopLevelHerdEvent;
+        impl TryFrom<crate::herder_api::TopLevelHerdEvent> for $event_type {
+            type Error = crate::herder_api::TopLevelHerdEvent;
             fn try_from(
-                ev: crate::herder_daemon::ipc::TopLevelHerdEvent,
-            ) -> Result<Self, crate::herder_daemon::ipc::TopLevelHerdEvent> {
+                ev: crate::herder_api::TopLevelHerdEvent,
+            ) -> Result<Self, crate::herder_api::TopLevelHerdEvent> {
                 match ev {
-                    crate::herder_daemon::ipc::TopLevelHerdEvent::$arm(x) => Ok(x),
+                    crate::herder_api::TopLevelHerdEvent::$arm(x) => Ok(x),
                     //other => Err(other),
                 }
             }
@@ -71,4 +71,4 @@ macro_rules! impl_try_from_top_level_herd_event {
     };
 }
 
-pub(super) use impl_try_from_top_level_herd_event;
+pub(self) use impl_try_from_top_level_herd_event;

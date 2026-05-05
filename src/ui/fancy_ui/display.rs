@@ -1,20 +1,16 @@
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
-use crossterm::event::EventStream;
-use futures::{StreamExt, stream::BoxStream};
+use futures::{Stream, StreamExt};
 use ratatui::{
     Terminal,
     backend::Backend,
     layout::{Constraint, Direction, Layout, Rect},
     widgets::{Block, Borders, Paragraph, Wrap},
 };
-use tokio::{select, time};
 
 use crate::{
-    herder_daemon::ipc::WriteVerifyEvent,
-    herder_facade::HerdHandle,
     logging::LogPaths,
-    ui::{start::BeginParams, writer_tracking::WriterState},
+    orchestrator::{WriterState, watch::Watch},
 };
 
 use super::{
@@ -22,38 +18,23 @@ use super::{
     widgets::{SpeedChart, WriterProgressBar, WritingInfoTable},
 };
 
-pub struct FancyUI<'a, B>
+pub struct FancyUI<'a, B, S>
 where
     B: Backend,
+    S: Stream<Item = UIEvent> + Unpin + 'a,
 {
-    terminal: &'a mut Terminal<B>,
-    events: EventStream,
-    handle: Option<HerdHandle<WriteVerifyEvent>>,
-    state: State,
-    log_paths: Arc<LogPaths>,
+    pub terminal: &'a mut Terminal<B>,
+    pub events: S,
+    pub child_state: Watch<WriterState>,
+    pub state: State,
+    pub log_paths: &'a LogPaths,
 }
 
-impl<'a, B> FancyUI<'a, B>
+impl<'a, B, S> FancyUI<'a, B, S>
 where
     B: Backend,
+    S: Stream<Item = UIEvent> + Unpin + 'a,
 {
-    #[tracing::instrument(skip_all)]
-    pub fn new(
-        params: &BeginParams,
-        handle: HerdHandle<WriteVerifyEvent>,
-        terminal: &'a mut Terminal<B>,
-        log_paths: Arc<LogPaths>,
-    ) -> Self {
-        let input_file_bytes = handle.initial_info.input_file_bytes;
-        Self {
-            terminal,
-            handle: Some(handle),
-            events: EventStream::new(),
-            state: State::initial(Instant::now(), params, input_file_bytes),
-            log_paths,
-        }
-    }
-
     #[tracing::instrument(skip_all, level = "debug")]
     pub async fn show(mut self) -> anyhow::Result<()> {
         loop {
@@ -68,46 +49,14 @@ where
     }
 
     #[tracing::instrument(skip_all, level = "trace")]
-    async fn get_and_handle_events(mut self) -> anyhow::Result<FancyUI<'a, B>> {
-        let msg = {
-            if let Some(handle) = &mut self.handle {
-                get_event_child_active(&mut self.events, &mut handle.events).await
-            } else {
-                get_event_child_dead(&mut self.events).await
-            }?
-        };
-        self.state = self.state.on_event(msg)?;
+    async fn get_and_handle_events(mut self) -> anyhow::Result<Self> {
+        while let Some(event) = self.events.next().await {
+            let child = self.child_state.borrow();
+            self.state = self.state.on_event(&child, event)?;
 
-        // Drop handle/process if process died
-        if self.state.child.is_finished() {
-            self.handle = None;
+            draw(&mut self.state, &child, self.terminal, &self.log_paths)?;
         }
-
-        draw(&mut self.state, self.terminal, &self.log_paths)?;
         Ok(self)
-    }
-}
-
-async fn get_event_child_dead(ui_events: &mut EventStream) -> anyhow::Result<UIEvent> {
-    Ok(UIEvent::RecvTermEvent(ui_events.next().await.unwrap()?))
-}
-
-#[tracing::instrument(skip_all, level = "trace")]
-async fn get_event_child_active(
-    ui_events: &mut EventStream,
-    child_events: &mut BoxStream<'static, WriteVerifyEvent>,
-) -> anyhow::Result<UIEvent> {
-    let sleep = tokio::time::sleep(time::Duration::from_millis(250));
-    select! {
-        _ = sleep => {
-            return Ok(UIEvent::SleepTimeout);
-        }
-        msg = child_events.next() => {
-            return Ok(UIEvent::RecvChildStatus(Instant::now(), msg));
-        }
-        event = ui_events.next() => {
-            return Ok(UIEvent::RecvTermEvent(event.unwrap()?));
-        }
     }
 }
 
@@ -165,17 +114,18 @@ fn centered_rect(r: Rect, w: u16, h: u16) -> Rect {
 
 pub fn draw(
     state: &mut State,
+    child: &WriterState,
     terminal: &mut Terminal<impl ratatui::backend::Backend>,
     log_paths: &LogPaths,
 ) -> anyhow::Result<()> {
-    let progress_bar = WriterProgressBar::from_writer(&state.child);
+    let progress_bar = WriterProgressBar::from_writer(&child);
 
-    let final_time = match state.child {
-        WriterState::Finished { finish_time, .. } => finish_time,
+    let final_time = match child {
+        WriterState::Finished { finish_time, .. } => *finish_time,
         _ => Instant::now(),
     };
 
-    let error = match &state.child {
+    let error = match &child {
         WriterState::Finished { error, .. } => error.as_ref(),
         _ => None,
     };
@@ -183,11 +133,11 @@ pub fn draw(
     let info_table = WritingInfoTable {
         input_filename: &state.input_filename,
         target_filename: &state.target_filename,
-        state: &state.child,
+        state: &child,
     };
 
     let speed_chart = SpeedChart {
-        state: &state.child,
+        state: &child,
         final_time,
     };
 

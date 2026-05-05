@@ -1,11 +1,14 @@
-//! Utilities for spawning and interacting with herder daemons.
+//! WARNING: HERE THERE BE DRAGONS
+//!
+//! The good parts of this submodule will get assimilated into orchestrator once I get back to working
+//! on the stdiomux branch. Don't rely on this module whatsoever! Orchestrator is mildly stable though.
 
 mod client;
 mod facade;
 
 use futures::stream::BoxStream;
 
-use crate::herder_daemon::ipc::{HerdAction, HerdEvent, TopLevelHerdEvent};
+use crate::herder_api::{HerdAction, HerdEvent, TopLevelHerdEvent};
 
 pub use facade::make_herder_facade_impl;
 
@@ -21,6 +24,8 @@ pub trait HerderFacade {
         action: A,
         escalated: bool,
     ) -> Result<HerdHandle<A::Event>, StartWriterError<A::Event>>;
+
+    async fn ensure_escalated_daemon(&mut self) -> Result<(), DaemonError>;
 }
 
 /// A wrapper around the events and information associated with a single herd

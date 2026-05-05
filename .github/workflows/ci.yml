@@ -24,6 +24,14 @@ jobs:
       - name: Run lint script
         run: nix run .#lint-script
 
+  cargo-machete:
+    name: Check for unused dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: bnjbvr/cargo-machete@v0.9.2
+
   ci-x86_64-linux:
     uses: ./.github/workflows/ci-unix.yml
     with:

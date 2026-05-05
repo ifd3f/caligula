@@ -17,13 +17,11 @@ use tracing_unwrap::ResultExt;
 
 use crate::compression::CompressionFormat;
 use crate::device;
+use crate::herder_api::write_verify::*;
 
 use self::utils::{CountRead, CountWrite, FileSourceReader, SyncDataFile};
 use self::xplat::open_blockdev;
 
-use ipc::*;
-
-pub mod ipc;
 #[cfg(test)]
 mod tests;
 mod utils;

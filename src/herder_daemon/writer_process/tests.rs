@@ -251,10 +251,8 @@ mod helpers {
 
     use rand::{Rng, SeedableRng, rngs::SmallRng};
 
-    use super::{
-        CompressionFormat, VerifyOp, WriteOp,
-        ipc::{WriteVerifyError, WriteVerifyEvent},
-    };
+    use super::{CompressionFormat, VerifyOp, WriteOp};
+    use crate::herder_api::write_verify::*;
 
     /// Wraps an in-memory buffer and logs every single chunk of data written to it.
     struct MockWrite<'a> {

@@ -5,7 +5,7 @@ mod unix;
 
 use std::process::Stdio;
 
-pub use self::unix::Command;
+pub use self::unix::{Command, EscalationMethod};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EscalationError {
