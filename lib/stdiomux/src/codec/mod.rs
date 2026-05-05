@@ -6,6 +6,16 @@ use futures::{Stream, future};
 pub mod postcard;
 pub mod util;
 
+pub type EncoderOf<'a, T, S>
+where
+    T: Streamable<'a, S>,
+= <T::Codec as Codec<'a, T, S>>::Encoder;
+
+pub type DecoderOf<'a, T, S>
+where
+    T: Streamable<'a, S>,
+= <T::Codec as Codec<'a, T, S>>::Decoder;
+
 /// An object that can be encoded into a byte stream of arbitrary encoder-defined type,
 /// or decoded from a byte stream of type `S`, using a designated [`Codec`].
 pub trait Streamable<'a, S>: Sized + 'a

@@ -337,3 +337,34 @@ where
         async move { Ok::<_, Infallible>(stream) }
     })
 }
+
+pub trait StreamableExt<'a, S>: Streamable<'a, S>
+where
+    S: Stream<Item = Bytes> + Send + Unpin + 'a,
+{
+    type Encoder: Encoder<'a, Self>;
+    type SerializeError: Error + 'a;
+    type SerializeStream: Stream<Item = Result<Bytes, Self::SerializeError>> + 'a;
+
+    type Decoder: Decoder<'a, Self, S>;
+    type DeserializeError: Error + 'a;
+    type DeserializeFuture: Future<Output = Result<Self, Self::DeserializeError>> + Send;
+}
+
+impl<'a, T, S> StreamableExt<'a, S> for T
+where
+    T: Streamable<'a, S>,
+    S: Stream<Item = Bytes> + Send + Unpin + 'a,
+{
+    type Encoder = <T::Codec as Codec<'a, Self, S>>::Encoder;
+
+    type SerializeError = <Self::Encoder as Encoder<'a, Self>>::SerializeError;
+
+    type SerializeStream = <Self::Encoder as Encoder<'a, Self>>::SerializeStream;
+
+    type Decoder = <T::Codec as Codec<'a, Self, S>>::Decoder;
+
+    type DeserializeError = <Self::Decoder as Decoder<'a, Self, S>>::DeserializeError;
+
+    type DeserializeFuture = <Self::Decoder as Decoder<'a, Self, S>>::DeserializeFuture;
+}
