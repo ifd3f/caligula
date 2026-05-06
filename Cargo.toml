@@ -8,6 +8,10 @@ version = "0.4.11"
 edition = "2024"
 license = "GPL-3.0"
 
+[features]
+default = []
+_test_exports = []
+
 [dependencies]
 aligned-vec = "0.5.0"
 anyhow = "1.0.100"
@@ -56,6 +60,8 @@ xz2 = { version = "0.1.7", features = ["static"] }
 [dev-dependencies]
 approx = "0.5.1"
 assert_matches = "1.5.0"
+caligula = { path = ".", features = ["_test_exports"] }
+criterion = "0.8.2"
 pretty_assertions = "1.4.1"
 rand = { version = "0.8.5", features = ["small_rng"] }
 rstest = "0.19.0"
@@ -87,3 +93,7 @@ assets = [
     ["target/release/caligula", "usr/bin/", "755"],
     { source = "README.md", dest = "usr/share/doc/caligula/README", mode = "644" },
 ]
+
+[[bench]]
+name = "atomicless"
+harness = false
