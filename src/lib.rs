@@ -6,6 +6,7 @@ mod hash;
 mod hashfile;
 mod herder_api;
 mod herder_daemon;
+mod io_graph;
 mod ipc_common;
 mod logging;
 mod native;
