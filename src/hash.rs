@@ -1,44 +1,18 @@
-use std::{fmt::Display, io::Read};
-
 use base64::Engine;
 use digest::Digest;
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 macro_rules! generate {
-    {$(
-        hash_length: $digest_bytes:expr => [
-            $($enum_arm:ident {
-                name: $sri_prefix:literal,
-                display: $display:expr,
-                new() -> $hash_inner:ty {
-                    $makehash_expr:expr
-                }
-            })*
-        ]
-    )*} => {
+    {
+        $($enum_arm:ident($hash_inner:ty) {
+            name: $sri_prefix:literal,
+            display: $display:expr,
+        })*
+    } => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
         pub enum HashAlg {
-            $($(
-                $enum_arm,
-            )*)*
-        }
-
-        /// Represents a hashing operation in progress.
-        /// This is mostly useful to make a cute progress bar.
-        pub struct Hashing<R>
-        where
-            R : Read,
-        {
-            inner: HashingInner<R>
-        }
-
-        enum HashingInner<R>
-        where
-            R : Read,
-        {
-            $($(
-                $enum_arm(GenericHashing<$hash_inner, R>),
-            )*)*
+            $($enum_arm,)*
         }
 
         impl HashAlg {
@@ -47,239 +21,92 @@ macro_rules! generate {
             /// more than that, so it's not actually to spec, but who cares.
             pub fn from_sri_alg(alg: &str) -> Option<Self> {
                 match alg {
-                    $($(
+                    $(
                         $sri_prefix => Some(Self::$enum_arm),
-                    )*)*
+                    )*
                     _ => None,
                 }
             }
 
-            /// Based on length of a hash, detects the possible hash algs
-            /// this hash could be from.
-            pub fn detect_from_length(bytes: usize) -> &'static [Self] {
-                match bytes {
-                    $(
-                        $digest_bytes => &[
-                            $(
-                                Self::$enum_arm,
-                            )*
-                        ],
-                    )*
-                    _ => &[],
+            /// Returns the digest size in bytes.
+            pub fn digest_bytes(&self) -> usize {
+                match self {
+                    $(Self::$enum_arm => <$hash_inner as Digest>::output_size(),)*
                 }
             }
 
-            /// Returns the digest size in bits.
-            pub fn digest_bytes(&self) -> usize {
-                match self {
-                    $($(
-                        Self::$enum_arm => $digest_bytes,
-                    )*)*
-                }
+            pub fn values() -> &'static [Self] {
+                &[$(Self::$enum_arm,)*]
             }
         }
 
         impl Display for HashAlg {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match self {
-                    $($(
+                    $(
                         Self::$enum_arm => write!(f, $display),
-                    )*)*
+                    )*
                 }
             }
         }
 
-        impl<R> Hashing<R>
-        where
-            R: Read,
-        {
-            #[inline]
-            pub fn new(alg: HashAlg, r: R, block_size: usize) -> Self {
-                let inner = match alg {
-                    $($(
-                        HashAlg::$enum_arm => HashingInner::$enum_arm(
-                            GenericHashing::new($makehash_expr, r, block_size)
-                        ),
-                    )*)*
-                };
-
-                Self { inner }
-            }
-
-            #[inline]
-            pub fn finalize(self) -> std::io::Result<FileHashInfo> {
-                match self.inner {
-                    $($(
-                        HashingInner::$enum_arm(i) => i.finalize(),
-                    )*)*
-                }
-            }
-
-            #[inline]
-            pub fn get_reader_mut(&mut self) -> &mut R {
-                match &mut self.inner {
-                    $($(
-                        HashingInner::$enum_arm(i) => i.get_reader_mut(),
-                    )*)*
+        macro_rules! with_hasher {
+            {$alg:expr => $hasher_bind:ident: $action:expr } => {
+                match $alg {
+                    $(crate::hash::HashAlg::$enum_arm => {
+                        type $hasher_bind = $hash_inner;
+                        $action
+                    })*
                 }
             }
         }
 
-        impl<R> Iterator for Hashing<R>
-        where
-            R: Read,
-        {
-            type Item = usize;
+        pub(crate) use with_hasher;
+    }
+}
 
-            #[inline]
-            fn next(&mut self) -> Option<Self::Item> {
-                match &mut self.inner {
-                    $($(
-                        HashingInner::$enum_arm(i) => i.next(),
-                    )*)*
-                }
-            }
-        }
+impl HashAlg {
+    /// Based on length of a hash, detects the possible hash algs
+    /// this hash could be from.
+    pub fn detect_from_length(bytes: usize) -> Vec<Self> {
+        Self::values()
+            .iter()
+            .copied()
+            .filter(|alg| alg.digest_bytes() == bytes)
+            .collect()
     }
 }
 
 generate! {
-    hash_length: 16 => [
-        Md5 {
-            name: "md5",
-            display: "MD5",
-            new() -> md5::Md5 {
-                md5::Md5::new()
-            }
-        }
-    ]
-    hash_length: 20 => [
-        Sha1 {
-            name: "sha1",
-            display: "SHA-1",
-            new() -> sha1::Sha1 {
-                sha1::Sha1::new()
-            }
-        }
-    ]
-    hash_length: 28 => [
-        Sha224 {
-            name: "sha224",
-            display: "SHA-224",
-            new() -> sha2::Sha224 {
-                sha2::Sha224::new()
-            }
-        }
-    ]
-    hash_length: 32 => [
-        Sha256 {
-            name: "sha256",
-            display: "SHA-256",
-            new() -> sha2::Sha256 {
-                sha2::Sha256::new()
-            }
-        }
-    ]
-    hash_length: 48 => [
-        Sha384 {
-            name: "sha384",
-            display: "SHA-384",
-            new() -> sha2::Sha384 {
-                sha2::Sha384::new()
-            }
-        }
-    ]
-    hash_length: 64 => [
-        Sha512 {
-            name: "sha512",
-            display: "SHA-512",
-            new() -> sha2::Sha512 {
-                sha2::Sha512::new()
-            }
-        }
-    ]
-}
-
-/// Represents a hashing operation in progress.
-/// This is mostly useful to make a cute progress bar.
-struct GenericHashing<H, R>
-where
-    H: Digest,
-    R: Read,
-{
-    hash: H,
-    read: R,
-    len: usize,
-    buf: Vec<u8>,
-    error: Option<std::io::Error>,
+    Md5(::md5::Md5) {
+        name: "md5",
+        display: "MD5",
+    }
+    Sha1(::sha1::Sha1) {
+        name: "sha1",
+        display: "SHA-1",
+    }
+    Sha224(::sha2::Sha224) {
+        name: "sha224",
+        display: "SHA-224",
+    }
+    Sha256(::sha2::Sha256) {
+        name: "sha256",
+        display: "SHA-256",
+    }
+    Sha384(::sha2::Sha384) {
+        name: "sha384",
+        display: "SHA-384",
+    }
+    Sha512(::sha2::Sha512) {
+        name: "sha512",
+        display: "SHA-512",
+    }
 }
 
 /// Represents the full results of hashing.
 pub struct FileHashInfo {
     pub file_hash: Vec<u8>,
-}
-
-impl<H, R> GenericHashing<H, R>
-where
-    H: Digest,
-    R: Read,
-{
-    pub fn new(hash: H, read: R, block_size: usize) -> Self {
-        Self {
-            hash,
-            read,
-            len: 0,
-            buf: vec![0; block_size],
-            error: None,
-        }
-    }
-
-    pub fn get_reader_mut(&mut self) -> &mut R {
-        &mut self.read
-    }
-
-    pub fn finalize(self) -> std::io::Result<FileHashInfo> {
-        match self.error {
-            Some(e) => Err(e),
-            None => Ok(FileHashInfo {
-                file_hash: self.hash.finalize()[..].into(),
-            }),
-        }
-    }
-
-    /// Performs one step. Returns how many bytes were read.
-    /// Does not set the "failed" flag.
-    fn step(&mut self) -> std::io::Result<usize> {
-        let read_bytes = self.read.read(&mut self.buf)?;
-        if read_bytes > 0 {
-            self.hash.update(&self.buf[..read_bytes]);
-        }
-        self.len += read_bytes;
-        Ok(read_bytes)
-    }
-}
-
-impl<H, R> Iterator for GenericHashing<H, R>
-where
-    H: Digest,
-    R: Read,
-{
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.error.is_some() {
-            return None;
-        }
-
-        match self.step() {
-            Ok(0) => None,
-            Ok(_) => Some(self.len),
-            Err(e) => {
-                self.error = Some(e);
-                None
-            }
-        }
-    }
 }
 
 pub fn parse_base16_or_base64(s: &str) -> Option<Vec<u8>> {

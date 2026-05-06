@@ -2,7 +2,7 @@ use std::{
     fs::File,
     io::{BufReader, Seek},
     path::Path,
-    process::exit,
+    process::exit, sync::Arc,
 };
 
 use anyhow::Context;
@@ -12,8 +12,10 @@ use inquire::{Confirm, Select, Text};
 
 use crate::{
     compression::{CompressionFormat, decompress},
-    hash::{FileHashInfo, HashAlg, Hashing, parse_hash_input},
+    hash::{FileHashInfo, HashAlg, parse_hash_input},
     hashfile::{find_hash_in_standard_files, find_hash_in_user_file},
+    orchestrator::Orchestrator,
+    runtime::RemoteSpawn,
     ui::cli::{BurnArgs, HashArg, HashOf},
 };
 
@@ -188,7 +190,12 @@ fn ask_hasher_compression(
 }
 
 #[tracing::instrument(skip_all, fields(path))]
-fn do_hashing(path: &Path, params: &BeginHashParams) -> anyhow::Result<FileHashInfo> {
+fn do_hashing(
+    runtime: impl RemoteSpawn,
+    orc: Arc<impl Orchestrator>,
+    path: &Path,
+    params: &BeginHashParams,
+) -> anyhow::Result<FileHashInfo> {
     let mut file = File::open(path)?;
 
     // Calculate total file size

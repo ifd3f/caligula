@@ -1,12 +1,21 @@
-use std::time::Instant;
+use std::{
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
+};
 
 use futures::StreamExt;
+use tokio::sync::watch;
 
 use super::herder_facade::{DaemonError, HerderFacade, StartWriterError};
 use crate::{
+    byteseries::ByteSeries,
     escalation::EscalationMethod,
     herder_api::write_verify::WriteVerifyEvent,
-    orchestrator::{Orchestrator, WriteVerifyParams, WriteVerifyStarted, WriterState},
+    orchestrator::{
+        HashStarted, Orchestrator, StartHashParams, WriteVerifyParams, WriteVerifyStarted,
+        WriterState,
+        hash::{HashError, HashReading, HashState, run_bg_hash},
+    },
 };
 
 /// Actual orchestrator implementation used by Caligula.
@@ -34,6 +43,34 @@ impl<H> OrchestratorImpl<H> {
 }
 
 impl<H: HerderFacade + Send + 'static> Orchestrator for OrchestratorImpl<H> {
+    async fn start_hash(&self, params: StartHashParams) -> HashStarted {
+        let (tracker, jh) = run_bg_hash(params).await;
+        let (tx, rx) = watch::channel(HashState::new(Instant::now()));
+        tokio::task::spawn_local(async move {
+            let mut interval = tokio::time::interval(Duration::from_millis(50));
+            loop {
+                interval.tick().await;
+                if jh.is_finished() {
+                    let r = match jh.join() {
+                        Ok(Ok(x)) => Ok(x),
+                        Ok(Err(e)) => Err(HashError::ReadError(e)),
+                        Err(_) => Err(HashError::Panicked),
+                    };
+                    tx.send_modify(move |s| {
+                        s.result = Some(r);
+                    });
+                    return;
+                }
+                let read = tracker.load(Ordering::Relaxed);
+                let now = Instant::now();
+                tx.send_modify(|s| s.read_series.push(now, read));
+            }
+        });
+        HashStarted {
+            state: super::watch::Watch { rx },
+        }
+    }
+
     async fn start_write_verify(
         &self,
         params: WriteVerifyParams,

@@ -4,11 +4,13 @@
 use std::sync::Arc;
 
 pub use self::{
+    hash::{HashStarted, StartHashParams},
     herder_facade::{DaemonError, StartWriterError},
     write_verify::{WriteVerifyParams, WriteVerifyStarted, WriterState},
 };
 use crate::{escalation::EscalationMethod, herder_api::write_verify::*, runtime::RemoteSpawn};
 
+pub mod hash;
 mod herder_facade;
 mod real;
 pub mod watch;
@@ -34,13 +36,16 @@ mod write_verify;
 /// error types, but in general, the overall shape of this API can be used for
 /// new UI developments.
 pub trait Orchestrator: Sync + Send + 'static {
+    /// Start a file hashing workflow.
+    async fn start_hash(&self, params: StartHashParams) -> HashStarted;
+
     /// Start a write + verify workflow.
     ///
     /// Returns when we get an initial success message from the task group, or
     /// there was a failure.
     async fn start_write_verify(
         &self,
-        begin_params: WriteVerifyParams,
+        params: WriteVerifyParams,
     ) -> Result<WriteVerifyStarted, StartWriterError<WriteVerifyEvent>>;
 
     /// Attempt to spawn a child process as root using the provided escalation
@@ -69,6 +74,22 @@ pub fn make_orchestrator_impl(log_path: &str) -> impl Orchestrator {
 }
 
 pub trait OrchestratorExt: Orchestrator {
+    /// Start a file hashing workflow.
+    ///
+    /// THIS SHOULD ABSOLUTELY NOT UNDER ANY CIRCUMSTANCES be used in an async
+    /// context! Just use the non-blocking version of the trait! It's mostly
+    /// only useful for the simple UI wizard, which is inherently blocky.
+    async fn start_hash_blocking(
+        self: Arc<Self>,
+        spawn: impl RemoteSpawn,
+        params: StartHashParams,
+    ) -> HashStarted {
+        spawn
+            .spawn(move || async move { self.start_hash(params).await })
+            .blocking_recv()
+            .expect("remote task dropped!")
+    }
+
     /// Like [`Orchestrator::start_write_verify()`], but it blocks your thread
     /// while waiting for it to start.
     ///
@@ -78,10 +99,10 @@ pub trait OrchestratorExt: Orchestrator {
     fn start_write_verify_blocking(
         self: Arc<Self>,
         spawn: impl RemoteSpawn,
-        begin_params: WriteVerifyParams,
+        params: WriteVerifyParams,
     ) -> Result<WriteVerifyStarted, StartWriterError<WriteVerifyEvent>> {
         spawn
-            .spawn(move || async move { self.start_write_verify(begin_params).await })
+            .spawn(move || async move { self.start_write_verify(params).await })
             .blocking_recv()
             .expect("remote task dropped!")
     }
