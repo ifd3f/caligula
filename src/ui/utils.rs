@@ -1,45 +1,90 @@
-use std::{fmt::Display, io::Stdout};
-
 use bytesize::ByteSize;
 use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
+use libc::{TCSANOW, c_int, tcsetattr, termios};
 use ratatui::{Terminal, backend::CrosstermBackend};
+use std::{
+    fmt::Display,
+    io::{Stdout, Write},
+};
+use std::{mem, os::fd::AsRawFd};
+use tracing::info;
 use tracing_unwrap::ResultExt;
 
-pub struct TUICapture {
-    terminal: Terminal<CrosstermBackend<Stdout>>,
-    _private: (),
+pub struct TuiManager<'a, W: Write> {
+    terminal: Terminal<CrosstermBackend<&'a mut W>>,
 }
 
-impl TUICapture {
-    pub fn new() -> std::io::Result<Self> {
+impl<'a, W: Write> TuiManager<'a, W> {
+    pub fn new(w: &'a mut W) -> std::io::Result<Self> {
         // setup terminal
         enable_raw_mode()?;
-        let mut stdout = std::io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend)?;
 
         Ok(Self {
             terminal,
-            _private: (),
         })
     }
 
-    pub fn terminal(&mut self) -> &mut Terminal<CrosstermBackend<Stdout>> {
+    pub fn terminal(&mut self) -> &mut Terminal<CrosstermBackend<&'a mut W>> {
         &mut self.terminal
     }
 }
 
-impl Drop for TUICapture {
+pub struct AlternateScreenGuard<'a, W:Write> {
+    parent: &'a mut TuiManager<'a, W>
+}
+
+impl <'a, W > Drop for AlternateScreenGuard<'a, W> {
     fn drop(&mut self) {
         // restore terminal
         disable_raw_mode().unwrap_or_log();
         execute!(self.terminal.backend_mut(), LeaveAlternateScreen,).unwrap_or_log();
         self.terminal.show_cursor().unwrap_or_log();
     }
+}
+
+/// Stores the state of the terminal when created, and restores it on drop
+pub struct TermiosRestore<F: AsRawFd> {}
+
+impl<F: AsRawFd> TermiosRestore<F> {
+    pub fn new(tty: F) -> std::io::Result<TermiosRestore<F>> {
+        info!("attempting to store terminal state before program started");
+        let fd = tty.as_raw_fd();
+        let term_orig = safe_tcgetattr(fd)?;
+        Ok(TermiosRestore { tty, term_orig })
+    }
+
+    pub fn tty(&mut self) -> &mut F {
+        &mut self.tty
+    }
+}
+
+impl<F: AsRawFd> Drop for TermiosRestore<F> {
+    fn drop(&mut self) {
+        info!("restoring terminal state to what it was before program started");
+        unsafe {
+            tcsetattr(self.tty.as_raw_fd(), TCSANOW, &self.term_orig);
+        }
+    }
+}
+
+/// Turns a C function return into an IO Result
+fn io_result(ret: c_int) -> std::io::Result<()> {
+    match ret {
+        0 => Ok(()),
+        _ => Err(std::io::Error::last_os_error()),
+    }
+}
+
+fn safe_tcgetattr(fd: c_int) -> std::io::Result<termios> {
+    let mut term = mem::MaybeUninit::<termios>::uninit();
+    io_result(unsafe { ::libc::tcgetattr(fd, term.as_mut_ptr()) })?;
+    Ok(unsafe { term.assume_init() })
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, PartialOrd)]

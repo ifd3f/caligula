@@ -18,7 +18,6 @@ mod logging;
 mod native;
 mod orchestrator;
 mod runtime;
-mod tty;
 mod ui;
 mod util;
 

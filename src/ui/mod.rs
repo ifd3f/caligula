@@ -12,7 +12,7 @@ use crate::{
     orchestrator::Orchestrator,
     runtime::RemoteSpawn,
     tty::TermiosRestore,
-    ui::{simple_ui::do_setup_wizard, utils::TUICapture},
+    ui::{simple_ui::do_setup_wizard, utils::TuiManager},
 };
 use tracing::{debug, info};
 
@@ -47,7 +47,7 @@ pub fn main(
     )?;
 
     if args.interactive.is_interactive() {
-        let mut tui = TUICapture::new()?;
+        let mut tui = TuiManager::new()?;
         let terminal = tui.terminal();
         // create app and run it
         fancy_ui::run(

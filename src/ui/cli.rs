@@ -83,6 +83,11 @@ pub struct BurnArgs {
     /// If we don't have permissions on the output file, should we try to become root?
     #[arg(long, default_value = "ask")]
     pub root: UseSudo,
+
+    /// Which UI implementation to use. If not provided, automatically detects based on
+    /// terminal capabilities.
+    #[arg(long, default_value = "auto")]
+    pub ui: Ui,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -113,6 +118,13 @@ pub enum UseSudo {
     Ask,
     Always,
     Never,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Ui {
+    Auto,
+    FancyTui,
+    SimpleTui,
 }
 
 fn parse_path_exists(p: &str) -> Result<PathBuf, String> {
