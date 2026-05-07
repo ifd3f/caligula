@@ -7,7 +7,7 @@ use std::{fs::File, sync::Arc};
 
 use tracing::{debug, info};
 
-pub use self::{cli::BurnArgs, utils::ByteSpeed};
+pub use self::{cli::BurnArgs, utils::ByteSpeed, simple_ui::FacadeExt};
 use crate::{
     facade::CaligulaFacade,
     logging::LogPaths,

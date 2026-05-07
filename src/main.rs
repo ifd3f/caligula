@@ -22,6 +22,9 @@ mod tty;
 mod ui;
 mod util;
 
+#[cfg(feature = "gui")]
+mod gui;
+
 /// A lightweight, user-friendly disk imaging tool
 #[derive(clap::Parser, Debug)]
 #[command(author, version, about, long_about = None, flatten_help = true)]
@@ -34,6 +37,9 @@ pub struct Args {
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
     Burn(ui::BurnArgs),
+
+    #[cfg(feature = "gui")]
+    Gui,
 
     /// INTERNAL ONLY!
     ///
@@ -68,6 +74,24 @@ fn main() {
             match ui::main(runtime, facade, log_paths.into(), burn_args) {
                 Ok(_) => (),
                 Err(e) => handle_toplevel_error(e),
+            }
+        }
+        #[cfg(feature = "gui")]
+        Command::Gui => {
+            // FIXME: duplicated setup from `Command::Burn`
+
+            let state_dir = util::ensure_state_dir().unwrap();
+            let log_paths = logging::LogPaths::init(&state_dir);
+            logging::init_logging_parent(&log_paths);
+
+            let runtime = crate::runtime::AsyncRuntime::start();
+            let orc = Arc::new(make_real_facade(log_paths.main()));
+
+            debug!("Starting primary process");
+            match gui::main(runtime, orc, log_paths.into()) {
+                Ok(_) => (),
+                // FIXME: shitty to_string on error
+                Err(e) => handle_toplevel_error(anyhow::anyhow!(e.to_string())),
             }
         }
         Command::HerderDaemon(args) => {

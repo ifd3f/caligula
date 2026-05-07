@@ -13,7 +13,6 @@ use tracing::debug;
 use self::{
     ask_hash::ask_hash,
     ask_outfile::{ask_compression, ask_outfile, confirm_write},
-    facade_ext::FacadeExt as _,
 };
 use super::cli::BurnArgs;
 use crate::{
@@ -27,6 +26,8 @@ use crate::{
     runtime::RemoteSpawn,
     ui::cli::UseSudo,
 };
+
+pub use facade_ext::FacadeExt;
 
 mod ask_hash;
 mod ask_outfile;
