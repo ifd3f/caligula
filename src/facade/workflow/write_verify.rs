@@ -25,7 +25,7 @@ impl super::Workflow for WriteVerifyWorkflow {
 }
 
 impl WriteVerifyWorkflow {
-    pub fn new(
+    pub fn from_file(
         input_file: PathBuf,
         compression: CompressionFormat,
         target: WriteTarget,

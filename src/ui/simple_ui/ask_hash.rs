@@ -106,7 +106,7 @@ fn ask_hash_loop(cf: CompressionFormat) -> anyhow::Result<Option<BeginHashParams
 }
 
 #[tracing::instrument]
-fn ask_hash_once(cf: CompressionFormat) -> anyhow::Result<BeginHashParams> {
+fn ask_hash_once(cf: CompressionFormat) -> Result<BeginHashParams> {
     let input_hash = Text::new("What is the file's hash?")
         .with_help_message(
             "We will guess the hash algorithm from your input. Press ESC or type \"skip\" to skip.",
@@ -204,12 +204,4 @@ struct BeginHashParams {
     expected_hash: Vec<u8>,
     alg: HashAlg,
     hasher_compression: CompressionFormat,
-}
-
-/// A signaling error for the outer loop.
-#[derive(Debug, thiserror::Error)]
-#[error("Recoverable error")]
-enum Recoverable {
-    AskAgain,
-    Skip,
 }

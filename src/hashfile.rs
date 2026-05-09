@@ -4,8 +4,6 @@ use std::{
     path::Path,
 };
 
-use anyhow::anyhow;
-
 use crate::hash::HashAlg;
 
 /// Common filenames of hash files.
@@ -101,7 +99,20 @@ pub fn find_hash_in_user_file<'a>(
     None
 }
 
-fn parse_hashfile(hash_file: impl BufRead, input_file: &str) -> anyhow::Result<Option<Vec<u8>>> {
+#[derive(Debug, thiserror::Error)]
+pub enum ReadHashfileError {
+    #[error("Failed to decode hash: {0}")]
+    Decode(#[from] base16::DecodeError),
+    #[error("Error reading hash file: {0}")]
+    Read(#[from] std::io::Error),
+    #[error("Hash file has invalid format")]
+    InvalidFormat,
+}
+
+fn parse_hashfile(
+    hash_file: impl BufRead,
+    input_file: &str,
+) -> Result<Option<Vec<u8>>, ReadHashfileError> {
     for line in hash_file.lines() {
         match line?.split_once(char::is_whitespace) {
             Some((hash, file)) if file.trim_start() == input_file => {
@@ -113,7 +124,7 @@ fn parse_hashfile(hash_file: impl BufRead, input_file: &str) -> anyhow::Result<O
                     }
                 }
             }
-            None => return Err(anyhow!("Invalid hash file")),
+            None => return Err(ReadHashfileError::InvalidFormat),
             _ => continue,
         }
     }

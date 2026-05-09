@@ -13,7 +13,10 @@ use crate::{
     logging::LogPaths,
     runtime::RemoteSpawn,
     tty::TermiosRestore,
-    ui::{simple_ui::do_setup_wizard, utils::TUICapture},
+    ui::{
+        simple_ui::{WizardError, do_setup_wizard},
+        utils::TUICapture,
+    },
 };
 
 /// Entrypoint for both TUI-based UIs.
@@ -22,7 +25,7 @@ pub fn main(
     facade: Arc<impl CaligulaFacade>,
     log_paths: Arc<LogPaths>,
     args: BurnArgs,
-) -> anyhow::Result<()> {
+) {
     let _termios_restore = match File::open("/dev/tty") {
         Ok(tty) => TermiosRestore::new(tty).ok(),
         Err(error) => {
@@ -34,17 +37,30 @@ pub fn main(
         }
     };
 
-    let Some(start_write_verify) = do_setup_wizard(&args)? else {
-        return Ok(());
+    let Ok(start_write_verify) = do_setup_wizard(&args).inspect_err(|e| match e {
+        WizardError::UserCanceled => {
+            eprintln!("User cancelled.");
+        }
+        err => {
+            eprintln!("{err}");
+        }
+    }) else {
+        return;
     };
 
-    let child_state = simple_ui::try_start_write_or_escalate(
+    let Ok(child_state) = simple_ui::try_start_write_or_escalate(
         facade.clone(),
         &runtime,
         &start_write_verify,
         args.root,
         args.interactive.is_interactive(),
-    )?;
+    )
+    .inspect_err(|e| {
+        eprintln!("Failed to escalate: {e}");
+        eprintln!("Exiting.")
+    }) else {
+        return;
+    };
 
     if args.interactive.is_interactive() {
         let mut tui = TUICapture::new()?;
@@ -68,5 +84,4 @@ pub fn main(
     }
 
     debug!("Done!");
-    Ok(())
 }

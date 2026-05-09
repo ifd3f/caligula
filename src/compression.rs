@@ -1,6 +1,7 @@
 mod zstd_streaming_decoder;
 
 use std::{
+    error::Error,
     fmt::Display,
     io::{BufRead, Read},
     path::Path,
@@ -8,6 +9,12 @@ use std::{
 
 use clap::ValueEnum;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, thiserror::Error)]
+#[error("Decompression error: {inner}")]
+pub struct DecompressionError {
+    inner: Box<dyn Error>,
+}
 
 macro_rules! generate {
     {
@@ -136,7 +143,7 @@ macro_rules! generate {
         }
 
         /// Open a decompressor for the given reader.
-        pub fn decompress<R>(cf: CompressionFormat, $reader_var: R) -> anyhow::Result<DecompressRead<R>>
+        pub fn decompress<R>(cf: CompressionFormat, $reader_var: R) -> Result<DecompressRead<R>, DecompressionError>
         where
             R : BufRead
         {
@@ -187,7 +194,7 @@ generate! {
         extension_pattern: "zst",
         display: "zstd/ZStandard",
         from_reader() -> self::zstd_streaming_decoder::StreamingDecoder<R, ruzstd::frame_decoder::FrameDecoder> {
-            self::zstd_streaming_decoder::StreamingDecoder::new(r)?
+            self::zstd_streaming_decoder::StreamingDecoder::new(r).map_err(|e| DecompressionError { inner: Box::new(e) })?
         }
     }
 }

@@ -7,7 +7,7 @@
 use std::{sync::Arc, time::Duration};
 
 use indicatif::{ProgressBar, ProgressStyle};
-use inquire::Confirm;
+use inquire::{Confirm, InquireError};
 use tracing::debug;
 
 use self::{
@@ -17,7 +17,7 @@ use self::{
 };
 use super::cli::BurnArgs;
 use crate::{
-    device::WriteTarget,
+    device::{DeviceParseError, WriteTarget},
     facade::{
         CaligulaFacade, DaemonError, WVState, WriteVerifyWorkflow, watch::Watch,
         workflow::write_verify::WriteVerifyWorkflowError,
@@ -35,25 +35,48 @@ mod facade_ext;
 /// How often we refresh the display
 const REFRESH_PERIOD: Duration = Duration::from_millis(250);
 
+#[derive(Debug, thiserror::Error)]
+pub enum WizardError {
+    #[error("User cancelled.")]
+    UserCanceled,
+    #[error("Invalid output file: {0}")]
+    InvalidOutputFile(#[from]DeviceParseError),
+    #[error("Error reading input file: {0}")]
+    ReadInputFile(std::io::Error),
+}
+
+impl From<InquireError> for WizardError {
+    fn from(value: InquireError) -> Self {
+        match value {
+            InquireError::NotTTY => todo!(),
+            InquireError::InvalidConfiguration(_) => todo!(),
+            InquireError::IO(error) => todo!(),
+            InquireError::OperationCanceled => todo!(),
+            InquireError::OperationInterrupted => todo!(),
+            InquireError::Custom(error) => todo!(),
+        }
+    }
+}
+
 /// Run the simple UI setup wizard, a cruel being that interrogates the user
 /// until it is satisfied with its answers.
 ///
 /// Returns the [BeginParams] if the user confirms, and None if the user
 /// doesn't.
 #[tracing::instrument(skip_all)]
-pub fn do_setup_wizard(args: &BurnArgs) -> Result<Option<WriteVerifyWorkflow>, anyhow::Error> {
+pub fn do_setup_wizard(args: &BurnArgs) -> Result<WriteVerifyWorkflow, WizardError> {
     let compression = ask_compression(args)?;
     let _hash_info = ask_hash(args, compression)?;
     let target = match &args.out {
         Some(f) => WriteTarget::try_from(f.as_ref())?,
         None => ask_outfile(args)?,
     };
-    let begin_params = WriteVerifyWorkflow::new(args.image.clone(), compression, target)?;
+    let begin_params = WriteVerifyWorkflow::from_file(args.image.clone(), compression, target).map_err(WizardError::ReadInputFile)?;
     if !confirm_write(args, &begin_params)? {
         eprintln!("Aborting.");
-        return Ok(None);
+        return Err(WizardError::UserCanceled);
     }
-    Ok(Some(begin_params))
+    Ok(begin_params)
 }
 
 pub struct Params<'a> {

@@ -192,12 +192,11 @@ async fn spawn_herder(
     let mut child = match escalated {
         true => run_escalate(&cmd, modify_cmd)
             .await
-            .map_err(|e| DaemonError::DaemonSpawnFailure(true, e.into()))?,
+            .map_err(DaemonError::DaemonSpawnFailureEsc)?,
         false => {
             let mut c = tokio::process::Command::from(cmd);
             modify_cmd(&mut c);
-            c.spawn()
-                .map_err(|e| DaemonError::DaemonSpawnFailure(false, e.into()))?
+            c.spawn().map_err(DaemonError::DaemonSpawnFailure)?
         }
     };
 

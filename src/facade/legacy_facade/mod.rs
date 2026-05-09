@@ -10,7 +10,10 @@ mod facade;
 pub use facade::make_legacy_facade_impl;
 use futures::stream::BoxStream;
 
-use crate::herder_api::{HerdAction, HerdEvent, TopLevelHerdEvent};
+use crate::{
+    escalation::EscalationError,
+    herder_api::{HerdAction, HerdEvent, TopLevelHerdEvent},
+};
 
 /// Simple facade to an object that handles the herding of all child processes
 /// and subherds. This includes lifecycle management and communication.
@@ -52,8 +55,10 @@ pub enum StartWriterError<E: HerdEvent> {
 pub enum DaemonError {
     #[error("Unexpectedly disconnected from writer")]
     UnexpectedDisconnect,
-    #[error("Failed to spawn daemon (escalated={0:?}): {1}")]
-    DaemonSpawnFailure(bool, anyhow::Error),
+    #[error("Failed to spawn daemon {0}")]
+    DaemonSpawnFailure(std::io::Error),
+    #[error("Failed to spawn escalated daemon {0}")]
+    DaemonSpawnFailureEsc(EscalationError),
     #[error("Error in transport: {0:?}")]
     TransportFailure(std::io::Error),
     #[error("Unexpected event type: {0:?}")]

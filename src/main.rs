@@ -70,31 +70,13 @@ fn main() {
             let facade = Arc::new(make_real_facade(log_paths.main()));
 
             debug!("Starting primary process");
-            match ui::main(runtime, facade, log_paths.into(), burn_args) {
-                Ok(_) => (),
-                Err(e) => handle_toplevel_error(e),
-            }
+            ui::main(runtime, facade, log_paths.into(), burn_args);
         }
         Command::HerderDaemon(args) => {
             logging::init_logging_child(args.log_file);
             herder_daemon::main();
         }
         Command::Bench(args) => crate::benchmarking::main(args),
-    }
-}
-
-fn handle_toplevel_error(err: anyhow::Error) {
-    use inquire::InquireError;
-
-    if let Some(e) = err.downcast_ref::<InquireError>() {
-        match e {
-            InquireError::OperationCanceled
-            | InquireError::OperationInterrupted
-            | InquireError::NotTTY => eprintln!("{e}"),
-            _ => panic!("{err}"),
-        }
-    } else {
-        panic!("{err}");
     }
 }
 
