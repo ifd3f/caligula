@@ -8,9 +8,9 @@ use bytes::{Bytes, BytesMut};
 use serde::{Serialize, de::DeserializeOwned};
 
 pub use crate::io_graph::{
-    active::{forward::ForwardWorker, hash::HashWorker},
-    junction::{Junction, JunctionTracker},
-    passive::{buf::BufNode, file::FileNode},
+    active::{file_reader::FileReader, hash::HashWorker},
+    junction::{Junction, JunctionTracker, RecvJunction},
+    passive::buf::BufNode,
 };
 
 mod active;

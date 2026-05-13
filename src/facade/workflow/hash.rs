@@ -1,7 +1,6 @@
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
 use bytes::Bytes;
-use bytesize::ByteSize;
 use tokio::{
     sync::{oneshot, watch},
     task::JoinHandle,
@@ -15,7 +14,7 @@ use crate::{
         workflow::{Workflow, WorkflowState},
     },
     hash::HashAlg,
-    io_graph::{BufNode, FileNode, ForwardWorker, GraphContext, JunctionTracker, Worker as _},
+    io_graph::{BufNode, FileReader, GraphContext, JunctionTracker, RecvJunction, Worker as _},
 };
 
 /// Parameters for starting a new hashing operation.
@@ -127,17 +126,16 @@ fn run_thread(
 ) {
     std::thread::scope(move |s| {
         let setup = (|| {
-            let file = FileNode::new(wf.file.clone(), ByteSize::kib(64).as_u64() as usize)?;
             let buf = BufNode::new(1024);
 
             let j = js.create();
 
+            let read = FileReader::new(&wf.file, buf.input, 65536)?;
             let start_data = StartData {
-                size: file.size(),
+                size: read.size(),
                 hasher_input_junction: j.id(),
             };
-            let read = ForwardWorker::new(file.output, buf.input);
-            let hash = wf.alg.hash_worker(buf.output);
+            let hash = wf.alg.hash_worker(RecvJunction::new(buf.output, j));
 
             Ok::<_, std::io::Error>((start_data, read, hash))
         })();
