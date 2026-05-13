@@ -7,6 +7,7 @@ authors = ["Astrid Yu <astrid@astrid.tech>"]
 version = "0.5.0-rc.2"
 edition = "2024"
 license = "GPL-3.0"
+include = ["/src", "/native", "/build.rs", "/README.md"]
 
 [dependencies]
 aligned-vec = "0.5.0"
