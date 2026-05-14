@@ -1,11 +1,11 @@
 use std::{
     fs::File,
-    io::{BufReader, Read},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use bytes::{BufMut, Bytes, BytesMut};
-use nix::fcntl::PosixFadviseAdvice;
+use bytes::Bytes;
+use memmap2::{Advice, Mmap, MmapOptions};
 use tracing_unwrap::ResultExt;
 
 use crate::io_graph::{SendBytes, Worker};
@@ -17,24 +17,26 @@ pub struct FileReader<Tx: SendBytes> {
     read_size: usize,
     output: Tx,
     file: File,
+    mmap: Mmap,
 }
 
 impl<Tx: SendBytes + Send> FileReader<Tx> {
-    pub fn new(path: &Path, tx: Tx, read_size: usize) -> std::io::Result<Box<Self>> {
+    pub fn new(path: &Path, tx: Tx) -> std::io::Result<Box<Self>> {
         let file = File::open(path)?;
-        let size = file.metadata()?.len();
 
-        /*
-        nix::fcntl::posix_fadvise(&file, 0, 0, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)
-            .ok_or_log();
-        */
+        let opts = MmapOptions::new();
+
+        let mmap = unsafe { opts.map(&file)? };
+
+        mmap.advise(Advice::Sequential).ok_or_log();
 
         Ok(Box::new(Self {
             output: tx,
-            size,
+            size: mmap.len() as u64,
             path: path.to_owned(),
+            mmap,
             file,
-            read_size,
+            read_size: 65536 * 4,
         }))
     }
 
@@ -46,6 +48,10 @@ impl<Tx: SendBytes + Send> FileReader<Tx> {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    pub fn read_size(&self) -> usize {
+        self.read_size
+    }
 }
 
 impl<Tx: SendBytes + Send> Worker for FileReader<Tx> {
@@ -56,28 +62,38 @@ impl<Tx: SendBytes + Send> Worker for FileReader<Tx> {
         mut self: Box<Self>,
         context: &crate::io_graph::GraphContext,
     ) -> Result<Self::Output, Self::Error> {
-        while !context.halt() {
-            let mut buf = BytesMut::with_capacity(self.read_size);
+        let mmap = Arc::new(self.mmap);
+        let mut big_bytes = Bytes::from_owner(ArcMmapAsRefWrapper(mmap.clone()));
 
-            // SAFETY: We are going to overwrite these bytes immediately.
-            // The bytes we don't read will get trimmed down to size.
-            // If you're concerned that the `File` impl may read these bytes, that's just
-            // way too paranoid.
-            unsafe {
-                buf.set_len(self.read_size);
-            }
+        let mut offset = 0;
+        while !big_bytes.is_empty() && !context.halt() {
+            let out = if big_bytes.len() <= self.read_size {
+                // Just take what's left and ship it
+                std::mem::take(&mut big_bytes)
+            } else {
+                // Push self forward, return what we skipped
+                big_bytes.split_to(self.read_size)
+            };
 
-            let count = self.file.read(&mut buf)?;
-            if count == 0 {
-                break;
-            }
+            // Force a read of the chunk we just took
+            mmap.advise_range(Advice::PopulateRead, offset, out.len())?;
 
-            buf.truncate(count);
-            self.output.send(buf.freeze())?;
+            offset += out.len();
+
+            self.output.send(out)?;
         }
 
         self.output.close()?;
 
         Ok(())
+    }
+}
+
+/// Because [`Bytes::from_owner`] doesn't like raw [`Arc<Mmap>`]s.
+struct ArcMmapAsRefWrapper(Arc<Mmap>);
+
+impl AsRef<[u8]> for ArcMmapAsRefWrapper {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
     }
 }
