@@ -104,7 +104,7 @@ pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandl
         }
     };
 
-    let (_tx, rx) = watch::channel(HashingState::new(Instant::now(), start.size));
+    let (_tx, rx) = watch::channel(HashingState::new(Instant::now(), start.file_size));
     let jh = tokio::task::spawn_local(async move {
         let (_ctx, _js) = state.as_ref();
 
@@ -115,7 +115,7 @@ pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandl
 }
 
 struct StartData {
-    size: u64,
+    file_size: u64,
     hasher_input_junction: u32,
 }
 
@@ -127,48 +127,44 @@ fn run_thread(
     js: &JunctionTracker,
 ) {
     std::thread::scope(move |s| {
-        let setup = (|| {
-            let (buf_input, buf_output) = io_graph::buf(1024);
-
-            let j = js.create();
-
-            let read = FileReader::new(&wf.file, 65536)?;
-            let start_data = StartData {
-                size: read.size(),
-                hasher_input_junction: j.id(),
-            };
-            let hash = wf.alg.hash_worker();
-
-            let buf_output = RecvJunction::new(buf_output, j);
-
-            Ok::<_, std::io::Error>((start_data, read, hash, buf_input, buf_output))
-        })();
-
-        let (read, hash, buf_input, buf_output) = match setup {
-            Ok((start_data, read, hash, buf_input, buf_output)) => {
-                let Ok(()) = tx_start.send(Ok(start_data)) else {
-                    return;
-                };
-                (read, hash, buf_input, buf_output)
-            }
-            Err(err) => {
-                tx_start.send(Err(err)).ok();
+        // ensure file can be opened
+        let file = match FileReader::new(&wf.file, 65536) {
+            Ok(f) => f,
+            Err(e) => {
+                tx_start.send(Err(e)).ok();
                 return;
             }
         };
 
+        // construct the rest of the graph
+        let hasher_input_junction = js.create();
+        let (buf_input, buf_output) = io_graph::buf(1024);
+        let hash = wf.alg.hash_worker();
+
+        // notify the caller of success
+        let Ok(()) = tx_start.send(Ok(StartData {
+            file_size: file.size(),
+            hasher_input_junction: hasher_input_junction.id(),
+        })) else {
+            return;
+        };
+
+        // actually do the thing
         let r = std::thread::Builder::new()
             .name("fread".into())
-            .spawn_scoped(s, move || read.run(ctx, buf_input))
+            .spawn_scoped(s, move || file.run(ctx, buf_input))
             .unwrap();
         let h = std::thread::Builder::new()
             .name("hash".into())
-            .spawn_scoped(s, move || hash.run(ctx, buf_output))
+            .spawn_scoped(s, move || {
+                hash.run(ctx, RecvJunction::new(buf_output, hasher_input_junction))
+            })
             .unwrap();
 
         let r = r.join().unwrap();
         let h = h.join().unwrap();
 
+        // send final result
         tx_end.send(r.and(h)).ok();
     })
 }
