@@ -139,9 +139,9 @@ fn run_thread(
             };
             let hash = wf.alg.hash_worker();
 
-            Ok::<_, std::io::Error>((start_data, read, hash, buf_input, move || {
-                RecvJunction::new(buf_output.into_local(), j)
-            }))
+            let buf_output = RecvJunction::new(buf_output, j);
+
+            Ok::<_, std::io::Error>((start_data, read, hash, buf_input, buf_output))
         })();
 
         let (read, hash, buf_input, buf_output) = match setup {
@@ -159,11 +159,11 @@ fn run_thread(
 
         let r = std::thread::Builder::new()
             .name("fread".into())
-            .spawn_scoped(s, move || read.run(ctx, buf_input.into_local()))
+            .spawn_scoped(s, move || read.run(ctx, buf_input))
             .unwrap();
         let h = std::thread::Builder::new()
             .name("hash".into())
-            .spawn_scoped(s, move || hash.run(ctx, buf_output()))
+            .spawn_scoped(s, move || hash.run(ctx, buf_output))
             .unwrap();
 
         let r = r.join().unwrap();
