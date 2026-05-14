@@ -215,12 +215,15 @@ fn run_thread(
         // actually do the thing
         let r = std::thread::Builder::new()
             .name("fread".into())
-            .spawn_scoped(s, move || file.run(ctx, buf_input))
+            .spawn_scoped(s, move || file.run(ctx, buf_input.bind_to_thread()))
             .unwrap();
         let h = std::thread::Builder::new()
             .name("hash".into())
             .spawn_scoped(s, move || {
-                hash.run(ctx, RecvJunction::new(buf_output, hasher_input_junction))
+                hash.run(
+                    ctx,
+                    RecvJunction::new(buf_output.bind_to_thread(), hasher_input_junction),
+                )
             })
             .unwrap();
 
