@@ -1,9 +1,14 @@
-use std::{path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use bytes::Bytes;
 use tokio::{
     sync::{oneshot, watch},
     task::JoinHandle,
+    time::interval,
 };
 
 use crate::{
@@ -19,6 +24,7 @@ use crate::{
     },
 };
 
+const REFRESH_PERIOD: Duration = Duration::from_millis(10);
 /// Parameters for starting a new hashing operation.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct HashWorkflow {
@@ -82,11 +88,12 @@ impl WorkflowState for HashingState {
 }
 
 pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandle<()>>) {
+    // state shared between worker threads and tracker coroutine
     let state = Arc::new((GraphContext::new(), JunctionTracker::new()));
 
+    // spawn thread with channels for communicating one-off data
     let (tx_start, rx_start) = oneshot::channel();
-    let (tx_end, rx_end) = oneshot::channel();
-
+    let (tx_end, mut rx_end) = oneshot::channel();
     let _thread = std::thread::spawn({
         let state = state.clone();
         let params = params.clone();
@@ -96,27 +103,69 @@ pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandl
         }
     });
 
+    // ensure it started correctly
     let start = match rx_start.await.expect("thread panicked!") {
         Ok(r) => r,
         Err(e) => {
+            // failed to start? return an error
             let (_tx, rx) = watch::channel(HashingState::failed(Instant::now(), e));
             return (Watch { rx }, None);
         }
     };
 
-    let (_tx, rx) = watch::channel(HashingState::new(Instant::now(), start.file_size));
-    let jh = tokio::task::spawn_local(async move {
-        let (_ctx, _js) = state.as_ref();
-
-        rx_end.await.unwrap().unwrap();
+    // start the tracker in a background task
+    let (tx, rx) = watch::channel(HashingState::new(Instant::now(), start.file_size));
+    let tracker_jh = tokio::task::spawn_local(async move {
+        let (_ctx, js) = state.as_ref();
+        tracker_coroutine(start.hasher_input_junction, js, &mut rx_end, tx).await;
     });
 
-    (Watch { rx }, Some(jh))
+    (Watch { rx }, Some(tracker_jh))
 }
 
 struct StartData {
     file_size: u64,
     hasher_input_junction: u32,
+}
+
+async fn tracker_coroutine(
+    hasher_input_junction: u32,
+    js: &JunctionTracker,
+    rx_end: &mut oneshot::Receiver<Result<Bytes, std::io::Error>>,
+    tx: watch::Sender<HashingState>,
+) {
+    let mut interval = interval(REFRESH_PERIOD);
+
+    loop {
+        interval.tick().await;
+
+        // log transfers into history
+        let hist = js.take_transfers();
+        tx.send_modify(|s| {
+            for (j, txfr) in hist {
+                if j == hasher_input_junction {
+                    s.read_bytes_history.push(txfr.started(), txfr.bytes());
+                }
+            }
+        });
+
+        match rx_end.try_recv() {
+            Ok(r) => {
+                // done: notify and quit
+                tx.send_modify(|s| {
+                    s.read_bytes_history.push(Instant::now(), s.file_size_bytes);
+                    s.result = Some(r);
+                });
+                return;
+            }
+            Err(oneshot::error::TryRecvError::Empty) => {
+                // no response: keep going
+            }
+            Err(oneshot::error::TryRecvError::Closed) => {
+                panic!("Hasher thread panicked!")
+            }
+        }
+    }
 }
 
 fn run_thread(
