@@ -21,7 +21,10 @@ pub fn run_benchmark<B: BenchmarkParams>(bench_params: B) {
         let bench = bench_params.setup(ctx);
 
         // spawn progress bar thread
-        let jh = s.spawn(|| progress_bar_thread(ctx));
+        let jh = std::thread::Builder::new()
+            .name("benchbar".into())
+            .spawn_scoped(s, || progress_bar_thread(ctx))
+            .unwrap();
 
         // run bench in this thread
         bench.run(ctx);

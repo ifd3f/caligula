@@ -155,8 +155,14 @@ fn run_thread(
             }
         };
 
-        let r = s.spawn(move || read.run(ctx));
-        let h = s.spawn(move || hash.run(ctx));
+        let r = std::thread::Builder::new()
+            .name("fread".into())
+            .spawn_scoped(s, move || read.run(ctx))
+            .unwrap();
+        let h = std::thread::Builder::new()
+            .name("hash".into())
+            .spawn_scoped(s, move || hash.run(ctx))
+            .unwrap();
 
         let r = r.join().unwrap();
         let h = h.join().unwrap();

@@ -6,6 +6,8 @@ SHA256SUMS
 *.bz2
 caligula*
 pid
+*.data
+*.old
 
 .idea/
 
