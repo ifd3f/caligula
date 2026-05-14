@@ -128,7 +128,7 @@ fn run_thread(
 ) {
     std::thread::scope(move |s| {
         let setup = (|| {
-            let (buf_input, buf_output) = io_graph::buf(1024);
+            let (buf_input, buf_output) = io_graph::buf(64);
 
             let j = js.create();
 
