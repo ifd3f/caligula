@@ -34,7 +34,7 @@ pub fn main(
         }
     };
 
-    let Some(start_write_verify) = do_setup_wizard(&args)? else {
+    let Some(start_write_verify) = do_setup_wizard(facade.as_ref(), &args)? else {
         return Ok(());
     };
 

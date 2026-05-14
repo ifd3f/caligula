@@ -49,7 +49,7 @@ pub struct HashingState {
     /// How big the file is
     file_size_bytes: u64,
     /// Result of the operation. If [`None`], the operation is not yet finished.
-    result: Option<std::io::Result<Bytes>>,
+    result: Option<Result<Bytes, Arc<std::io::Error>>>,
 }
 
 impl HashingState {
@@ -65,7 +65,7 @@ impl HashingState {
         Self {
             read_bytes_history: ByteSeries::new(now),
             file_size_bytes: 0,
-            result: Some(Err(error)),
+            result: Some(Err(error.into())),
         }
     }
 
@@ -79,7 +79,7 @@ impl HashingState {
 }
 
 impl WorkflowState for HashingState {
-    type Error = std::io::Error;
+    type Error = Arc<std::io::Error>;
     type Success = Bytes;
 
     fn result(&self) -> Option<&Result<Self::Success, Self::Error>> {
@@ -87,6 +87,7 @@ impl WorkflowState for HashingState {
     }
 }
 
+#[tracing::instrument]
 pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandle<()>>) {
     // state shared between worker threads and tracker coroutine
     let state = Arc::new((GraphContext::new(), JunctionTracker::new()));
@@ -113,6 +114,8 @@ pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandl
         }
     };
 
+    tracing::info!(?start, "got successful start data");
+
     // start the tracker in a background task
     let (tx, rx) = watch::channel(HashingState::new(Instant::now(), start.file_size));
     let tracker_jh = tokio::task::spawn_local(async move {
@@ -123,17 +126,20 @@ pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandl
     (Watch { rx }, Some(tracker_jh))
 }
 
+#[derive(Debug, Clone)]
 struct StartData {
     file_size: u64,
     hasher_input_junction: u32,
 }
 
+#[tracing::instrument(skip_all)]
 async fn tracker_coroutine(
     hasher_input_junction: u32,
     js: &JunctionTracker,
     rx_end: &mut oneshot::Receiver<Result<Bytes, std::io::Error>>,
     tx: watch::Sender<HashingState>,
 ) {
+    tracing::debug!("starting tracker coroutine");
     let mut interval = interval(REFRESH_PERIOD);
 
     loop {
@@ -141,20 +147,23 @@ async fn tracker_coroutine(
 
         // log transfers into history
         let hist = js.take_transfers();
-        tx.send_modify(|s| {
-            for (j, txfr) in hist {
-                if j == hasher_input_junction {
-                    s.read_bytes_history.push(txfr.started(), txfr.bytes());
+        if !hist.is_empty() {
+            tracing::trace!(n_txfrs = ?hist.len(), "got multiple transfers to log");
+            tx.send_modify(|s| {
+                for (j, txfr) in hist {
+                    if j == hasher_input_junction {
+                        s.read_bytes_history.push(txfr.started(), txfr.bytes());
+                    }
                 }
-            }
-        });
+            });
+        }
 
         match rx_end.try_recv() {
             Ok(r) => {
                 // done: notify and quit
                 tx.send_modify(|s| {
                     s.read_bytes_history.push(Instant::now(), s.file_size_bytes);
-                    s.result = Some(r);
+                    s.result = Some(r.map_err(Arc::new));
                 });
                 return;
             }
@@ -168,6 +177,7 @@ async fn tracker_coroutine(
     }
 }
 
+#[tracing::instrument(skip_all)]
 fn run_thread(
     wf: &HashWorkflow,
     tx_start: oneshot::Sender<std::io::Result<StartData>>,
@@ -180,6 +190,7 @@ fn run_thread(
         let file = match FileReader::new(&wf.file, 65536) {
             Ok(f) => f,
             Err(e) => {
+                tracing::error!("error opening file for hashing: {e}");
                 tx_start.send(Err(e)).ok();
                 return;
             }
@@ -190,11 +201,14 @@ fn run_thread(
         let (buf_input, buf_output) = io_graph::buf(1024);
         let hash = wf.alg.hash_worker();
 
-        // notify the caller of success
-        let Ok(()) = tx_start.send(Ok(StartData {
+        let start = StartData {
             file_size: file.size(),
             hasher_input_junction: hasher_input_junction.id(),
-        })) else {
+        };
+        tracing::info!(?start, "notifying with start data");
+
+        // notify the caller of success
+        let Ok(()) = tx_start.send(Ok(start)) else {
             return;
         };
 
@@ -210,10 +224,14 @@ fn run_thread(
             })
             .unwrap();
 
+        tracing::info!("threads spawned, joining on both");
         let r = r.join().unwrap();
         let h = h.join().unwrap();
 
+        let end = r.and(h);
+
         // send final result
-        tx_end.send(r.and(h)).ok();
+        tracing::info!(?end, "notifying with end data");
+        tx_end.send(end).ok();
     })
 }

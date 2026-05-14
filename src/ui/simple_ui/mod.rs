@@ -19,8 +19,9 @@ use super::cli::BurnArgs;
 use crate::{
     device::WriteTarget,
     facade::{
-        CaligulaFacade, DaemonError, WVState, WriteVerifyWorkflow, watch::Watch,
-        workflow::write_verify::WriteVerifyWorkflowError,
+        CaligulaFacade, DaemonError, Orchestrator, WVState, WriteVerifyWorkflow,
+        watch::Watch,
+        workflow::{hash::HashWorkflow, write_verify::WriteVerifyWorkflowError},
     },
     herder_api::{error::DiskError, write_verify::LegacyWriteVerifyError},
     logging::LogPaths,
@@ -41,9 +42,12 @@ const REFRESH_PERIOD: Duration = Duration::from_millis(100);
 /// Returns the [BeginParams] if the user confirms, and None if the user
 /// doesn't.
 #[tracing::instrument(skip_all)]
-pub fn do_setup_wizard(args: &BurnArgs) -> Result<Option<WriteVerifyWorkflow>, anyhow::Error> {
+pub fn do_setup_wizard(
+    orc: &impl Orchestrator<HashWorkflow>,
+    args: &BurnArgs,
+) -> Result<Option<WriteVerifyWorkflow>, anyhow::Error> {
     let compression = ask_compression(args)?;
-    let _hash_info = ask_hash(args, compression)?;
+    let _hash_info = ask_hash(orc, args, compression)?;
     let target = match &args.out {
         Some(f) => WriteTarget::try_from(f.as_ref())?,
         None => ask_outfile(args)?,
