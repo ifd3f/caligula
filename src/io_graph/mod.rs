@@ -7,12 +7,11 @@ use bytes::Bytes;
 use serde::{Serialize, de::DeserializeOwned};
 
 pub use crate::io_graph::{
-    active::{file_reader::FileReader, hash::HashWorker},
     buf::buf,
     junction::{Junction, JunctionTracker, RecvJunction},
 };
 
-mod active;
+pub mod worker;
 mod buf;
 mod junction;
 

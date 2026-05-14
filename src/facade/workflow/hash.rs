@@ -14,7 +14,9 @@ use crate::{
         workflow::{Workflow, WorkflowState},
     },
     hash::HashAlg,
-    io_graph::{self, FileReader, GraphContext, JunctionTracker, RecvJunction, Worker as _},
+    io_graph::{
+        self, GraphContext, JunctionTracker, RecvJunction, Worker as _, worker::FileReader,
+    },
 };
 
 /// Parameters for starting a new hashing operation.

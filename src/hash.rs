@@ -45,7 +45,7 @@ macro_rules! generate {
             /// once, at `Worker::run()` invocation!
             pub fn hash_worker<'a>(&self, rx: impl crate::io_graph::RecvBytes + Send + 'a) -> Box<dyn crate::io_graph::Worker<Output=bytes::Bytes, Error=std::io::Error> + 'a> {
                 match self {
-                    $(Self::$enum_arm => crate::io_graph::HashWorker::<$hash_inner, _>::new(rx),)*
+                    $(Self::$enum_arm => crate::io_graph::worker::HashWorker::<$hash_inner, _>::new(rx),)*
                 }
             }
 
