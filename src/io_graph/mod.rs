@@ -11,9 +11,9 @@ pub use crate::io_graph::{
     junction::{Junction, JunctionTracker, RecvJunction},
 };
 
-pub mod worker;
 mod buf;
 mod junction;
+pub mod worker;
 
 /// A [`Node`] is an object in the I/O graph connected to other objects.
 #[must_use]
@@ -25,16 +25,21 @@ pub trait Node<'a> {
     fn info(&self) -> NodeInfo<'a, Self::Info>;
 }
 
-/// An active worker thread.
+/// A worker thread ready to be moved onto a thread and started with the given [`Args`].
 #[must_use]
-pub trait Worker: Send {
+pub trait Worker<Args>: Send {
     /// Final, successful value computed by this [`Worker`].
     type Output: Send + 'static;
 
     /// Error this [`Worker`] may encounter.
     type Error: Error + Send + 'static;
 
-    fn run(self: Box<Self>, context: &GraphContext) -> Result<Self::Output, Self::Error>;
+    /// Run this worker thread.
+    fn run(
+        self: Box<Self>,
+        context: &GraphContext,
+        args: Args,
+    ) -> Result<Self::Output, Self::Error>;
 }
 
 pub struct GraphContext {

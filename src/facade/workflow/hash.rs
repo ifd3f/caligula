@@ -132,22 +132,24 @@ fn run_thread(
 
             let j = js.create();
 
-            let read = FileReader::new(&wf.file, buf_input, 65536)?;
+            let read = FileReader::new(&wf.file, 65536)?;
             let start_data = StartData {
                 size: read.size(),
                 hasher_input_junction: j.id(),
             };
-            let hash = wf.alg.hash_worker(RecvJunction::new(buf_output, j));
+            let hash = wf.alg.hash_worker();
 
-            Ok::<_, std::io::Error>((start_data, read, hash))
+            let buf_output = RecvJunction::new(buf_output, j);
+
+            Ok::<_, std::io::Error>((start_data, read, hash, buf_input, buf_output))
         })();
 
-        let (read, hash) = match setup {
-            Ok((start_data, read, hash)) => {
+        let (read, hash, buf_input, buf_output) = match setup {
+            Ok((start_data, read, hash, buf_input, buf_output)) => {
                 let Ok(()) = tx_start.send(Ok(start_data)) else {
                     return;
                 };
-                (read, hash)
+                (read, hash, buf_input, buf_output)
             }
             Err(err) => {
                 tx_start.send(Err(err)).ok();
@@ -157,11 +159,11 @@ fn run_thread(
 
         let r = std::thread::Builder::new()
             .name("fread".into())
-            .spawn_scoped(s, move || read.run(ctx))
+            .spawn_scoped(s, move || read.run(ctx, buf_input))
             .unwrap();
         let h = std::thread::Builder::new()
             .name("hash".into())
-            .spawn_scoped(s, move || hash.run(ctx))
+            .spawn_scoped(s, move || hash.run(ctx, buf_output))
             .unwrap();
 
         let r = r.join().unwrap();

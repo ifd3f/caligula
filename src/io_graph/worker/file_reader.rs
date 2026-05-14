@@ -9,16 +9,15 @@ use bytes::BytesMut;
 use crate::io_graph::{SendBytes, Worker};
 
 /// A worker optimized for reading a file on disk.
-pub struct FileReader<Tx: SendBytes> {
+pub struct FileReader {
     path: PathBuf,
     size: u64,
     read_size: usize,
-    output: Tx,
     file: File,
 }
 
-impl<Tx: SendBytes + Send> FileReader<Tx> {
-    pub fn new(path: &Path, tx: Tx, read_size: usize) -> std::io::Result<Box<Self>> {
+impl FileReader {
+    pub fn new(path: &Path, read_size: usize) -> std::io::Result<Box<Self>> {
         let file = File::open(path)?;
         let size = file.metadata()?.len();
 
@@ -28,7 +27,6 @@ impl<Tx: SendBytes + Send> FileReader<Tx> {
         */
 
         Ok(Box::new(Self {
-            output: tx,
             size,
             path: path.to_owned(),
             file,
@@ -46,14 +44,17 @@ impl<Tx: SendBytes + Send> FileReader<Tx> {
     }
 }
 
-impl<Tx: SendBytes + Send> Worker for FileReader<Tx> {
+impl<Tx: SendBytes> Worker<Tx> for FileReader {
     type Error = std::io::Error;
     type Output = ();
 
     fn run(
         mut self: Box<Self>,
         context: &crate::io_graph::GraphContext,
+        args: Tx,
     ) -> Result<Self::Output, Self::Error> {
+        let mut tx = args;
+
         while !context.halt() {
             let mut buf = BytesMut::with_capacity(self.read_size);
 
@@ -71,10 +72,10 @@ impl<Tx: SendBytes + Send> Worker for FileReader<Tx> {
             }
 
             buf.truncate(count);
-            self.output.send(buf.freeze())?;
+            tx.send(buf.freeze())?;
         }
 
-        self.output.close()?;
+        tx.close()?;
 
         Ok(())
     }
