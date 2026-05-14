@@ -1,12 +1,10 @@
 use std::{
     fs::File,
-    io::{BufReader, Read},
+    io::Read,
     path::{Path, PathBuf},
 };
 
-use bytes::{BufMut, Bytes, BytesMut};
-use nix::fcntl::PosixFadviseAdvice;
-use tracing_unwrap::ResultExt;
+use bytes::BytesMut;
 
 use crate::io_graph::{SendBytes, Worker};
 
