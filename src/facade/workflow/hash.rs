@@ -1,7 +1,6 @@
 use std::{path::PathBuf, sync::Arc, time::Instant};
 
 use bytes::Bytes;
-use bytesize::ByteSize;
 use tokio::{
     sync::{oneshot, watch},
     task::JoinHandle,
@@ -127,11 +126,11 @@ fn run_thread(
 ) {
     std::thread::scope(move |s| {
         let setup = (|| {
-            let buf = BufNode::new((ByteSize::mb(64).as_u64() / 4096).try_into().unwrap());
+            let buf = BufNode::new(1024);
 
             let j = js.create();
 
-            let read = FileReader::new(&wf.file, buf.input)?;
+            let read = FileReader::new(&wf.file, buf.input, 65536)?;
             let start_data = StartData {
                 size: read.size(),
                 hasher_input_junction: j.id(),
