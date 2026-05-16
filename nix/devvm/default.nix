@@ -15,6 +15,8 @@
       ...
     }:
     let
+      hostPkgs = pkgs;
+
       /**
         Given a target system, builds a VM runner for that target system.
       */
@@ -25,7 +27,7 @@
             { pkgs, ... }:
             {
               # Needed so that the build results can be run by the host machine
-              virtualisation.host.pkgs = pkgs;
+              virtualisation.host.pkgs = hostPkgs;
 
               # Rename the VM to include the target name
               networking.hostName = "caliguladev-${target}";
@@ -48,12 +50,15 @@
           };
 
           # Because I'm doing all sorts of deranged garbage to the existing VM script
-          wrapper = pkgs.writeShellApplication {
-            name = "devvm-${target}";
-            text = ''
-              CALIGULA_DIR="$(readlink -f .)" exec ${nixos.config.system.build.vm}/bin/run-caliguladev-${target}-vm
-            '';
-          };
+          wrapper =
+            with pkgs;
+            writeShellApplication {
+              name = "devvm-${target}";
+              runtimeInputs = [ coreutils ];
+              text = ''
+                CALIGULA_DIR="$(readlink -f .)" exec ${nixos.config.system.build.vm}/bin/run-caliguladev-${target}-vm
+              '';
+            };
         in
         wrapper.overrideAttrs (_: {
           # Some of pairs require remote compilation, so mark them to be skipped in checks.
