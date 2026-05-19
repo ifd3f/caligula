@@ -59,6 +59,8 @@ pub async fn drive_tx<W>(
 where
     W: AsyncWrite + Unpin + 'static,
 {
+    debug!("starting tx driver");
+
     // wrap with a buffer big enough to wrap the header and a reasonably-sized
     // message
     let mut tx = BufWriter::with_capacity(4096, tx);
@@ -74,6 +76,7 @@ where
     }
 
     // txq dropped
+    debug!("txq dropped, exiting");
     Ok(())
 }
 
@@ -128,13 +131,21 @@ pub async fn drive_rx<S, E>(
                 // inject errors from the stream into the global signal
                 let err_handler = svc_err_handler.clone();
                 let res = res
-                    .inspect(|x| trace!("response stream yields {x:?}"))
+                    .inspect(|x: &Result<Bytes, E>| trace!("response stream yields {x:?}"))
+                    .chain(
+                        stream::once(async move {
+                            trace!("response stream ended");
+                            stream::empty()
+                        })
+                        .flatten(),
+                    )
                     .map_err(err_handler)
                     .filter_map(|x| std::future::ready(x.ok()));
 
                 // spawn task in background
                 tokio::task::spawn_local(
-                    drive_channel_tx(id, res, txq.clone()).instrument(debug_span!("drive_channel")),
+                    drive_channel_tx(id, Box::pin(res), txq.clone())
+                        .instrument(debug_span!("drive_channel")),
                 );
 
                 // do NOT advance the stream or else we will drop first payload

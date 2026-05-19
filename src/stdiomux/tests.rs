@@ -11,6 +11,7 @@ use futures::{
 use proptest::{collection, prelude::*, sample::SizeRange};
 use test_strategy::proptest;
 use tokio::{io::duplex, runtime::LocalRuntime};
+use tracing::{debug, info, info_span};
 
 use crate::stdiomux::{BytestreamService, client, server, service_fn};
 
@@ -67,13 +68,20 @@ fn infallible_service_for_pairs(
 
     let pairs = Mutex::new(pairs);
     let svc = service_fn(move |req: LocalBoxStream<'static, Bytes>| {
+        let _span = info_span!("infallible_service_for_pairs").entered();
+
+        info!("Got request");
+
         let mut lock = pairs.lock().unwrap();
         let pair = lock.pop().expect("Got more requests than expected!");
         drop(lock);
 
         stream::once(async move {
+            debug!("Stream is being polled");
             let req = req.collect::<Vec<_>>().await;
-            assert_eq!(req, pair.req);
+            let mut expected_req = pair.req.clone();
+            expected_req.retain(|x| !x.is_empty());
+            assert_eq!(req, expected_req);
 
             stream::iter(pair.expected_res).map(Ok::<_, Infallible>)
         })
@@ -132,7 +140,8 @@ async fn proptest_service_fn(
 
 #[proptest]
 fn proptest_over_duplex(
-    #[strategy(happy_path_strat(1..20, 1..20, 1..10))] case: HappyPathCase,
+    // WARNING: payload_size=0 combined with stream_size=0 is not supported.
+    #[strategy(happy_path_strat(1..100, 1..100, 0..10))] case: HappyPathCase,
 ) {
     tracing_subscriber::fmt::try_init().ok();
 

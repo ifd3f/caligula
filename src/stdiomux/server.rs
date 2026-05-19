@@ -7,6 +7,7 @@ use tokio::{
     sync::{SetOnce, mpsc::unbounded_channel},
     try_join,
 };
+use tracing::{Instrument, info_span};
 
 use super::BytestreamService;
 use crate::stdiomux::{
@@ -71,5 +72,8 @@ where
         err_notify.clone(),
     );
 
-    try_join!(rx_driver, tx_driver).map(|_| ())
+    async move { try_join!(rx_driver, tx_driver) }
+        .instrument(info_span!("driver"))
+        .await
+        .map(|_| ())
 }
