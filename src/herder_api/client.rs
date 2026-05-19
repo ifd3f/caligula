@@ -2,7 +2,7 @@ use bincode::Options as _;
 use bytes::Bytes;
 use futures::{
     Stream, StreamExt, TryStreamExt,
-    stream::{self, LocalBoxStream},
+    stream::{self, BoxStream, LocalBoxStream},
 };
 
 use crate::{
@@ -25,27 +25,32 @@ impl<App, Trans> From<ClientError<Trans>> for LayerError<App, ClientError<Trans>
         LayerError::Transport(value)
     }
 }
-
-/// Create a [`HerderClient`] over the given transport. Returns the client
-/// itself, along with a driver future that must be polled in the background in
-/// order for requests and responses to be handled.
-pub fn create<S: BytestreamService>(transport: S) -> HerderClient<S> {
-    HerderClient { client: transport }
-}
-
 /// A client to a remote [`HerderService`] over a transport. Created using the
 /// [`create()`] function.
 ///
 /// Technically speaking, it only supports one request right now, and explodes
 /// afterwards, but that's okay! Refactors will come Soon(tm).
-pub struct HerderClient<S: BytestreamService> {
+pub struct HerderClient<S> {
     client: S,
+}
+
+impl<S> HerderClient<S>
+where
+    S: BytestreamService<BoxStream<'static, Bytes>>,
+    S::Response: Unpin + 'static,
+    S::Error: 'static,
+{
+    /// Create a [`HerderClient`] over the given transport.
+    pub fn new(client: S) -> Self {
+        Self { client }
+    }
 }
 
 impl<A, S> HerderService<A> for HerderClient<S>
 where
     A: HerderAction,
-    S: BytestreamService,
+    S: BytestreamService<BoxStream<'static, Bytes>>,
+    S::Response: Unpin + 'static,
     S::Error: 'static,
 {
     type Error = ClientError<S::Error>;
@@ -60,7 +65,7 @@ where
         let mut res = self.client.call(req);
 
         let start = take_first::<A, _>(&mut res).await?;
-        let events = stream_into_events::<A, _>(res);
+        let events = stream_into_events::<A, _>(Box::pin(res));
 
         Ok(HerderResponse {
             start,
@@ -70,7 +75,7 @@ where
 }
 
 /// Package a given request into a byte stream.
-fn request_into_stream(action: impl HerderAction) -> LocalBoxStream<'static, Bytes> {
+fn request_into_stream(action: impl HerderAction) -> BoxStream<'static, Bytes> {
     let msg = Bytes::from_owner(
         bincode_options()
             .serialize(&action)

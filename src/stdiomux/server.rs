@@ -1,13 +1,16 @@
 use std::{error::Error, sync::Arc};
 
-use futures::{StreamExt, TryFutureExt, TryStreamExt};
+use bytes::Bytes;
+use futures::stream::LocalBoxStream;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
+    select,
     sync::SetOnce,
 };
+use tracing::{Instrument, info_span};
 
 use super::BytestreamService;
-use crate::stdiomux::util::{drive_rx, drive_tx, inject_err_fut, inject_err_stream};
+use crate::stdiomux::common::common_driver;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError<E: Error> {
@@ -29,34 +32,49 @@ impl<E: Error> Clone for ServerError<E> {
     }
 }
 
-/// Run a [`BytestreamService`] over the given transport.
-///
-/// TODO: make it support multiple requests and responses
-#[tracing::instrument(skip_all, name = "BytestreamServer_run")]
-pub async fn run<R, W, S, E>(rx: R, tx: W, s: S) -> Result<(), ServerError<E>>
+/// Run a [`BytestreamService`] as a server over the given transport.
+#[tracing::instrument(skip_all, name = "stdiomux_server")]
+pub async fn run<R, W, S>(rx: R, tx: W, s: S) -> Result<(), ServerError<S::Error>>
 where
-    R: AsyncRead + Unpin + Send + 'static,
-    W: AsyncWrite + Unpin + Send + 'static,
-    S: BytestreamService<Error = E>,
-    E: Error + Send + Sync + 'static,
+    R: AsyncRead + Unpin + 'static,
+    W: AsyncWrite + Unpin + 'static,
+    S: BytestreamService<LocalBoxStream<'static, Bytes>>,
+    S::Response: Unpin + 'static,
+    S::Error: Error + 'static,
 {
-    let err_notify = Arc::new(SetOnce::<ServerError<E>>::new());
+    let err_notify = Arc::new(SetOnce::<ServerError<S::Error>>::new());
 
-    // handle errors using inject_err_stream and only send the Ok's into the service
-    let req = inject_err_stream(drive_rx(rx).map_err(ServerError::Rx), err_notify.clone());
-    let req = req.filter_map(|r| std::future::ready(r.ok()));
-
-    // make the call to the service
-    let res = s.call(Box::pin(req));
-
-    // now do the same thing on the outgoing end
-    let res = inject_err_stream(
-        res.map_err(|e| ServerError::Service(Arc::new(e))),
-        err_notify.clone(),
+    let (fut, _, _) = common_driver(
+        rx,
+        tx,
+        s,
+        {
+            let en = err_notify.clone();
+            move |e| {
+                en.set(ServerError::Rx(e.into())).ok();
+            }
+        },
+        {
+            let en = err_notify.clone();
+            move |e| {
+                en.set(ServerError::Tx(e.into())).ok();
+            }
+        },
+        {
+            let en = err_notify.clone();
+            move |e| {
+                en.set(ServerError::Service(e.into())).ok();
+            }
+        },
     );
-    let res = res.filter_map(|r| std::future::ready(r.ok()));
 
-    let fut = drive_tx(tx, res).map_err(|e| ServerError::Tx(e));
-    inject_err_fut(fut, err_notify).await?;
-    Ok(())
+    let driver = async move {
+        select! {
+           _ = fut => Ok(()),
+           e = err_notify.wait() => Err(e.clone()),
+        }
+    }
+    .instrument(info_span!("driver"));
+
+    driver.await
 }

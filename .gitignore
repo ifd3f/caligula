@@ -8,6 +8,7 @@ caligula*
 pid
 *.data
 *.old
+proptest-regressions
 /caligula
 /caligula-*
 
