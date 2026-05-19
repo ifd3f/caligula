@@ -6,6 +6,7 @@ use auto_impl::auto_impl;
 use bytes::Bytes;
 use futures::stream::LocalBoxStream;
 
+mod channel_map;
 pub mod client;
 pub mod server;
 mod util;

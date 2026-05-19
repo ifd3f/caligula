@@ -1,196 +1,95 @@
-use std::{
-    cell::RefCell,
-    fmt::Debug,
-    future::poll_fn,
-    rc::{Rc, Weak},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    task::Poll,
-};
+use std::{cell::RefCell, convert::Infallible, fmt::Debug, future::poll_fn, pin::pin, rc::Rc, sync::Arc, task::{Context, Poll}};
 
 use bytes::{Bytes, BytesMut};
 use futures::{
-    Stream, StreamExt as _,
-    stream::{self, BoxStream, FusedStream, LocalBoxStream, Peekable},
+    FutureExt, Stream, StreamExt as _,
+    stream::{self, BoxStream, FusedStream, LocalBoxStream, Peekable}, task::AtomicWaker,
 };
 use tokio::{
-    io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader, BufWriter},
+    io::{AsyncBufRead, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader, BufWriter},
     select,
     sync::{SetOnce, mpsc},
 };
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{Instrument as _, info_span, trace_span};
 
-/// Reasonable limit on the number of simultaneous active channels.
-const MAX_CHANNELS: u16 = 128;
+use crate::stdiomux::{BytestreamService, channel_map::{ChannelMap, ChannelMapRxHalf}};
 
-#[derive(Debug, thiserror::Error)]
-#[error("Channel already exists with ID {0}")]
-pub struct ChannelExists(u16);
 
-#[derive(Debug, thiserror::Error)]
-#[error("Receiver already closed")]
-pub struct RecvClosed;
+async fn drive_transport_steady_state<R,W>(
+    tx_fut: &mut (impl Future<Output = (u16, Bytes)> + Unpin),
+    rx_fut: &mut (impl Future<Output = std::io::Result<(u16, Bytes)>> + Unpin),
+    server: &impl BytestreamService<Error = Infallible>,
+    rx_map: &mut ChannelMapRxHalf,
+    mut tx: W) 
+-> std::io::Result<()>
+where
+    R: AsyncRead + Unpin ,
+    W: AsyncWrite + Unpin,
+{
+    select! {
+        (channel, bytes) = tx_fut => send_msg(tx, (channel, bytes)).await,
+        rx = rx_fut => {
+            let Ok(()) = rx_map.handle_rx(rx?) else {
 
-/// Helper for mapping from channel ID to its associated state.
-pub struct ChannelMap {
-    /// Actual channel values.
-    values: Box<[Option<ChannelState>; MAX_CHANNELS as usize]>,
-
-    /// This value is cached to make linear probing during
-    /// [create_new_channel()] more efficient.
-    last_inserted_channel_id: u16,
-}
-
-impl ChannelMap {
-    fn new() -> Self {
-        let values = Box::new([const { None }; MAX_CHANNELS as usize]);
-        Self {
-            values,
-            last_inserted_channel_id: 0,
-        }
-    }
-
-    /// Attempt to set up a new channel with any ID.
-    pub fn alloc_new_channel(
-        &mut self,
-        tx_stream: LocalBoxStream<'static, Bytes>,
-    ) -> Option<(u16, BoxStream<'static, Bytes>)> {
-        // linearly probe through the ID space until you find a free ID.
-        // start from the last inserted value and quit if nothing is alive.
-        let mut id = self.last_inserted_channel_id;
-        loop {
-            id = id.wrapping_add(1) % MAX_CHANNELS;
-
-            if id != self.last_inserted_channel_id {
-                // fully looped around. no free slots
-                return None;
-            }
-
-            if self.get_channel(id).is_none() {
-                // it's not living. insert it
-                return self.insert_new_channel(id, tx_stream).ok();
-            }
-        }
-    }
-
-    /// Setup a new channel with a specific ID.
-    pub fn insert_new_channel(
-        &mut self,
-        channel_id: u16,
-        tx_stream: LocalBoxStream<'static, Bytes>,
-    ) -> Result<(u16, BoxStream<'static, Bytes>), ChannelExists> {
-        if self.get_channel(channel_id).is_some() {
-            return Err(ChannelExists(channel_id));
-        }
-
-        self.last_inserted_channel_id = channel_id;
-
-        // now insert a new value in the free slot
-        let (cs, rx_stream) = new_channel_state();
-        self.values[channel_id as usize] = Some(cs);
-        Ok((channel_id, rx_stream))
-    }
-
-    /// Get the channel located at the given cell. Returns [None] if the channel
-    /// is dead.
-    pub fn get_channel(&self, channel_id: u16) -> Option<&ChannelState> {
-        self.values
-            .get(channel_id as usize)
-            .and_then(|v| v.as_ref())
-            .filter(|x| x.is_alive())
-    }
-
-    /// Get an iterator through all of the living channels of this [ChannelMap].
-    pub fn channel_iter<'a>(&'a self) -> impl Iterator<Item = (u16, &'a ChannelState)> + 'a {
-        (0..MAX_CHANNELS).filter_map(|id| self.get_channel(id).map(|c| (id, c)))
-    }
-}
-
-fn new_channel_state() -> (ChannelState, LocalBoxStream<'static, Bytes>) {
-    let (rxq_tx, rxq_rx) = mpsc::unbounded_channel();
-    let rx_stream = Box::pin(UnboundedReceiverStream::new(rxq_rx));
-    let cs = ChannelState {};
-
-    (cs, rx_stream)
-}
-
-/// State of a single channel.
-pub struct ChannelState {
-    tx: Rc<RefCell<TxState>>,
-    rx: RefCell<RxState>, // TODO: make backpressure work
-}
-
-struct RxState {
-    rxq: Option<mpsc::UnboundedSender<Bytes>>,
-}
-
-impl RxState {
-    fn alive(&self) -> bool {
-        self.rxq.is_some()
-    }
-}
-
-struct TxState {
-    tx_stream: Peekable<LocalBoxStream<'static, Bytes>>,
-}
-
-impl TxState {
-    fn alive(&self) -> bool {
-        !self.tx_stream.is_terminated()
-    }
-}
-
-impl ChannelState {
-    /// Whether or not this stream is alive.
-    pub fn is_alive(&self) -> bool {
-        self.rx.borrow().alive() && self.tx.alive()
-    }
-
-    /// Handle receiving a new value.
-    pub fn handle_rx(&self, payload: Bytes) -> Result<(), RecvClosed> {
-        let mut lock = self.rx.borrow_mut();
-        let rxq = lock.rxq.as_ref().ok_or(RecvClosed)?;
-
-        rxq.send(payload).map_err(move |e| {
-            lock.rxq = None;
-            RecvClosed
-        })
-    }
-
-    /// Returns a future to wait on the next transmission to send, if any.
-    ///
-    /// This is cancel safe.
-    pub fn next_tx(&self) -> impl IntoFuture<Output = Option<Bytes>> + 'static {
-        let txs = Rc::downgrade(&self.tx_stream);
-
-        poll_fn(move |cx| {
-            let Some(s) = txs.upgrade() else {
-                return Poll::Ready(None);
             };
-
-            let mut lock = s.borrow_mut();
-            let r = lock.poll_next_unpin(cx);
-
-            let out = lock.next().await;
-            self.tx_dead_flag.store(out.is_none(), Ordering::Relaxed);
-            r
-        })
+        }
     }
+    Ok(())
 }
 
-pub async fn drive_tx<W>(
-    tx: W,
-    mut s: impl Stream<Item = Bytes> + Unpin,
-) -> Result<(), Arc<std::io::Error>>
+async fn handle_tx(mut tx: impl AsyncWrite + Unpin, (channel, bytes) : (u16, Bytes)) {
+
+    let mut rx = BufReader::with_capacity(4096, rx);
+    let mut tx = BufWriter::with_capacity(4096, tx);
+
+}
+
+/// Send a single message over the wire.
+async fn send_msg(mut tx: impl AsyncWrite + Unpin, (channel, bytes) : (u16, Bytes)) -> Result<(), std::io::Error> {
+    tx.write_u16(channel).await?;
+    tx.write_u32(bytes.len().try_into().unwrap()).await?;
+    tx.write_all(&bytes).await?;
+    tx.flush().await?;
+    Ok(())
+}
+
+/// Receive a single message over the wire.
+async fn recv_msg(mut rx: impl AsyncRead + Unpin) -> Result<(u16, Option<Bytes>) ,std::io::Error> {
+  let channel = rx.read_u16().await?;
+  let len = usize::try_from(rx.read_u32().await?).unwrap();
+                if len == 0 {
+                    // EOF sentinel
+                    tracing::trace!("got EOF");
+                    return Ok((channel, None));
+                }
+
+                tracing::trace!(?len, "got message");
+
+                let mut msg = BytesMut::with_capacity(len);
+                unsafe {
+                    msg.set_len(len);
+                }
+                rx.read_exact(&mut msg)
+                    .instrument(trace_span!("read_exact"))
+                    .await?;
+
+                Ok((channel, Some(msg.freeze())))
+}
+
+
+pub async fn drive_tx<W>(tx: W, channels: &RefCell<ChannelMap>) -> Result<(), Arc<std::io::Error>>
 where
     W: AsyncWrite + Unpin + 'static,
 {
     // wrap with a buffer big enough to wrap the header and a reasonably-sized
     // message
     let mut tx = BufWriter::with_capacity(4096, tx);
+
+    let v = channels
+        .borrow()
+        .channel_iter()
+        .map(|(id, cs)| );
 
     // pull from the request stream
     while let Some(bytes) = s.next().await {
@@ -203,9 +102,7 @@ where
 
         // length-framing
         async {
-            tx.write_u32(bytes.len().try_into().unwrap()).await?;
-            tx.write_all(&bytes).await?;
-            tx.flush().await?;
+            fun_name(&mut tx, bytes).await?;
             Ok::<(), std::io::Error>(())
         }
         .instrument(trace_span!("write_msg"))
@@ -220,7 +117,10 @@ where
     Ok(())
 }
 
-pub fn drive_rx<R>(rx: R) -> impl Stream<Item = Result<Bytes, Arc<std::io::Error>>>
+pub fn drive_rx<R>(
+    channels: &RefCell<ChannelState>,
+    rx: R,
+) -> impl Stream<Item = Result<Bytes, Arc<std::io::Error>>>
 where
     R: AsyncRead + Unpin + 'static,
 {
