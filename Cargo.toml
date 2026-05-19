@@ -63,6 +63,7 @@ tokio = { version = "1.48.0", features = [
   "sync",
 ] }
 tokio-stream = "0.1.18"
+tower = "0.5.3"
 tracing = { version = "0.1.41", default-features = false, features = ["std"] }
 tracing-panic = "0.1.2"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }

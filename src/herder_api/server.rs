@@ -2,7 +2,10 @@ use std::rc::Rc;
 
 use bincode::Options;
 use bytes::Bytes;
-use futures::{Stream, StreamExt, TryStreamExt as _, stream};
+use futures::{
+    Stream, StreamExt, TryStreamExt as _,
+    stream::{self, LocalBoxStream},
+};
 
 use crate::{
     herder_api::{
@@ -22,22 +25,29 @@ pub enum ServerError<Trans> {
     Deserialization(#[from] bincode::Error),
 }
 
-/// Convert a [`HerderService`] into a [`BytestreamService`].
-pub fn transportize<A, S>(svc: S) -> impl BytestreamService<Error = ServerError<S::Error>>
+/// Convert a [`HerderService`] server into a [`BytestreamService`] server.
+#[expect(clippy::type_complexity)]
+pub fn transportize<A, S>(
+    svc: S,
+) -> impl BytestreamService<
+    LocalBoxStream<'static, Bytes>,
+    Error = ServerError<S::Error>,
+    Response = LocalBoxStream<'static, Result<Bytes, ServerError<S::Error>>>,
+>
 where
     A: HerderAction,
     S: HerderService<A> + 'static,
+    S::Error: 'static,
 {
     let svc = Rc::new(svc);
     stdiomux::service_fn(move |req| {
         let svc = svc.clone();
-        let s = stream::once(async move {
+        stream::once(async move {
             let result = handle_request::<A, _>(svc, req).await;
             move_result_into_stream(result)
         })
-        .flatten();
-
-        Box::pin(s)
+        .flatten()
+        .boxed_local()
     })
 }
 

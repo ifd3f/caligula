@@ -1,16 +1,27 @@
-use std::sync::Arc;
+use std::{convert::Infallible, rc::Rc, sync::Arc};
 
 use bytes::Bytes;
-use futures::{TryFutureExt, TryStreamExt, stream::LocalBoxStream};
+use futures::{
+    FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt,
+    stream::{BoxStream, LocalBoxStream},
+};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::SetOnce,
+    sync::{
+        SetOnce,
+        mpsc::{UnboundedSender, unbounded_channel},
+    },
+    try_join,
 };
-use tracing::{Instrument, info_span};
 
 use crate::stdiomux::{
     BytestreamService,
-    util::{drive_rx, drive_tx, inject_err_fut, inject_err_stream},
+    channel_map::ChannelMap,
+    service_fn,
+    common::{
+        drive_channel_tx, drive_rx, drive_tx, inject_err_fut, inject_err_stream,
+        inject_err_stream_ok, rx_stream,
+    },
 };
 
 #[derive(Debug, thiserror::Error, Clone)]
@@ -28,65 +39,71 @@ pub fn open<R, W>(
     rx: R,
     tx: W,
 ) -> (
-    BytestreamClient<R, W>,
+    LocalBytestreamClient,
     impl Future<Output = Result<(), ClientError>>,
 )
 where
     R: AsyncRead + Unpin + 'static,
     W: AsyncWrite + Unpin + 'static,
 {
-    (
-        BytestreamClient {
-            comm: Some((rx, tx)).into(),
-        },
-        std::future::pending(),
+    let err_notify = Arc::new(SetOnce::<ClientError>::new());
+    let channel_map = Rc::new(ChannelMap::new());
+    let (txq_tx, txq_rx) = unbounded_channel();
+
+    let rx_driver = drive_rx(
+        channel_map.clone(),
+        inject_err_stream_ok(
+            rx_stream(rx).map_err(|e| ClientError::Rx(Arc::new(e))),
+            err_notify.clone(),
+        ),
+        service_fn(|_| -> LocalBoxStream<'static, Result<Bytes, Infallible>> {
+            panic!("Client received an unexpected channel!")
+        }),
+        |_: Infallible| panic!("infallible error can never happen"),
+        txq_tx.clone(),
     )
+    .map(|_| Ok(()));
+
+    let tx_driver = inject_err_fut(
+        drive_tx(txq_rx, tx).map_err(|e| ClientError::Tx(Arc::new(e))),
+        err_notify.clone(),
+    );
+
+    let driver = async move { try_join!(rx_driver, tx_driver).map(|_| ()) };
+
+    let client = LocalBytestreamClient {
+        channel_map,
+        err_notify,
+        txq: txq_tx,
+    };
+
+    (client, driver)
 }
 
 /// A client to a remote [`BytestreamClient`] over a transport. Created using
 /// the [`open()`] function.
-///
-/// Technically speaking, it only supports one request right now, and explodes
-/// afterwards, but that's okay! Refactors will come Soon(tm).
-pub struct BytestreamClient<R, W>
-where
-    R: AsyncRead + Unpin + 'static,
-    W: AsyncWrite + Unpin + 'static,
-{
-    comm: std::sync::Mutex<Option<(R, W)>>,
+pub struct LocalBytestreamClient {
+    channel_map: Rc<ChannelMap>,
+    err_notify: Arc<SetOnce<ClientError>>,
+    txq: UnboundedSender<(u16, Bytes)>,
 }
 
-impl<R, W> BytestreamService for BytestreamClient<R, W>
-where
-    R: AsyncRead + Unpin + Send + 'static,
-    W: AsyncWrite + Unpin + 'static,
-{
+impl<Req: Stream<Item = Bytes> + Unpin + 'static> BytestreamService<Req> for LocalBytestreamClient {
     type Error = ClientError;
+    type Response = BoxStream<'static, Result<Bytes, Self::Error>>;
 
     #[tracing::instrument(skip_all, name = "BytestreamClient_call")]
-    fn call(
-        &self,
-        req: LocalBoxStream<'static, Bytes>,
-    ) -> LocalBoxStream<'static, Result<Bytes, Self::Error>> {
-        tracing::trace!("making a call");
-        let (rx, tx) =
-            self.comm.lock().unwrap().take().expect(
-                "called more than once! multiple requests are not currently supported! sowwy!",
-            );
+    fn call(&self, req: Req) -> Self::Response {
+        let (ch, rx) = self
+            .channel_map
+            .alloc_new_channel()
+            .expect("ran out of channels!");
 
-        let err_notify_arc = Arc::new(SetOnce::<ClientError>::new());
+        tokio::task::spawn_local(drive_channel_tx(ch, req, self.txq.clone()));
 
-        let _tx = tokio::task::spawn_local(
-            inject_err_fut(
-                drive_tx(tx, req).map_err(ClientError::Tx),
-                err_notify_arc.clone(),
-            )
-            .instrument(info_span!("txdriver")),
-        );
-
-        let err_notify = err_notify_arc;
-        let stream = inject_err_stream(drive_rx(rx).map_err(ClientError::Rx), err_notify);
-
-        Box::pin(stream)
+        Box::pin(inject_err_stream(
+            rx.map(Ok::<_, ClientError>),
+            self.err_notify.clone(),
+        ))
     }
 }

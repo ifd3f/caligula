@@ -1,16 +1,19 @@
 use std::process::Stdio;
 
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use bytes::Bytes;
+use futures::{FutureExt as _, stream::BoxStream};
+use tokio::{process::Child, try_join};
 
 use crate::{
     escalation::{EscalationError, run_escalate},
     herder_api::{
-        self, HerderAction, HerderResponse, HerderService, client::HerderClient, error::LayerError,
+        HerderAction, HerderResponse, HerderService, client::HerderClient, error::LayerError,
     },
-    stdiomux::{self, client::BytestreamClient},
+    stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
 };
 
-type Client = HerderClient<BytestreamClient<ChildStdout, ChildStdin>>;
+type Client =
+    HerderClient<RemoteThreadBytestreamClient<LocalBytestreamClient, BoxStream<'static, Bytes>>>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpawnDaemonError {
@@ -75,13 +78,19 @@ pub async fn spawn(
     let child_rx = child.stdout.take().unwrap();
     let child_tx = child.stdin.take().unwrap();
 
-    let (client, fut) = stdiomux::client::open(child_rx, child_tx);
-    let client = herder_api::client::create(client);
+    // open the client
+    let (client, fut1) = stdiomux::client::open(child_rx, child_tx);
+
+    // this client can only run on our current thread, create a remote handle for it
+    let (client, fut2) = stdiomux::make_remote(client);
+
+    // the driver future will drive both of these
+    let fut = async move { try_join!(fut1, fut2.map(|_| Ok(()))).map(|_| ()) };
 
     Ok((
         ChildHerderClient {
             _child: child,
-            client,
+            client: HerderClient::new(client),
         },
         fut,
     ))

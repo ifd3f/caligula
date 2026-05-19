@@ -1,13 +1,18 @@
-use std::{error::Error, sync::Arc};
+use std::{error::Error, rc::Rc, sync::Arc};
 
-use futures::{StreamExt, TryFutureExt, TryStreamExt};
+use bytes::Bytes;
+use futures::{FutureExt as _, TryFutureExt, TryStreamExt, stream::LocalBoxStream};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::SetOnce,
+    sync::{SetOnce, mpsc::unbounded_channel},
+    try_join,
 };
 
 use super::BytestreamService;
-use crate::stdiomux::util::{drive_rx, drive_tx, inject_err_fut, inject_err_stream};
+use crate::stdiomux::{
+    channel_map::ChannelMap,
+    common::{drive_rx, drive_tx, inject_err_fut, inject_err_stream_ok, rx_stream},
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError<E: Error> {
@@ -29,34 +34,42 @@ impl<E: Error> Clone for ServerError<E> {
     }
 }
 
-/// Run a [`BytestreamService`] over the given transport.
-///
-/// TODO: make it support multiple requests and responses
+/// Run a [`BytestreamService`] as a server over the given transport.
 #[tracing::instrument(skip_all, name = "BytestreamServer_run")]
-pub async fn run<R, W, S, E>(rx: R, tx: W, s: S) -> Result<(), ServerError<E>>
+pub async fn run<R, W, S>(rx: R, tx: W, s: S) -> Result<(), ServerError<S::Error>>
 where
-    R: AsyncRead + Unpin + Send + 'static,
-    W: AsyncWrite + Unpin + Send + 'static,
-    S: BytestreamService<Error = E>,
-    E: Error + Send + Sync + 'static,
+    R: AsyncRead + Unpin + 'static,
+    W: AsyncWrite + Unpin + 'static,
+    S: BytestreamService<LocalBoxStream<'static, Bytes>>,
+    S::Response: Unpin + 'static,
+    S::Error: Error + 'static,
 {
-    let err_notify = Arc::new(SetOnce::<ServerError<E>>::new());
+    let err_notify = Arc::new(SetOnce::<ServerError<S::Error>>::new());
+    let channel_map = Rc::new(ChannelMap::new());
+    let (txq_tx, txq_rx) = unbounded_channel();
 
-    // handle errors using inject_err_stream and only send the Ok's into the service
-    let req = inject_err_stream(drive_rx(rx).map_err(ServerError::Rx), err_notify.clone());
-    let req = req.filter_map(|r| std::future::ready(r.ok()));
+    let svc_err_handler = {
+        let err_notify = err_notify.clone();
+        move |e: S::Error| {
+            err_notify.set(ServerError::Service(Arc::new(e))).ok();
+        }
+    };
+    let rx_driver = drive_rx(
+        channel_map.clone(),
+        inject_err_stream_ok(
+            rx_stream(rx).map_err(|e| ServerError::Rx(Arc::new(e))),
+            err_notify.clone(),
+        ),
+        s,
+        svc_err_handler,
+        txq_tx.clone(),
+    )
+    .map(|_| Ok(()));
 
-    // make the call to the service
-    let res = s.call(Box::pin(req));
-
-    // now do the same thing on the outgoing end
-    let res = inject_err_stream(
-        res.map_err(|e| ServerError::Service(Arc::new(e))),
+    let tx_driver = inject_err_fut(
+        drive_tx(txq_rx, tx).map_err(|e| ServerError::Tx(Arc::new(e))),
         err_notify.clone(),
     );
-    let res = res.filter_map(|r| std::future::ready(r.ok()));
 
-    let fut = drive_tx(tx, res).map_err(|e| ServerError::Tx(e));
-    inject_err_fut(fut, err_notify).await?;
-    Ok(())
+    try_join!(rx_driver, tx_driver).map(|_| ())
 }

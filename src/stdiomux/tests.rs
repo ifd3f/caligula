@@ -4,7 +4,10 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{StreamExt, stream};
+use futures::{
+    StreamExt,
+    stream::{self, LocalBoxStream},
+};
 use proptest::{collection, prelude::*, sample::SizeRange};
 use test_strategy::proptest;
 use tokio::{io::duplex, runtime::LocalRuntime};
@@ -34,7 +37,7 @@ fn happy_path_strat(
     let req_res = stream_strat.clone().prop_flat_map(move |req| {
         stream_strat.clone().prop_map(move |mut expected_res| {
             // drop the ones that are zero
-            expected_res.retain(|v| v.len() > 0);
+            expected_res.retain(|v| !v.is_empty());
 
             HappyPathPair {
                 req: req.clone(),
@@ -44,35 +47,38 @@ fn happy_path_strat(
     });
     let full_transmission = collection::vec(req_res, req_count);
 
-    full_transmission
-        .prop_map(|pairs| HappyPathCase(pairs))
-        .boxed()
+    full_transmission.prop_map(HappyPathCase).boxed()
 }
 
 /// Given a [`HappyPathCase`], returns a [`BytestreamService`] that behaves
 /// according to the test case.
 fn infallible_service_for_pairs(
     case: HappyPathCase,
-) -> Box<dyn BytestreamService<Error = Infallible> + Send> {
+) -> Box<
+    dyn BytestreamService<
+            LocalBoxStream<'static, Bytes>,
+            Response = LocalBoxStream<'static, Result<Bytes, Infallible>>,
+            Error = Infallible,
+        > + Send,
+> {
     // we'll work via popping so reverse it first
     let mut pairs = case.0;
     pairs.reverse();
 
     let pairs = Mutex::new(pairs);
-    let svc = service_fn(move |req| {
+    let svc = service_fn(move |req: LocalBoxStream<'static, Bytes>| {
         let mut lock = pairs.lock().unwrap();
         let pair = lock.pop().expect("Got more requests than expected!");
         drop(lock);
 
-        Box::pin(
-            stream::once(async move {
-                let req = req.collect::<Vec<_>>().await;
-                assert_eq!(req, pair.req);
+        stream::once(async move {
+            let req = req.collect::<Vec<_>>().await;
+            assert_eq!(req, pair.req);
 
-                stream::iter(pair.expected_res).map(|x| Ok::<_, std::convert::Infallible>(x))
-            })
-            .flatten(),
-        )
+            stream::iter(pair.expected_res).map(Ok::<_, Infallible>)
+        })
+        .flatten()
+        .boxed_local()
     });
 
     Box::new(svc)
@@ -83,17 +89,18 @@ async fn test_service_fn() {
     const EXPECTED_REQ: &[&[u8]] = &[b"sam", b"i", b"am"];
     const EXPECTED_RES: &[&[u8]] = &[b"green", b"eggs", b"ham"];
 
-    let service = service_fn(move |req| {
-        Box::pin(
+    let service = service_fn(
+        move |req: LocalBoxStream<'static, Bytes>| -> LocalBoxStream<'static, Result<Bytes, Infallible>> {
             stream::once(async move {
                 let req = req.collect::<Vec<_>>().await;
                 assert_eq!(req, EXPECTED_REQ);
                 stream::iter(EXPECTED_RES)
-                    .map(|x| Ok::<_, std::convert::Infallible>(Bytes::copy_from_slice(x)))
+                    .map(|x| Ok::<_, Infallible>(Bytes::copy_from_slice(x)))
             })
-            .flatten(),
-        )
-    });
+            .flatten()
+            .boxed_local()
+        },
+    );
 
     let res = service.call(Box::pin(
         stream::iter(EXPECTED_REQ).map(|b| Bytes::copy_from_slice(b)),
