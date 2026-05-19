@@ -10,7 +10,7 @@ use tokio::{
     join,
     sync::{
         SetOnce,
-        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
+        mpsc::{Receiver, Sender, channel},
     },
 };
 use tracing::{Instrument as _, debug, debug_span, info_span, trace, trace_span};
@@ -29,7 +29,7 @@ pub fn common_driver<R, W, S>(
 ) -> (
     impl Future<Output = ()>,
     Rc<ChannelMap>,
-    UnboundedSender<(u16, Bytes)>,
+    Sender<(u16, Bytes)>,
 )
 where
     R: AsyncRead + Unpin + 'static,
@@ -39,7 +39,7 @@ where
     S::Error: Debug + 'static,
 {
     let channel_map = Rc::new(ChannelMap::new());
-    let (txq_tx, txq_rx) = unbounded_channel();
+    let (txq_tx, txq_rx) = channel(16);
 
     let rx_driver = drive_rx(
         channel_map.clone(),
@@ -66,7 +66,7 @@ where
 pub async fn drive_channel_tx(
     id: u16,
     mut s: impl Stream<Item = Bytes> + Unpin,
-    txq: UnboundedSender<(u16, Bytes)>,
+    txq: Sender<(u16, Bytes)>,
 ) {
     debug!("starting tx channel");
 
@@ -80,7 +80,7 @@ pub async fn drive_channel_tx(
 
         trace!(len = ?bs.len(), "sending message");
 
-        let Ok(()) = txq.send((id, bs)) else {
+        let Ok(()) = txq.send((id, bs)).await else {
             break;
         };
     }
@@ -88,14 +88,14 @@ pub async fn drive_channel_tx(
     debug!("sending EOF");
 
     // out of requests -- write EOF sentinel
-    txq.send((id, Bytes::new())).ok();
+    txq.send((id, Bytes::new())).await.ok();
 }
 
 /// Forward frames from a transmission queue into the given [AsyncWrite].
 ///
 /// This transmission queue may contain zero-byte EOF sentinels.
 #[tracing::instrument(skip_all)]
-async fn drive_tx<W>(mut txq: UnboundedReceiver<(u16, Bytes)>, tx: W) -> Result<(), std::io::Error>
+async fn drive_tx<W>(mut txq: Receiver<(u16, Bytes)>, tx: W) -> Result<(), std::io::Error>
 where
     W: AsyncWrite + Unpin + 'static,
 {
@@ -126,7 +126,7 @@ async fn drive_rx<S>(
     stream: impl Stream<Item = (u16, Option<Bytes>)>,
     svc: S,
     svc_err_handler: impl Fn(S::Error) + Clone + 'static,
-    txq: UnboundedSender<(u16, Bytes)>,
+    txq: Sender<(u16, Bytes)>,
 ) where
     S: BytestreamService<LocalBoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,

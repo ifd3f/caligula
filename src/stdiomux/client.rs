@@ -8,7 +8,7 @@ use futures::{
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     select,
-    sync::{SetOnce, mpsc::UnboundedSender},
+    sync::{SetOnce, mpsc::Sender},
 };
 use tracing::{Instrument, debug_span, info_span};
 
@@ -88,7 +88,7 @@ where
 pub struct LocalBytestreamClient {
     channel_map: Rc<ChannelMap>,
     err_notify: Arc<SetOnce<ClientError>>,
-    txq: UnboundedSender<(u16, Bytes)>,
+    txq: Sender<(u16, Bytes)>,
 }
 
 impl<Req: Stream<Item = Bytes> + Unpin + 'static> BytestreamService<Req> for LocalBytestreamClient {
