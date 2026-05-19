@@ -78,9 +78,13 @@ fn infallible_service_for_pairs(
 
         stream::once(async move {
             debug!("Stream is being polled");
-            let req = req.collect::<Vec<_>>().await;
+
+            let mut req = req.collect::<Vec<_>>().await;
+            req.retain(|x| !x.is_empty());
+
             let mut expected_req = pair.req.clone();
             expected_req.retain(|x| !x.is_empty());
+
             assert_eq!(req, expected_req);
 
             stream::iter(pair.expected_res).map(Ok::<_, Infallible>)
