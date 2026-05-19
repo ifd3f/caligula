@@ -56,6 +56,11 @@ where
     comm: std::sync::Mutex<Option<(R, W)>>,
 }
 
+struct Inner {
+    /// Next request ID.
+    next_req_id: u32,
+}
+
 impl<R, W> BytestreamService for BytestreamClient<R, W>
 where
     R: AsyncRead + Unpin + Send + 'static,
