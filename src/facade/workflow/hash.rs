@@ -213,14 +213,14 @@ fn run_thread(
 ) -> Result<Bytes, HashingError> {
     std::thread::scope(move |s| -> Result<Bytes, HashingError> {
         // ensure file can be opened
-        let file = FileReader::new(&wf.file, 65536).map_err(HashingError::Read)?;
+        let file = FileReader::new(&wf.file).map_err(HashingError::Read)?;
         let file_size = file.size();
 
         // construct the other nodes in the graph
         let hash = wf.alg.hash_worker();
         let decompressor = match wf.compression {
             CompressionFormat::Identity => None,
-            other => Some(DecompressorWorker::new(other, 65536)),
+            other => Some(DecompressorWorker::new(other)),
         };
 
         // calculate pipeline topology and what buffers are needed to connect things
