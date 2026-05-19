@@ -5,9 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     benchmarking::{BenchContext, Benchmark, runner::BenchmarkParams},
-    compression::CompressionFormat,
+    codec::{compression::CompressionFormat, hash::HashAlg},
     facade::workflow::{self, hash::HashWorkflow},
-    hash::HashAlg,
 };
 
 /// File read and hash calculation benchmark.

@@ -2,7 +2,7 @@
 
 use std::{collections::VecDeque, iter, sync::Mutex};
 
-use crate::device::{DeviceParseError, WriteTarget};
+use crate::util::device::{DeviceParseError, WriteTarget};
 
 /// Handle for viewing the list of disks we've found.
 pub struct DiskList {

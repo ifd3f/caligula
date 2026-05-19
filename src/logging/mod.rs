@@ -1,3 +1,5 @@
+//! Helpers for logging and crash reporting.
+
 mod error;
 mod sysinfo;
 

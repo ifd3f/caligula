@@ -3,11 +3,11 @@ use std::{path::PathBuf, time::Instant};
 use futures::StreamExt;
 
 use crate::{
-    escalation::EscalationMethod,
     facade::{
         DiskList, DiskWatcher, Escalator, FileAnalyzer, Orchestrator, WVState, WriteVerifyWorkflow,
         analyze_input::FileAnalysis,
         child::{ChildHerderClient, SpawnDaemonError},
+        escalation::EscalationMethod,
         watch::Watch,
         workflow::hash::{self, HashWorkflow, HashingState},
     },

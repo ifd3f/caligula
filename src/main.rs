@@ -6,27 +6,17 @@ use tracing::debug;
 use crate::{
     facade::make_real_facade,
     logging::{ErrorContext, crash_and_burn},
-    runtime::RemoteSpawn as _,
+    util::runtime::{AsyncRuntime, RemoteSpawn as _},
 };
 
 mod benchmarking;
-mod byteseries;
-mod compression;
-mod device;
-mod escalation;
+mod codec;
 mod facade;
-mod hash;
-mod hashfile;
 mod herder_api;
 mod herder_daemon;
-mod io_graph;
-mod legacy_io;
 mod logging;
 mod native;
-mod runtime;
-mod stdiomux;
-mod tty;
-mod ui;
+mod tui;
 mod util;
 
 /// A lightweight, user-friendly disk imaging tool
@@ -40,7 +30,7 @@ pub struct Args {
 
 #[derive(clap::Subcommand, Debug)]
 pub enum Command {
-    Burn(ui::BurnArgs),
+    Burn(tui::BurnArgs),
 
     #[command(hide = true)]
     Bench(benchmarking::BenchArgs),
@@ -72,7 +62,7 @@ fn main() {
             let error_context = logging::init_logging_parent(&log_paths);
 
             let log_path = log_paths.main().to_owned();
-            let runtime = crate::runtime::AsyncRuntime::start();
+            let runtime = AsyncRuntime::start();
 
             let facade = Arc::new(
                 runtime
@@ -83,7 +73,7 @@ fn main() {
             );
 
             debug!("Starting primary process");
-            match ui::main(runtime, facade, log_paths.into(), burn_args) {
+            match tui::main(runtime, facade, log_paths.into(), burn_args) {
                 Ok(_) => (),
                 Err(e) => handle_toplevel_error(&error_context, e),
             }
