@@ -132,9 +132,10 @@ async fn proptest_service_fn(
 
 #[proptest]
 fn proptest_over_duplex(
-    // TODO: update when both ends support more than one req/res
-    #[strategy(happy_path_strat(1..100, 1..100, 1..=1))] case: HappyPathCase,
+    #[strategy(happy_path_strat(1..20, 1..20, 1..10))] case: HappyPathCase,
 ) {
+    tracing_subscriber::fmt::try_init().ok();
+
     let rt = LocalRuntime::new().unwrap();
     rt.block_on(async move {
         let (c, s) = duplex(65536);

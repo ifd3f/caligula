@@ -13,15 +13,16 @@ use tokio::{
     },
     try_join,
 };
+use tracing::{Instrument, debug_span, info_span};
 
 use crate::stdiomux::{
     BytestreamService,
     channel_map::ChannelMap,
-    service_fn,
     common::{
         drive_channel_tx, drive_rx, drive_tx, inject_err_fut, inject_err_stream,
         inject_err_stream_ok, rx_stream,
     },
+    service_fn,
 };
 
 #[derive(Debug, thiserror::Error, Clone)]
@@ -35,6 +36,7 @@ pub enum ClientError {
 /// Open a [`BytestreamClient`] over the given transport. Returns the client
 /// itself, along with a driver future that must be polled in the background in
 /// order for requests and responses to be handled.
+#[tracing::instrument(skip_all, name = "stdiomux_client")]
 pub fn open<R, W>(
     rx: R,
     tx: W,
@@ -69,7 +71,8 @@ where
         err_notify.clone(),
     );
 
-    let driver = async move { try_join!(rx_driver, tx_driver).map(|_| ()) };
+    let driver =
+        async move { try_join!(rx_driver, tx_driver).map(|_| ()) }.instrument(info_span!("driver"));
 
     let client = LocalBytestreamClient {
         channel_map,
@@ -92,14 +95,17 @@ impl<Req: Stream<Item = Bytes> + Unpin + 'static> BytestreamService<Req> for Loc
     type Error = ClientError;
     type Response = BoxStream<'static, Result<Bytes, Self::Error>>;
 
-    #[tracing::instrument(skip_all, name = "BytestreamClient_call")]
+    #[tracing::instrument(skip_all, name = "stdiomux_client_call")]
     fn call(&self, req: Req) -> Self::Response {
         let (ch, rx) = self
             .channel_map
             .alloc_new_channel()
             .expect("ran out of channels!");
 
-        tokio::task::spawn_local(drive_channel_tx(ch, req, self.txq.clone()));
+        tokio::task::spawn_local(
+            drive_channel_tx(ch, req, self.txq.clone())
+                .instrument(debug_span!("stdiomux_client_drive_tx")),
+        );
 
         Box::pin(inject_err_stream(
             rx.map(Ok::<_, ClientError>),

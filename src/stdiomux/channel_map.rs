@@ -89,7 +89,7 @@ impl Inner {
         loop {
             id = id.wrapping_add(1) % MAX_CHANNELS;
 
-            if id != self.last_inserted_channel_id {
+            if id == self.last_inserted_channel_id {
                 // fully looped around. no free slots
                 return None;
             }
@@ -104,19 +104,19 @@ impl Inner {
     /// Setup a new channel with a specific ID.
     fn insert_new_channel(
         &mut self,
-        channel_id: u16,
+        id: u16,
     ) -> Result<impl Stream<Item = Bytes> + Send + use<> + 'static, ChannelExists> {
-        if self.get_channel(channel_id).alive() {
-            return Err(ChannelExists(channel_id));
+        if self.get_channel(id).alive() {
+            return Err(ChannelExists(id));
         }
 
         // now insert a new value in the free slot
-        let idx = channel_id as usize;
+        let idx = id as usize;
         let (rx, rx_stream) = new_channel_state();
         self.rx_map[idx] = rx;
 
         // cache this ID to make future calls to alloc_new_channel() faster
-        self.last_inserted_channel_id = channel_id;
+        self.last_inserted_channel_id = id;
 
         Ok(rx_stream)
     }

@@ -13,38 +13,45 @@ use tokio::{
         mpsc::{UnboundedReceiver, UnboundedSender},
     },
 };
-use tracing::{Instrument as _, info_span, trace_span};
+use tracing::{Instrument as _, debug, debug_span, info_span, trace, trace_span};
 
 use crate::stdiomux::{BytestreamService, channel_map::ChannelMap};
 
 /// Handle the transmission forwarding for a single channel.
+///
+/// This transmission queue may contain zero-byte EOF sentinels.
 pub async fn drive_channel_tx(
     id: u16,
     mut s: impl Stream<Item = Bytes> + Unpin,
     txq: UnboundedSender<(u16, Bytes)>,
 ) {
+    debug!("starting tx channel");
+
     // pull from the request stream
-    while let Some(bytes) = s.next().await {
+    while let Some(bs) = s.next().await {
         // don't send 0 bytes because that's a EOF sentinel
-        if bytes.is_empty() {
+        if bs.is_empty() {
+            trace!("skipping 0-byte message");
             continue;
         }
 
-        tracing::trace!(len = ?bytes.len(), "sending message");
+        trace!(len = ?bs.len(), "sending message");
 
-        let Ok(()) = txq.send((id, bytes)) else {
+        let Ok(()) = txq.send((id, bs)) else {
             break;
         };
     }
 
-    tracing::trace!("sending EOF");
+    debug!("sending EOF");
 
     // out of requests -- write EOF sentinel
     txq.send((id, Bytes::new())).ok();
 }
 
 /// Forward frames from a transmission queue into the given [AsyncWrite].
-#[tracing::instrument(skip_all, level = "debug")]
+///
+/// This transmission queue may contain zero-byte EOF sentinels.
+#[tracing::instrument(skip_all)]
 pub async fn drive_tx<W>(
     mut txq: UnboundedReceiver<(u16, Bytes)>,
     tx: W,
@@ -57,22 +64,20 @@ where
     let mut tx = BufWriter::with_capacity(4096, tx);
 
     // pull from the request stream
-    while let Some((id, bytes)) = txq.recv().await {
-        // don't send 0 bytes because that's a EOF sentinel
-        if bytes.is_empty() {
-            continue;
-        }
+    while let Some((id, bs)) = txq.recv().await {
+        let _span = trace_span!("send_msg", chan = id);
 
-        tracing::trace!(len = ?bytes.len(), "sending message");
+        trace!(len = ?bs.len(), "sending message");
 
         // length-framing
-        write_msg(&mut tx, (id, bytes)).await?;
+        write_msg(&mut tx, (id, bs)).await?;
     }
 
     // txq dropped
     Ok(())
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn drive_rx<S, E>(
     channel_map: impl AsRef<ChannelMap>,
     stream: impl Stream<Item = (u16, Option<Bytes>)>,
@@ -82,38 +87,55 @@ pub async fn drive_rx<S, E>(
 ) where
     S: BytestreamService<LocalBoxStream<'static, Bytes>, Error = E>,
     S::Response: Unpin + 'static,
-    E: 'static,
+    E: Debug + 'static,
 {
     let channel_map = channel_map.as_ref();
     let mut stream = pin!(stream.peekable());
 
+    // entirely for logging, incremented only when stream is advanced
+    let mut msg_count = 0u64;
+
     while let Some((id, bs)) = stream.as_mut().peek().await {
         let id = *id;
 
+        let _span = debug_span!("handle_rx", n = msg_count, chan = id).entered();
+
         let Some(bs) = bs else {
             // EOF sentinel
+            debug!("EOF sentinel received, closing channel's RX half and advancing stream");
             channel_map.close(id);
+            stream.next().await;
+            msg_count += 1;
             continue;
         };
 
         match channel_map.handle_rx(id, bs) {
             Ok(_) => {
+                trace!("channel consumed successfully, advancing stream");
+
                 // successfully consumed, advance the stream
                 stream.next().await;
+                msg_count += 1;
             }
             Err(_) => {
+                debug!("new ID detected, inserting new channel");
+
                 // no existing channel, create a new one using the service
+                // TODO: handle the case where we run out of channels
                 let rx = channel_map.insert_new_channel(id).unwrap();
                 let res = svc.call(Box::pin(rx));
 
                 // inject errors from the stream into the global signal
                 let err_handler = svc_err_handler.clone();
                 let res = res
+                    .inspect(|x| trace!("response stream yields {x:?}"))
                     .map_err(err_handler)
                     .filter_map(|x| std::future::ready(x.ok()));
 
                 // spawn task in background
-                tokio::task::spawn_local(drive_channel_tx(id, res, txq.clone()));
+                tokio::task::spawn_local(
+                    drive_channel_tx(id, res, txq.clone()).instrument(debug_span!("drive_channel")),
+                );
 
                 // do NOT advance the stream or else we will drop first payload
             }
@@ -131,7 +153,7 @@ where
     let rx = BufReader::with_capacity(4096, rx);
 
     stream::unfold(rx, |mut rx| {
-        async move { Some((read_msg(&mut rx).await, rx)) }.instrument(info_span!("rxdriver"))
+        async move { Some((read_msg(&mut rx).await, rx)) }.instrument(info_span!("rx_stream"))
     })
 }
 
