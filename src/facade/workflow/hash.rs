@@ -213,7 +213,7 @@ fn run_thread(
 ) -> Result<Bytes, HashingError> {
     std::thread::scope(move |s| -> Result<Bytes, HashingError> {
         // ensure file can be opened
-        let file = FileReader::new(&wf.file).map_err(HashingError::Read)?;
+        let file = FileReader::new(&wf.file, None).map_err(HashingError::Read)?;
         let file_size = file.size();
 
         // construct the other nodes in the graph

@@ -1,25 +1,27 @@
 use std::{
     fs::File,
-    io::Read,
     path::{Path, PathBuf},
 };
 
 use crate::{
-    io_graph::{ALLOC_LAYOUT, SendBytes, Worker},
+    io_graph::{ALLOC_LAYOUT, SendBytes, Worker, worker::Reader},
     util::alloc_uninit_bytes_with_layout,
 };
 
 /// A worker optimized for reading a file on disk.
 pub struct FileReader {
     path: PathBuf,
+    /// Max number of bytes to read from the file
     size: u64,
     file: File,
 }
 
 impl FileReader {
-    pub fn new(path: &Path) -> std::io::Result<Box<Self>> {
+    /// Create a new FileReader with a maximum number of bytes to read.
+    pub fn new(path: &Path, max_size: Option<u64>) -> std::io::Result<Box<Self>> {
         let file = File::open(path)?;
-        let size = file.metadata()?.len();
+        let metadata = file.metadata()?;
+        let size = max_size.unwrap_or(metadata.len());
 
         /*
         nix::fcntl::posix_fadvise(&file, 0, 0, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)
@@ -53,24 +55,8 @@ impl<Tx: SendBytes> Worker<Tx> for FileReader {
         context: &crate::io_graph::GraphContext,
         args: Tx,
     ) -> Result<Self::Output, Self::Error> {
-        let mut tx = args;
-
-        while !context.halt() {
-            // SAFETY: these bytes will get filled up immediately. everything else that
-            // wasn't filled up will get truncated
-            let mut buf = unsafe { alloc_uninit_bytes_with_layout(ALLOC_LAYOUT) };
-
-            let count = self.file.read(&mut buf)?;
-            if count == 0 {
-                break;
-            }
-
-            buf.truncate(count);
-            tx.send(buf.freeze())?;
-        }
-
-        tx.close()?;
-
+        let r = Reader::new(self.size.into());
+        r.run(context, (&mut self.file, args))?;
         Ok(())
     }
 }
