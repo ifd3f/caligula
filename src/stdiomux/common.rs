@@ -1,21 +1,64 @@
-use std::{fmt::Debug, pin::pin};
+use std::{fmt::Debug, pin::pin, rc::Rc};
 
 use bytes::{Bytes, BytesMut};
 use futures::{
-    Stream, StreamExt as _, TryStreamExt,
+    FutureExt as _, Stream, StreamExt as _, TryFutureExt as _, TryStreamExt,
     stream::{self, LocalBoxStream},
 };
 use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader, BufWriter},
-    select,
+    join,
     sync::{
         SetOnce,
-        mpsc::{UnboundedReceiver, UnboundedSender},
+        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     },
 };
 use tracing::{Instrument as _, debug, debug_span, info_span, trace, trace_span};
 
 use crate::stdiomux::{BytestreamService, channel_map::ChannelMap};
+
+/// Returns a future for forwarding and multiplexing payloads over the provided
+/// rx and tx.
+pub fn common_driver<R, W, S>(
+    rx: R,
+    tx: W,
+    svc: S,
+    rx_err_handler: impl Fn(std::io::Error) + Clone + 'static,
+    tx_err_handler: impl Fn(std::io::Error) + Clone + 'static,
+    svc_err_handler: impl Fn(S::Error) + Clone + 'static,
+) -> (
+    impl Future<Output = ()>,
+    Rc<ChannelMap>,
+    UnboundedSender<(u16, Bytes)>,
+)
+where
+    R: AsyncRead + Unpin + 'static,
+    W: AsyncWrite + Unpin + 'static,
+    S: BytestreamService<LocalBoxStream<'static, Bytes>>,
+    S::Response: Unpin + 'static,
+    S::Error: Debug + 'static,
+{
+    let channel_map = Rc::new(ChannelMap::new());
+    let (txq_tx, txq_rx) = unbounded_channel();
+
+    let rx_driver = drive_rx(
+        channel_map.clone(),
+        rx_stream(rx)
+            .map_err(rx_err_handler)
+            .filter_map(|x| std::future::ready(x.ok())),
+        svc,
+        svc_err_handler,
+        txq_tx.clone(),
+    );
+
+    let tx_driver = drive_tx(txq_rx, tx).map_err(tx_err_handler).map(|_| ());
+
+    let fut = async move {
+        join!(rx_driver, tx_driver);
+    };
+
+    (fut, channel_map, txq_tx)
+}
 
 /// Handle the transmission forwarding for a single channel.
 ///
@@ -52,10 +95,7 @@ pub async fn drive_channel_tx(
 ///
 /// This transmission queue may contain zero-byte EOF sentinels.
 #[tracing::instrument(skip_all)]
-pub async fn drive_tx<W>(
-    mut txq: UnboundedReceiver<(u16, Bytes)>,
-    tx: W,
-) -> Result<(), std::io::Error>
+async fn drive_tx<W>(mut txq: UnboundedReceiver<(u16, Bytes)>, tx: W) -> Result<(), std::io::Error>
 where
     W: AsyncWrite + Unpin + 'static,
 {
@@ -81,16 +121,16 @@ where
 }
 
 #[tracing::instrument(skip_all)]
-pub async fn drive_rx<S, E>(
+async fn drive_rx<S>(
     channel_map: impl AsRef<ChannelMap>,
     stream: impl Stream<Item = (u16, Option<Bytes>)>,
     svc: S,
-    svc_err_handler: impl Fn(E) + Clone + 'static,
+    svc_err_handler: impl Fn(S::Error) + Clone + 'static,
     txq: UnboundedSender<(u16, Bytes)>,
 ) where
-    S: BytestreamService<LocalBoxStream<'static, Bytes>, Error = E>,
+    S: BytestreamService<LocalBoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,
-    E: Debug + 'static,
+    S::Error: Debug + 'static,
 {
     let channel_map = channel_map.as_ref();
     let mut stream = pin!(stream.peekable());
@@ -131,7 +171,7 @@ pub async fn drive_rx<S, E>(
                 // inject errors from the stream into the global signal
                 let err_handler = svc_err_handler.clone();
                 let res = res
-                    .inspect(|x: &Result<Bytes, E>| trace!("response stream yields {x:?}"))
+                    .inspect(|x: &Result<Bytes, S::Error>| trace!("response stream yields {x:?}"))
                     .chain(
                         stream::once(async move {
                             trace!("response stream ended");
@@ -155,7 +195,7 @@ pub async fn drive_rx<S, E>(
 }
 
 /// Convert an [AsyncRead] into a stream of frames.
-pub fn rx_stream<R>(rx: R) -> impl Stream<Item = Result<(u16, Option<Bytes>), std::io::Error>>
+fn rx_stream<R>(rx: R) -> impl Stream<Item = Result<(u16, Option<Bytes>), std::io::Error>>
 where
     R: AsyncRead + Unpin + 'static,
 {
@@ -208,17 +248,6 @@ async fn read_msg(mut rx: impl AsyncRead + Unpin) -> Result<(u16, Option<Bytes>)
     Ok((channel, Some(msg.freeze())))
 }
 
-pub fn inject_err_stream_ok<T, E, E0, S>(
-    stream: S,
-    err_notify: impl AsRef<SetOnce<E>>,
-) -> impl Stream<Item = T>
-where
-    S: Stream<Item = Result<T, E0>>,
-    E: Clone + From<E0>,
-{
-    inject_err_stream(stream, err_notify).filter_map(|r| std::future::ready(r.ok()))
-}
-
 pub fn inject_err_stream<T, E, E0, S>(
     stream: S,
     err_notify: impl AsRef<SetOnce<E>>,
@@ -239,31 +268,4 @@ where
             }
         }
     })
-}
-
-pub async fn inject_err_fut<T, E, E0, Fut>(
-    fut: Fut,
-    err_notify: impl AsRef<SetOnce<E>>,
-) -> Result<T, E>
-where
-    E: Debug + Clone + From<E0>,
-    Fut: Future<Output = Result<T, E0>>,
-{
-    let err_notify = err_notify.as_ref();
-
-    let r = select! {
-        biased;
-        err = err_notify.wait() => { // inject errors from err_notify
-            tracing::warn!(?err, "Quitting early due to signalled error");
-            Err(err.clone())
-        },
-        r = fut => r.map_err(E::from),
-    };
-
-    if let Err(err) = &r {
-        tracing::warn!(?err, "fut errored, sending signal");
-        err_notify.set(err.clone()).ok(); // inject errors into err_notify
-    }
-
-    r
 }

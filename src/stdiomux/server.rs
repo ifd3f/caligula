@@ -1,19 +1,16 @@
-use std::{error::Error, rc::Rc, sync::Arc};
+use std::{error::Error, sync::Arc};
 
 use bytes::Bytes;
-use futures::{FutureExt as _, TryFutureExt, TryStreamExt, stream::LocalBoxStream};
+use futures::stream::LocalBoxStream;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::{SetOnce, mpsc::unbounded_channel},
-    try_join,
+    select,
+    sync::SetOnce,
 };
 use tracing::{Instrument, info_span};
 
 use super::BytestreamService;
-use crate::stdiomux::{
-    channel_map::ChannelMap,
-    common::{drive_rx, drive_tx, inject_err_fut, inject_err_stream_ok, rx_stream},
-};
+use crate::stdiomux::common::common_driver;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError<E: Error> {
@@ -46,34 +43,38 @@ where
     S::Error: Error + 'static,
 {
     let err_notify = Arc::new(SetOnce::<ServerError<S::Error>>::new());
-    let channel_map = Rc::new(ChannelMap::new());
-    let (txq_tx, txq_rx) = unbounded_channel();
 
-    let svc_err_handler = {
-        let err_notify = err_notify.clone();
-        move |e: S::Error| {
-            err_notify.set(ServerError::Service(Arc::new(e))).ok();
-        }
-    };
-    let rx_driver = drive_rx(
-        channel_map.clone(),
-        inject_err_stream_ok(
-            rx_stream(rx).map_err(|e| ServerError::Rx(Arc::new(e))),
-            err_notify.clone(),
-        ),
+    let (fut, _, _) = common_driver(
+        rx,
+        tx,
         s,
-        svc_err_handler,
-        txq_tx.clone(),
-    )
-    .map(|_| Ok(()));
-
-    let tx_driver = inject_err_fut(
-        drive_tx(txq_rx, tx).map_err(|e| ServerError::Tx(Arc::new(e))),
-        err_notify.clone(),
+        {
+            let en = err_notify.clone();
+            move |e| {
+                en.set(ServerError::Rx(e.into())).ok();
+            }
+        },
+        {
+            let en = err_notify.clone();
+            move |e| {
+                en.set(ServerError::Tx(e.into())).ok();
+            }
+        },
+        {
+            let en = err_notify.clone();
+            move |e| {
+                en.set(ServerError::Service(e.into())).ok();
+            }
+        },
     );
 
-    async move { try_join!(rx_driver, tx_driver) }
-        .instrument(info_span!("driver"))
-        .await
-        .map(|_| ())
+    let driver = async move {
+        select! {
+           _ = fut => Ok(()),
+           e = err_notify.wait() => Err(e.clone()),
+        }
+    }
+    .instrument(info_span!("driver"));
+
+    driver.await
 }

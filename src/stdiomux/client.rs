@@ -2,26 +2,20 @@ use std::{convert::Infallible, rc::Rc, sync::Arc};
 
 use bytes::Bytes;
 use futures::{
-    FutureExt, Stream, StreamExt, TryFutureExt, TryStreamExt,
+    Stream, StreamExt,
     stream::{BoxStream, LocalBoxStream},
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::{
-        SetOnce,
-        mpsc::{UnboundedSender, unbounded_channel},
-    },
-    try_join,
+    select,
+    sync::{SetOnce, mpsc::UnboundedSender},
 };
 use tracing::{Instrument, debug_span, info_span};
 
 use crate::stdiomux::{
     BytestreamService,
     channel_map::ChannelMap,
-    common::{
-        drive_channel_tx, drive_rx, drive_tx, inject_err_fut, inject_err_stream,
-        inject_err_stream_ok, rx_stream,
-    },
+    common::{common_driver, drive_channel_tx, inject_err_stream},
     service_fn,
 };
 
@@ -49,35 +43,41 @@ where
     W: AsyncWrite + Unpin + 'static,
 {
     let err_notify = Arc::new(SetOnce::<ClientError>::new());
-    let channel_map = Rc::new(ChannelMap::new());
-    let (txq_tx, txq_rx) = unbounded_channel();
 
-    let rx_driver = drive_rx(
-        channel_map.clone(),
-        inject_err_stream_ok(
-            rx_stream(rx).map_err(|e| ClientError::Rx(Arc::new(e))),
-            err_notify.clone(),
-        ),
+    let (fut, channel_map, txq) = common_driver(
+        rx,
+        tx,
         service_fn(|_| -> LocalBoxStream<'static, Result<Bytes, Infallible>> {
             panic!("Client received an unexpected channel!")
         }),
-        |_: Infallible| panic!("infallible error can never happen"),
-        txq_tx.clone(),
-    )
-    .map(|_| Ok(()));
-
-    let tx_driver = inject_err_fut(
-        drive_tx(txq_rx, tx).map_err(|e| ClientError::Tx(Arc::new(e))),
-        err_notify.clone(),
+        {
+            let en = err_notify.clone();
+            move |e| {
+                en.set(ClientError::Rx(e.into())).ok();
+            }
+        },
+        {
+            let en = err_notify.clone();
+            move |e| {
+                en.set(ClientError::Tx(e.into())).ok();
+            }
+        },
+        move |_| panic!("infallible error can never happen"),
     );
 
-    let driver =
-        async move { try_join!(rx_driver, tx_driver).map(|_| ()) }.instrument(info_span!("driver"));
+    let en = err_notify.clone();
+    let driver = async move {
+        select! {
+           _ = fut => Ok(()),
+           e = en.wait() => Err(e.clone()),
+        }
+    }
+    .instrument(info_span!("driver"));
 
     let client = LocalBytestreamClient {
         channel_map,
         err_notify,
-        txq: txq_tx,
+        txq,
     };
 
     (client, driver)
