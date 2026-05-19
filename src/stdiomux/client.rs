@@ -8,10 +8,7 @@ use tokio::{
 };
 use tracing::{Instrument, info_span};
 
-use crate::stdiomux::{
-    BytestreamService,
-    util::{drive_rx, drive_tx, inject_err_fut, inject_err_stream},
-};
+use crate::stdiomux::BytestreamService;
 
 #[derive(Debug, thiserror::Error, Clone)]
 pub enum ClientError {

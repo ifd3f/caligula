@@ -10,10 +10,12 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
+use chrono::format::Item;
 use futures::{
     FutureExt, Stream, StreamExt as _,
-    stream::{self, BoxStream, FusedStream, LocalBoxStream, Peekable},
+    stream::{self, BoxStream, FusedStream, FuturesUnordered, LocalBoxStream, Peekable},
 };
+use infinite_stream::{InfiniteStream, StreamExt};
 use itertools::Itertools;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -31,7 +33,8 @@ pub struct RecvClosed;
 
 /// Helper for managing a set of channels.
 ///
-/// This object is optimized so that it must be accessed mutably when channels are added or deleted, but may be accessed immutably during steady-state,
+/// This object is optimized so that it must be accessed mutably when channels
+/// are added or deleted, but may be accessed immutably during steady-state,
 pub struct ChannelMap {
     rx_map: Box<[RxState; MAX_CHANNELS as usize]>,
     tx_map: Box<[TxState; MAX_CHANNELS as usize]>,
@@ -83,7 +86,8 @@ impl ChannelMap {
 
     /// Attempt to set up a new channel with any ID.
     ///
-    /// Returns the channel created along with the stream for receiving inputs from it.
+    /// Returns the channel created along with the stream for receiving inputs
+    /// from it.
     pub fn alloc_new_channel(
         &mut self,
         tx_stream: LocalBoxStream<'static, Bytes>,
@@ -152,6 +156,12 @@ impl<'a> ChannelMapRxHalf<'a> {
             .ok_or(RecvClosed)?
             .handle_rx(payload)
     }
+
+    pub fn close_rx(&mut self, id: u16) {
+        self.rx_map.get_mut(id as usize).map(|s| {
+            s.close();
+        });
+    }
 }
 
 pub struct ChannelMapTxHalf<'a> {
@@ -159,8 +169,13 @@ pub struct ChannelMapTxHalf<'a> {
 }
 
 impl<'a> ChannelMapTxHalf<'a> {
-    pub fn as_stream(&mut self) -> impl Stream<Item = (u16, Bytes)> {
-        stream::iter(&mut self.txs).flat_map(|(id, tx)| tx.stream().map(|bs| (*id, bs)))
+    pub fn tx_stream(self) -> impl InfiniteStream<Item = (u16, Bytes)> {
+        let streams = self
+            .txs
+            .into_iter()
+            .map(|(id, tx)| tx.stream().map(move |bs| (id, bs)));
+        let merged = stream::select_all(streams);
+        merged.chain_pending()
     }
 }
 
@@ -173,7 +188,7 @@ fn new_channel_state(
 
     let rx = RxState { rxq: rxq_tx.into() };
     let tx = TxState {
-        tx_stream: tx_stream.into(),
+        tx_stream: tx_stream.peekable().into(),
     };
 
     (rx, tx, rx_stream)
@@ -204,11 +219,15 @@ impl RxState {
         let rxq = self.rxq.as_ref().ok_or(RecvClosed)?;
         rxq.send(payload).map_err(move |_| RecvClosed)
     }
+
+    pub fn close(&mut self) {
+        self.rxq = None;
+    }
 }
 
 #[derive(Default)]
 pub struct TxState {
-    tx_stream: Option<LocalBoxStream<'static, Bytes>>,
+    tx_stream: Option<Peekable<LocalBoxStream<'static, Bytes>>>,
 }
 
 impl Default for &TxState {

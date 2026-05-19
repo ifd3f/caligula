@@ -7,7 +7,6 @@ use tokio::{
 };
 
 use super::BytestreamService;
-use crate::stdiomux::util::{drive_rx, drive_tx, inject_err_fut, inject_err_stream};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError<E: Error> {
