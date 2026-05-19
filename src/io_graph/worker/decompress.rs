@@ -1,15 +1,13 @@
 use std::{io::Read, marker::PhantomData};
 
-use bytes::BytesMut;
-
 use crate::{
     compression::{CompressionFormat, decompress},
-    io_graph::{GraphContext, RecvBytes, SendBytes, Worker, util::RecvBytesReader},
+    io_graph::{ALLOC_LAYOUT, GraphContext, RecvBytes, SendBytes, Worker, util::RecvBytesReader},
+    util::alloc_uninit_bytes_with_layout,
 };
 
 pub struct DecompressorWorker {
     cf: CompressionFormat,
-    read_size: usize,
     _phantom: PhantomData<()>,
 }
 
@@ -22,10 +20,9 @@ pub struct DecompressError {
 }
 
 impl DecompressorWorker {
-    pub fn new(cf: CompressionFormat, read_size: usize) -> Box<Self> {
+    pub fn new(cf: CompressionFormat) -> Box<Self> {
         Box::new(Self {
             cf,
-            read_size,
             _phantom: PhantomData,
         })
     }
@@ -46,14 +43,9 @@ impl<Rx: RecvBytes, Tx: SendBytes> Worker<(Rx, Tx)> for DecompressorWorker {
         let mut reader_empty = false;
 
         while !reader_empty {
-            // set up a new buffer
-            let mut buf = BytesMut::with_capacity(self.read_size);
-
             // SAFETY: these bytes will get filled up immediately. everything else that
             // wasn't filled up will get truncated
-            unsafe {
-                buf.set_len(self.read_size);
-            }
+            let mut buf = unsafe { alloc_uninit_bytes_with_layout(ALLOC_LAYOUT) };
 
             // fill up the buffer as much as possible
             let mut cursor = buf.as_mut();

@@ -1,6 +1,6 @@
 use std::{fmt::Debug, pin::pin, rc::Rc};
 
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use futures::{
     FutureExt as _, Stream, StreamExt as _, TryFutureExt as _, TryStreamExt,
     stream::{self, LocalBoxStream},
@@ -15,7 +15,10 @@ use tokio::{
 };
 use tracing::{Instrument as _, debug, debug_span, info_span, trace, trace_span};
 
-use crate::stdiomux::{BytestreamService, channel_map::ChannelMap};
+use crate::{
+    stdiomux::{BytestreamService, channel_map::ChannelMap},
+    util::alloc_uninit_bytes,
+};
 
 /// Returns a future for forwarding and multiplexing payloads over the provided
 /// rx and tx.
@@ -237,10 +240,8 @@ async fn read_msg(mut rx: impl AsyncRead + Unpin) -> Result<(u16, Option<Bytes>)
 
     tracing::trace!(?channel, ?len, "got message");
 
-    let mut msg = BytesMut::with_capacity(len);
-    unsafe {
-        msg.set_len(len);
-    }
+    // SAFETY: they get filled immediately
+    let mut msg = unsafe { alloc_uninit_bytes(len) };
     rx.read_exact(&mut msg)
         .instrument(trace_span!("read_exact"))
         .await?;

@@ -4,20 +4,20 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use bytes::BytesMut;
-
-use crate::io_graph::{SendBytes, Worker};
+use crate::{
+    io_graph::{ALLOC_LAYOUT, SendBytes, Worker},
+    util::alloc_uninit_bytes_with_layout,
+};
 
 /// A worker optimized for reading a file on disk.
 pub struct FileReader {
     path: PathBuf,
     size: u64,
-    read_size: usize,
     file: File,
 }
 
 impl FileReader {
-    pub fn new(path: &Path, read_size: usize) -> std::io::Result<Box<Self>> {
+    pub fn new(path: &Path) -> std::io::Result<Box<Self>> {
         let file = File::open(path)?;
         let size = file.metadata()?.len();
 
@@ -30,7 +30,6 @@ impl FileReader {
             size,
             path: path.to_owned(),
             file,
-            read_size,
         }))
     }
 
@@ -57,15 +56,9 @@ impl<Tx: SendBytes> Worker<Tx> for FileReader {
         let mut tx = args;
 
         while !context.halt() {
-            let mut buf = BytesMut::with_capacity(self.read_size);
-
-            // SAFETY: We are going to overwrite these bytes immediately.
-            // The bytes we don't read will get trimmed down to size.
-            // If you're concerned that the `File` impl may read these bytes, that's just
-            // way too paranoid.
-            unsafe {
-                buf.set_len(self.read_size);
-            }
+            // SAFETY: these bytes will get filled up immediately. everything else that
+            // wasn't filled up will get truncated
+            let mut buf = unsafe { alloc_uninit_bytes_with_layout(ALLOC_LAYOUT) };
 
             let count = self.file.read(&mut buf)?;
             if count == 0 {

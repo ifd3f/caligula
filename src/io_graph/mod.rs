@@ -1,4 +1,5 @@
 use std::{
+    alloc::Layout,
     error::Error,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -16,6 +17,25 @@ mod buf;
 mod junction;
 pub mod util;
 pub mod worker;
+
+/// [`Layout`] to allocate buffer pages with.
+///
+/// Later on we probably want to figure out how to auto-tune these values, but
+/// for now, this hardcoded constant is probably reasonable.
+const ALLOC_LAYOUT: Layout =
+    unsafe { Layout::from_size_align_unchecked(READ_SIZE, BUFFER_ALIGNMENT) };
+
+/// How big our buffers are.
+///
+/// Later on we probably want to figure out how to auto-tune these values, but
+/// for now, this hardcoded constant is probably reasonable.
+const READ_SIZE: usize = 65536;
+
+/// What to align our buffer pages to.
+///
+/// Later on we probably want to figure out actual alignment values, but for
+/// now, this hardcoded constant is probably reasonable.
+const BUFFER_ALIGNMENT: usize = 16384;
 
 /// A worker thread ready to be moved onto a thread and started with the given
 /// [`Args`].
