@@ -7,7 +7,7 @@ use futures::{
 
 use crate::{
     herder_api::{HerderAction, HerderResponse, HerderService, LayerError, bincode_options},
-    stdiomux::BytestreamService,
+    util::stdiomux::BytestreamService,
 };
 
 #[derive(Debug, thiserror::Error)]

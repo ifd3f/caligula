@@ -4,12 +4,14 @@ use bytesize::ByteSize;
 use tracing::{info, trace};
 
 use crate::{
-    byteseries::{ByteSeries, EstimatedTime},
-    compression::CompressionFormat,
-    device::WriteTarget,
+    codec::compression::CompressionFormat,
     facade::workflow::WorkflowState,
     herder_api::{client::ClientError, error::LayerError, write_verify::*},
-    stdiomux,
+    util::{
+        byteseries::{ByteSeries, EstimatedTime},
+        device::WriteTarget,
+        stdiomux,
+    },
 };
 
 /// Params for starting a write + verify workflow.
@@ -326,7 +328,7 @@ mod tests {
     };
 
     use super::WVState;
-    use crate::{byteseries::ByteSeries, herder_api::write_verify::*};
+    use crate::{herder_api::write_verify::*, util::byteseries::ByteSeries};
 
     #[test]
     fn accept_total_bytes_messages() {

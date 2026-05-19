@@ -12,7 +12,7 @@ use crate::{
         HerderAction, HerderResponse, HerderService, LayerError, bincode_options,
         error::rotate_layer_error,
     },
-    stdiomux::{self, BytestreamService},
+    util::stdiomux::{self, BytestreamService},
 };
 
 #[derive(Debug, thiserror::Error)]

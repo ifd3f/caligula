@@ -4,7 +4,10 @@ use std::path::PathBuf;
 
 use bytes::Bytes;
 
-use crate::{compression::CompressionFormat, hash::HashAlg, util::candidate::Candidates};
+use crate::{
+    codec::{compression::CompressionFormat, hash::HashAlg},
+    util::candidate::Candidates,
+};
 
 /// Result of analyzing an input file for its properties.
 pub struct FileAnalysis {

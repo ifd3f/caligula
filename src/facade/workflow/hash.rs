@@ -12,16 +12,17 @@ use tokio::{
 };
 
 use crate::{
-    byteseries::ByteSeries,
-    compression::CompressionFormat,
+    codec::{compression::CompressionFormat, hash::HashAlg},
     facade::{
         watch::Watch,
         workflow::{Workflow, WorkflowState},
     },
-    hash::HashAlg,
-    io_graph::{
-        self, GraphContext, JunctionTracker, SendJunction, Worker as _,
-        worker::{DecompressError, DecompressorWorker, FileReader},
+    util::{
+        byteseries::ByteSeries,
+        io_graph::{
+            self, GraphContext, JunctionTracker, SendJunction, Worker as _,
+            worker::{DecompressError, DecompressorWorker, FileReader},
+        },
     },
 };
 

@@ -14,12 +14,14 @@ use tracing::{debug, info};
 use tracing_unwrap::ResultExt;
 
 use crate::{
-    device,
     herder_api::{
         error::{CommandError, DiskError, InputFileError, IoError, UnmountError},
         write_verify::*,
     },
-    legacy_io::{SyncDataFile, VerifyOp, WriteOp, open_blockdev},
+    util::{
+        device,
+        legacy_io::{SyncDataFile, VerifyOp, WriteOp, open_blockdev},
+    },
 };
 
 /// Maximum size we may allocate for each buffer.
@@ -78,7 +80,7 @@ fn run(
             .open(&args.dest)
             .map_err(IoError::<DiskError>::from)?,
         device::Type::Disk | device::Type::Partition => {
-            open_blockdev(&args.dest, args.compression).map_err(IoError::<DiskError>::from)?
+            open_blockdev(&args.dest).map_err(IoError::<DiskError>::from)?
         }
     });
 

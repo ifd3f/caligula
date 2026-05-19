@@ -6,19 +6,18 @@ use std::path::PathBuf;
 pub use self::{
     child::SpawnDaemonError,
     disks::DiskList,
+    escalation::EscalationMethod,
     workflow::{
         Orchestrator, OrchestratorExt,
         write_verify::{WVState, WriteVerifyWorkflow, WriteVerifyWorkflowError},
     },
 };
-use crate::{
-    escalation::EscalationMethod,
-    facade::{analyze_input::FileAnalysis, workflow::hash::HashWorkflow},
-};
+use crate::facade::{analyze_input::FileAnalysis, workflow::hash::HashWorkflow};
 
 mod analyze_input;
 mod child;
 mod disks;
+mod escalation;
 mod real;
 pub mod watch;
 pub mod workflow;

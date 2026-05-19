@@ -4,12 +4,12 @@ use bytes::Bytes;
 use futures::{FutureExt as _, stream::BoxStream};
 use tokio::{process::Child, try_join};
 
+use super::escalation::{EscalationError, run_escalate};
 use crate::{
-    escalation::{EscalationError, run_escalate},
     herder_api::{
         HerderAction, HerderResponse, HerderService, client::HerderClient, error::LayerError,
     },
-    stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
+    util::stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
 };
 
 type Client =
@@ -48,7 +48,7 @@ pub async fn spawn(
     SpawnDaemonError,
 > {
     let proc = process_path::get_executable_path().unwrap();
-    let cmd = crate::escalation::Command {
+    let cmd = super::escalation::Command {
         proc: proc.to_str().unwrap().to_owned().into(),
         envs: vec![],
         args: vec!["_herder".into(), log_path.into()],
