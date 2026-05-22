@@ -8,12 +8,14 @@ use bytes::Bytes;
 
 #[expect(unused)]
 pub use self::junction::{Junction, RecvJunction};
-pub use self::{
+pub(crate) use self::{
     buf::buf,
+    counter::{Counter, define_counter_struct},
     junction::{JunctionTracker, SendJunction},
 };
 
 mod buf;
+mod counter;
 mod junction;
 pub mod util;
 pub mod worker;

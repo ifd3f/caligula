@@ -3,11 +3,15 @@ use std::marker::PhantomData;
 use bytes::Bytes;
 use digest::Digest;
 
-use crate::util::io_graph::{GraphContext, RecvBytes, Worker};
+use crate::util::io_graph::{GraphContext, RecvBytes, Worker, define_counter_struct};
 
 pub struct HashWorker<H: Digest> {
     _phantom: PhantomData<fn() -> H>,
 }
+
+define_counter_struct!(HashCounters<N> {
+    bytes_hashed: N,
+});
 
 impl<H: Digest> HashWorker<H> {
     pub fn new() -> Box<Self> {
