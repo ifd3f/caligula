@@ -26,7 +26,6 @@ use bytes::{Bytes, BytesMut};
 
 pub mod byteseries;
 pub mod candidate;
-pub mod countersink;
 pub mod device;
 pub mod io_graph;
 pub mod legacy_io;
