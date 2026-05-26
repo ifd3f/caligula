@@ -20,7 +20,7 @@ use crate::{
     util::{
         byteseries::ByteSeries,
         io_graph::{
-            self, GraphContext, JunctionTracker, SendJunction, Worker as _,
+            self, OldGraphContext, JunctionTracker, SendJunction, Worker as _,
             worker::{DecompressError, DecompressorWorker, FileReader},
         },
     },
@@ -103,7 +103,7 @@ impl WorkflowState for HashingState {
 #[tracing::instrument]
 pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandle<()>>) {
     // state shared between worker threads and tracker coroutine
-    let state = Arc::new((GraphContext::new(), JunctionTracker::new()));
+    let state = Arc::new((OldGraphContext::new(), JunctionTracker::new()));
 
     // spawn thread with channels for communicating one-off data
     let (tx_start, rx_start) = oneshot::channel();
@@ -209,7 +209,7 @@ async fn tracker_coroutine(
 fn run_thread(
     wf: &HashWorkflow,
     tx_start: oneshot::Sender<StartData>,
-    ctx: &GraphContext,
+    ctx: &OldGraphContext,
     js: &JunctionTracker,
 ) -> Result<Bytes, HashingError> {
     std::thread::scope(move |s| -> Result<Bytes, HashingError> {

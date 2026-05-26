@@ -1,19 +1,27 @@
 use std::{
     alloc::Layout,
     error::Error,
+    marker::PhantomData,
     sync::atomic::{AtomicBool, Ordering},
+    task::{Context, Poll},
 };
 
 use bytes::Bytes;
+use futures::FutureExt;
+use tokio::sync::oneshot;
 
 #[expect(unused)]
 pub use self::junction::{Junction, RecvJunction};
-pub use self::{
+pub(crate) use self::{
     buf::buf,
+    builder::{GraphContext, WorkerInfo},
+    counter::{Counter, define_counter_struct},
     junction::{JunctionTracker, SendJunction},
 };
 
 mod buf;
+mod builder;
+mod counter;
 mod junction;
 pub mod util;
 pub mod worker;
@@ -37,6 +45,28 @@ const READ_SIZE: usize = 65536;
 /// now, this hardcoded constant is probably reasonable.
 const BUFFER_ALIGNMENT: usize = 16384;
 
+pub trait IoGraph {
+    type Snapshot;
+    type Output;
+    type Error: Error + Send + 'static;
+
+    type Handle: GraphHandle<Output = Self::Output, Error = Self::Error, Snapshot = Self::Snapshot>;
+
+    fn spawn(self, ctx: &mut GraphContext<'_>) -> Self::Handle;
+}
+
+pub trait GraphHandle {
+    type Snapshot;
+    type Output;
+    type Error: Error + Send + 'static;
+
+    fn poll_status(
+        &mut self,
+        cx: &mut Context<'_>,
+        snapshot: &mut Self::Snapshot,
+    ) -> Poll<Result<Self::Output, Self::Error>>;
+}
+
 /// A worker thread ready to be moved onto a thread and started with the given
 /// [`Args`].
 #[must_use]
@@ -50,16 +80,16 @@ pub trait Worker<Args>: Send {
     /// Run this worker thread.
     fn run(
         self: Box<Self>,
-        context: &GraphContext,
+        context: &OldGraphContext,
         args: Args,
     ) -> Result<Self::Output, Self::Error>;
 }
 
-pub struct GraphContext {
+pub struct OldGraphContext {
     halt: AtomicBool,
 }
 
-impl GraphContext {
+impl OldGraphContext {
     pub fn new() -> Self {
         Self { halt: false.into() }
     }

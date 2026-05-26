@@ -5,7 +5,7 @@ use crate::{
     util::{
         alloc_uninit_bytes_with_layout,
         io_graph::{
-            ALLOC_LAYOUT, GraphContext, RecvBytes, SendBytes, Worker, util::RecvBytesReader,
+            ALLOC_LAYOUT, OldGraphContext, RecvBytes, SendBytes, Worker, util::RecvBytesReader,
         },
     },
 };
@@ -38,7 +38,7 @@ impl<Rx: RecvBytes, Tx: SendBytes> Worker<(Rx, Tx)> for DecompressorWorker {
 
     fn run(
         self: Box<Self>,
-        _context: &GraphContext,
+        _context: &OldGraphContext,
         (rx, mut tx): (Rx, Tx),
     ) -> Result<Self::Output, Self::Error> {
         // Strategy is to read this decompressor into an intermediate BytesMut, then

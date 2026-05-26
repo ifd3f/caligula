@@ -50,7 +50,7 @@ impl<Tx: SendBytes> Worker<Tx> for FileReader {
 
     fn run(
         mut self: Box<Self>,
-        context: &io_graph::GraphContext,
+        context: &io_graph::OldGraphContext,
         args: Tx,
     ) -> Result<Self::Output, Self::Error> {
         let mut tx = args;
