@@ -22,8 +22,8 @@ use crate::{
 
 /// Entrypoint for both TUI-based UIs.
 pub fn main(
-    runtime: impl RemoteSpawn,
-    facade: Arc<impl CaligulaFacade>,
+    ui_runtime: impl RemoteSpawn,
+    facade: impl CaligulaFacade,
     log_paths: Arc<LogPaths>,
     args: BurnArgs,
 ) -> anyhow::Result<()> {
@@ -38,13 +38,12 @@ pub fn main(
         }
     };
 
-    let Some(start_write_verify) = do_setup_wizard(&runtime, facade.clone(), &args)? else {
+    let Some(start_write_verify) = do_setup_wizard(&facade, &args)? else {
         return Ok(());
     };
 
     let child_state = simple_ui::try_start_write_or_escalate(
-        facade.clone(),
-        &runtime,
+        &facade,
         &start_write_verify,
         args.root,
         args.interactive.is_interactive(),
@@ -55,7 +54,7 @@ pub fn main(
         let terminal = tui.terminal();
         // create app and run it
         fancy_ui::run(
-            runtime,
+            ui_runtime,
             fancy_ui::Params {
                 terminal,
                 begin: &start_write_verify,

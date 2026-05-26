@@ -210,7 +210,11 @@ impl WVState {
         };
     }
 
-    fn into_finished(self, now: Instant, error: Result<(), WriteVerifyWorkflowError>) -> WVState {
+    pub fn into_finished(
+        self,
+        now: Instant,
+        error: Result<(), WriteVerifyWorkflowError>,
+    ) -> WVState {
         match self {
             WVState::Writing(st) => {
                 let total_write_bytes = st.write_hist.bytes_encountered();

@@ -13,24 +13,23 @@ use tracing::debug;
 use self::{
     ask_hash::ask_hash,
     ask_outfile::{ask_compression, ask_outfile, confirm_write},
-    facade_ext::FacadeExt as _,
 };
 use super::cli::BurnArgs;
 use crate::{
     facade::{
-        CaligulaFacade, Orchestrator, SpawnDaemonError, WVState, WriteVerifyWorkflow,
+        CaligulaFacade, Orchestrator, OrchestratorExt, SpawnDaemonError, WVState,
+        WriteVerifyWorkflow,
         watch::Watch,
         workflow::{hash::HashWorkflow, write_verify::WriteVerifyWorkflowError},
     },
     herder_api::{error::DiskError, write_verify::WVError},
     logging::LogPaths,
     tui::cli::UseSudo,
-    util::{device::WriteTarget, runtime::RemoteSpawn},
+    util::{block_on, device::WriteTarget},
 };
 
 mod ask_hash;
 mod ask_outfile;
-mod facade_ext;
 
 /// How often we refresh the display
 const REFRESH_PERIOD: Duration = Duration::from_millis(100);
@@ -42,12 +41,11 @@ const REFRESH_PERIOD: Duration = Duration::from_millis(100);
 /// doesn't.
 #[tracing::instrument(skip_all)]
 pub fn do_setup_wizard(
-    runtime: impl RemoteSpawn,
-    orc: Arc<impl Orchestrator<HashWorkflow> + Send + Sync + 'static>,
+    orc: &impl Orchestrator<HashWorkflow>,
     args: &BurnArgs,
 ) -> Result<Option<WriteVerifyWorkflow>, anyhow::Error> {
     let compression = ask_compression(args)?;
-    let _hash_info = ask_hash(runtime, orc, args, compression)?;
+    let _hash_info = ask_hash(orc, args, compression)?;
     let target = match &args.out {
         Some(f) => WriteTarget::try_from(f.as_ref())?,
         None => ask_outfile(args)?,
@@ -81,18 +79,14 @@ pub enum WriteOrEscalateError {
 /// sudo based on what's provided in the `root` argument.
 #[tracing::instrument(skip_all, fields(root, interactive))]
 pub fn try_start_write_or_escalate(
-    facade: Arc<impl CaligulaFacade>,
-    runtime: &impl RemoteSpawn,
+    facade: &impl CaligulaFacade,
     args: &WriteVerifyWorkflow,
     root: UseSudo,
     interactive: bool,
 ) -> Result<Watch<WVState>, WriteOrEscalateError> {
     tracing::info!("Starting burn without escalation");
 
-    let err = match facade
-        .clone()
-        .start_write_verify_blocking(runtime, args.clone())
-    {
+    let err = match block_on(facade.start_workflow_checked_discard(args.clone())) {
         Ok(p) => return Ok(p),
         Err(e) => e,
     };
@@ -102,8 +96,10 @@ pub fn try_start_write_or_escalate(
     match err.as_ref() {
         WriteVerifyWorkflowError::Worker(e) => match e {
             WVError::OutputFile(e) if e.kind() == Some(&DiskError::PermissionDenied) => {
-                request_escalation(runtime, facade.clone(), root, interactive, args)?;
-                Ok(facade.start_write_verify_blocking(runtime, args.clone())?)
+                request_escalation(facade, root, interactive, args)?;
+
+                let w = block_on(facade.start_workflow_checked_discard(args.clone()))?;
+                Ok(w)
             }
             _ => Err(err.into()),
         },
@@ -112,8 +108,7 @@ pub fn try_start_write_or_escalate(
 }
 
 fn request_escalation(
-    runtime: &impl RemoteSpawn,
-    facade: Arc<impl CaligulaFacade>,
+    facade: &impl CaligulaFacade,
     root: UseSudo,
     interactive: bool,
     args: &WriteVerifyWorkflow,
@@ -139,7 +134,8 @@ fn request_escalation(
         _ => return Err(WriteOrEscalateError::NotAllowedToEscalate),
     }
 
-    facade.escalate_blocking(runtime, None)?;
+    block_on(facade.escalate(None))?;
+
     Ok(())
 }
 

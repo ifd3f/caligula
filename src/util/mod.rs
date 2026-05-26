@@ -49,6 +49,15 @@ pub fn ensure_state_dir() -> std::io::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Block on the given future inside an ephemeral single-threaded Tokio runtime.
+pub fn block_on<T>(f: impl IntoFuture<Output = T>) -> T {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build_local(tokio::runtime::LocalOptions::default())
+        .unwrap()
+        .block_on(f.into_future())
+}
+
 /// Allocate a [BytesMut] with the given size and uninitialized contents.
 ///
 /// Its capacity and length will both be set to this size.

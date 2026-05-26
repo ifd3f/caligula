@@ -70,6 +70,20 @@ pub trait OrchestratorExt<W: Workflow>: Orchestrator<W> {
         }
         Ok(h)
     }
+
+    /// Like [`Self::start_workflow_checked()`] but it discards the [`Watch`] on
+    /// error.
+    async fn start_workflow_checked_discard(
+        &self,
+        workflow: W,
+    ) -> Result<Watch<W::State>, <W::State as WorkflowState>::Error>
+    where
+        <W::State as WorkflowState>::Error: Clone,
+    {
+        self.start_workflow_checked(workflow)
+            .await
+            .map_err(|(_, e)| e)
+    }
 }
 
 impl<O, W> OrchestratorExt<W> for O

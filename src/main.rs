@@ -1,4 +1,3 @@
-use std::sync::Arc;
 
 use clap::{CommandFactory as _, Parser};
 use tracing::debug;
@@ -6,7 +5,7 @@ use tracing::debug;
 use crate::{
     facade::make_real_facade,
     logging::{ErrorContext, crash_and_burn},
-    util::runtime::{AsyncRuntime, RemoteSpawn as _},
+    util::runtime::AsyncRuntime,
 };
 
 mod benchmarking;
@@ -64,13 +63,8 @@ fn main() {
             let log_path = log_paths.main().to_owned();
             let runtime = AsyncRuntime::start();
 
-            let facade = Arc::new(
-                runtime
-                    .spawn(move || async move { make_real_facade(log_path).await })
-                    .blocking_recv()
-                    .expect("unexpectedly dropped!")
-                    .expect("Failed to initialize backend!"),
-            );
+            let facade =
+                make_real_facade(log_path, &runtime).expect("Failed to initialize facade!");
 
             debug!("Starting primary process");
             match tui::main(runtime, facade, log_paths.into(), burn_args) {

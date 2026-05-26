@@ -1,4 +1,4 @@
-use std::{path::Path, process::exit, sync::Arc, time::Duration};
+use std::{path::Path, process::exit, time::Duration};
 
 use indicatif::{ProgressBar, ProgressStyle};
 use inquire::{Confirm, Select, Text};
@@ -16,15 +16,14 @@ use crate::{
         workflow::{WorkflowState, hash::HashWorkflow},
     },
     tui::cli::{BurnArgs, HashArg, HashOf},
-    util::runtime::RemoteSpawn,
+    util::block_on,
 };
 
 const REFRESH_PERIOD: Duration = Duration::from_millis(250);
 
 #[tracing::instrument(skip_all, fields(cf))]
 pub fn ask_hash(
-    runtime: impl RemoteSpawn,
-    orc: Arc<impl Orchestrator<HashWorkflow> + Send + Sync + 'static>,
+    orc: &impl Orchestrator<HashWorkflow>,
     args: &BurnArgs,
     cf: CompressionFormat,
 ) -> anyhow::Result<Option<FileHashInfo>> {
@@ -80,7 +79,7 @@ pub fn ask_hash(
         return Ok(None);
     };
 
-    let hash_result = do_hashing(runtime, orc, &args.image, &params)?;
+    let hash_result = do_hashing(orc, &args.image, &params)?;
 
     if hash_result.file_hash == params.expected_hash {
         eprintln!("Disk image verified successfully!");
@@ -197,8 +196,7 @@ fn ask_hasher_compression(
 
 #[tracing::instrument(skip_all, fields(path))]
 fn do_hashing(
-    runtime: impl RemoteSpawn,
-    orc: Arc<impl Orchestrator<HashWorkflow> + Send + Sync + 'static>,
+    orc: &impl Orchestrator<HashWorkflow>,
     path: &Path,
     params: &BeginHashParams,
 ) -> anyhow::Result<FileHashInfo> {
@@ -208,15 +206,7 @@ fn do_hashing(
         compression: params.hasher_compression,
     };
 
-    let result = runtime
-        .spawn(move || async move { orc.start_workflow_checked(wf).await })
-        .blocking_recv()
-        .expect("unexpectedly dropped!");
-
-    let w = match result {
-        Ok(r) => r,
-        Err((_, err)) => Err(err)?,
-    };
+    let w = block_on(orc.start_workflow_checked_discard(wf))?;
 
     let progress_bar = ProgressBar::new(w.borrow().file_size_bytes());
     progress_bar.set_style(

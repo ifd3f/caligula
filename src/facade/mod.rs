@@ -7,9 +7,10 @@ pub use self::{
     child::SpawnDaemonError,
     disks::DiskList,
     escalation::EscalationMethod,
+    real::make_real_facade,
     workflow::{
         Orchestrator, OrchestratorExt,
-        write_verify::{WVState, WriteVerifyWorkflow, WriteVerifyWorkflowError},
+        write_verify::{WVState, WriteVerifyWorkflow},
     },
 };
 use crate::facade::{analyze_input::FileAnalysis, workflow::hash::HashWorkflow};
@@ -32,13 +33,13 @@ macro_rules! gen_facade {
         /// This trait is split up into several subtraits, each representing a different
         /// kind of shared action the UI can take.
         pub trait CaligulaFacade:
-            Sync + Send + 'static $(+ $traits)*
+            Send + Sync + 'static $(+ $traits)*
         {
         }
 
 
         impl<F> CaligulaFacade for F where
-            F: Sync + Send + 'static $(+ $traits)*
+            F: Send + Sync + 'static $(+ $traits)*
         {
         }
     };
@@ -100,9 +101,4 @@ pub trait Escalator {
     /// Returns whether or not we have a child process running as root.
     #[expect(unused, reason = "Stub interface created for later use.")]
     fn is_escalated(&self) -> bool;
-}
-
-/// Make the actual prod-used CaligulaFacade implementation.
-pub async fn make_real_facade(log_path: String) -> Result<impl CaligulaFacade, SpawnDaemonError> {
-    self::real::FacadeImpl::new(log_path).await
 }
