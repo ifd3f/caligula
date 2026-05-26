@@ -9,7 +9,7 @@ use crate::{
     herder_api::{
         HerderAction, HerderActionResponse, HerderActionService, LayerError, bincode_options,
     },
-    util::stdiomux::BytestreamService,
+    util::stdiomux::StreamService,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -38,7 +38,7 @@ pub struct HerderClient<S> {
 
 impl<S> HerderClient<S>
 where
-    S: BytestreamService<BoxStream<'static, Bytes>>,
+    S: StreamService<BoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,
     S::Error: 'static,
 {
@@ -51,7 +51,7 @@ where
 impl<A, S> HerderActionService<A> for HerderClient<S>
 where
     A: HerderAction,
-    S: BytestreamService<BoxStream<'static, Bytes>>,
+    S: StreamService<BoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,
     S::Error: 'static,
 {

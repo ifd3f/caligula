@@ -2,14 +2,14 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 use futures::{
-    Stream, StreamExt as _,
+    StreamExt as _,
     stream::{self, BoxStream},
 };
 use tokio::sync::{mpsc, oneshot};
 
-use crate::util::stdiomux::BytestreamService;
+use crate::util::stdiomux::StreamService;
 
-/// Given a [`BytestreamService`] that might not be thread-safe, creates a
+/// Given a [`StreamService`] that might not be thread-safe, creates a
 /// handle for it that is thread-safe and a driver that must be run on the
 /// current thread.
 pub fn make_remote<S, Req>(
@@ -19,8 +19,8 @@ pub fn make_remote<S, Req>(
     impl Future<Output = ()>,
 )
 where
-    Req: Stream<Item = Bytes> + Send + 'static,
-    S: BytestreamService<Req>,
+    Req: Send + 'static,
+    S: StreamService<Req>,
     S::Error: Send + 'static,
     S::Response: Send + 'static,
 {
@@ -42,12 +42,12 @@ where
     (handle, fut)
 }
 
-/// A client to a [`BytestreamService`] on a different thread. Created using
+/// A client to a [`StreamService`] on a different thread. Created using
 /// the [`make_remote()`] function.
 pub struct RemoteThreadBytestreamClient<S, Req>
 where
-    Req: Stream<Item = Bytes> + Send + 'static,
-    S: BytestreamService<Req>,
+    Req: Send + 'static,
+    S: StreamService<Req>,
     S::Error: Send + 'static,
     S::Response: Send + 'static,
 {
@@ -55,10 +55,10 @@ where
     _phantom: PhantomData<fn() -> S>,
 }
 
-impl<Req, S> BytestreamService<Req> for RemoteThreadBytestreamClient<S, Req>
+impl<Req, S> StreamService<Req> for RemoteThreadBytestreamClient<S, Req>
 where
-    Req: Stream<Item = Bytes> + Send + 'static,
-    S: BytestreamService<Req>,
+    Req: Send + 'static,
+    S: StreamService<Req>,
     S::Error: Send + 'static,
     S::Response: Send + 'static,
 {

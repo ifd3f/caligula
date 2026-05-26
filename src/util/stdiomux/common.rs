@@ -17,7 +17,7 @@ use tracing::{Instrument as _, debug, debug_span, info_span, trace, trace_span};
 
 use crate::util::{
     alloc_uninit_bytes,
-    stdiomux::{BytestreamService, channel_map::ChannelMap},
+    stdiomux::{StreamService, channel_map::ChannelMap},
 };
 
 /// Returns a future for forwarding and multiplexing payloads over the provided
@@ -37,7 +37,7 @@ pub fn common_driver<R, W, S>(
 where
     R: AsyncRead + Unpin + 'static,
     W: AsyncWrite + Unpin + 'static,
-    S: BytestreamService<LocalBoxStream<'static, Bytes>>,
+    S: StreamService<LocalBoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,
     S::Error: Debug + 'static,
 {
@@ -131,7 +131,7 @@ async fn drive_rx<S>(
     svc_err_handler: impl Fn(S::Error) + Clone + 'static,
     txq: Sender<(u16, Bytes)>,
 ) where
-    S: BytestreamService<LocalBoxStream<'static, Bytes>>,
+    S: StreamService<LocalBoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,
     S::Error: Debug + 'static,
 {

@@ -9,7 +9,7 @@ use tokio::{
 };
 use tracing::{Instrument, info_span};
 
-use super::{BytestreamService, common::common_driver};
+use super::{StreamService, common::common_driver};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError<E: Error> {
@@ -31,13 +31,13 @@ impl<E: Error> Clone for ServerError<E> {
     }
 }
 
-/// Run a [`BytestreamService`] as a server over the given transport.
+/// Run a [`StreamService`] over bytes as a server over the given transport.
 #[tracing::instrument(skip_all, name = "stdiomux_server")]
 pub async fn run<R, W, S>(rx: R, tx: W, s: S) -> Result<(), ServerError<S::Error>>
 where
     R: AsyncRead + Unpin + 'static,
     W: AsyncWrite + Unpin + 'static,
-    S: BytestreamService<LocalBoxStream<'static, Bytes>>,
+    S: StreamService<LocalBoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,
     S::Error: Error + 'static,
 {

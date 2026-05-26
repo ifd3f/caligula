@@ -13,7 +13,7 @@ use tokio::{
 use tracing::{Instrument, debug_span, info_span};
 
 use super::{
-    BytestreamService,
+    StreamService,
     channel_map::ChannelMap,
     common::{common_driver, drive_channel_tx, inject_err_stream},
     service_fn,
@@ -91,7 +91,7 @@ pub struct LocalBytestreamClient {
     txq: Sender<(u16, Bytes)>,
 }
 
-impl<Req: Stream<Item = Bytes> + Unpin + 'static> BytestreamService<Req> for LocalBytestreamClient {
+impl<Req: Stream<Item = Bytes> + Unpin + 'static> StreamService<Req> for LocalBytestreamClient {
     type Error = ClientError;
     type Response = BoxStream<'static, Result<Bytes, Self::Error>>;
 

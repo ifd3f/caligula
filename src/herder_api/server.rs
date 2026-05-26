@@ -12,7 +12,7 @@ use crate::{
         HerderAction, HerderActionResponse, HerderActionService, LayerError, bincode_options,
         error::rotate_layer_error,
     },
-    util::stdiomux::{self, BytestreamService},
+    util::stdiomux::{self, StreamService},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -25,11 +25,11 @@ pub enum ServerError<Trans> {
     Deserialization(#[from] bincode::Error),
 }
 
-/// Convert a [`HerderService`] server into a [`BytestreamService`] server.
+/// Convert a [`HerderService`] server into a [`StreamService`] over bytes.
 #[expect(clippy::type_complexity)]
 pub fn transportize<A, S>(
     svc: S,
-) -> impl BytestreamService<
+) -> impl StreamService<
     LocalBoxStream<'static, Bytes>,
     Error = ServerError<S::Error>,
     Response = LocalBoxStream<'static, Result<Bytes, ServerError<S::Error>>>,

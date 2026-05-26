@@ -13,7 +13,7 @@ use test_strategy::proptest;
 use tokio::{io::duplex, runtime::LocalRuntime};
 use tracing::{debug, info, info_span};
 
-use super::{BytestreamService, client, server, service_fn};
+use super::{StreamService, client, server, service_fn};
 
 /// Happy path testing for an arbitrary set of requests.
 #[derive(Debug, Clone)]
@@ -51,12 +51,12 @@ fn happy_path_strat(
     full_transmission.prop_map(HappyPathCase).boxed()
 }
 
-/// Given a [`HappyPathCase`], returns a [`BytestreamService`] that behaves
-/// according to the test case.
+/// Given a [`HappyPathCase`], returns a [`StreamService`] over bytes that
+/// behaves according to the test case.
 fn infallible_service_for_pairs(
     case: HappyPathCase,
 ) -> Box<
-    dyn BytestreamService<
+    dyn StreamService<
             LocalBoxStream<'static, Bytes>,
             Response = LocalBoxStream<'static, Result<Bytes, Infallible>>,
             Error = Infallible,
