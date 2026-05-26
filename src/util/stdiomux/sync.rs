@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use bytes::Bytes;
 use futures::{
-    Stream, StreamExt as _,
+    StreamExt as _,
     stream::{self, BoxStream},
 };
 use tokio::sync::{mpsc, oneshot};
@@ -19,7 +19,7 @@ pub fn make_remote<S, Req>(
     impl Future<Output = ()>,
 )
 where
-    Req: Stream<Item = Bytes> + Send + 'static,
+    Req: Send + 'static,
     S: BytestreamService<Req>,
     S::Error: Send + 'static,
     S::Response: Send + 'static,
@@ -46,7 +46,7 @@ where
 /// the [`make_remote()`] function.
 pub struct RemoteThreadBytestreamClient<S, Req>
 where
-    Req: Stream<Item = Bytes> + Send + 'static,
+    Req: Send + 'static,
     S: BytestreamService<Req>,
     S::Error: Send + 'static,
     S::Response: Send + 'static,
@@ -57,7 +57,7 @@ where
 
 impl<Req, S> BytestreamService<Req> for RemoteThreadBytestreamClient<S, Req>
 where
-    Req: Stream<Item = Bytes> + Send + 'static,
+    Req: Send + 'static,
     S: BytestreamService<Req>,
     S::Error: Send + 'static,
     S::Response: Send + 'static,

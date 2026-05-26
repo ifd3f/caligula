@@ -91,7 +91,10 @@ pub struct LocalBytestreamClient {
     txq: Sender<(u16, Bytes)>,
 }
 
-impl<Req: Stream<Item = Bytes> + Unpin + 'static> BytestreamService<Req> for LocalBytestreamClient {
+impl<Req> BytestreamService<Req> for LocalBytestreamClient
+where
+    Req: Stream<Item = Bytes> + Unpin + 'static,
+{
     type Error = ClientError;
     type Response = BoxStream<'static, Result<Bytes, Self::Error>>;
 
