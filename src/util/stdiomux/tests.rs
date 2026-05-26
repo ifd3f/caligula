@@ -13,7 +13,7 @@ use test_strategy::proptest;
 use tokio::{io::duplex, runtime::LocalRuntime};
 use tracing::{debug, info, info_span};
 
-use super::{StreamService, client, server, util::service_fn};
+use super::{StreamService, client, server, service_fn};
 
 /// Happy path testing for an arbitrary set of requests.
 #[derive(Debug, Clone)]

@@ -3,6 +3,28 @@ use std::{error::Error, fmt::Display, io};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+/// An error that may have happened either in the application, or the transport
+/// layer below it.
+#[derive(Debug, thiserror::Error)]
+pub enum LayerError<App, Trans> {
+    #[error("Application error: {0}")]
+    App(App),
+    #[error("Transport error: {0}")]
+    Transport(Trans),
+}
+
+/// Given a [`Result`] with [`LayerError`]s, eliminate the [`LayerError`]s by
+/// rotating the application-level errors into the [`Ok`].
+pub fn rotate_layer_error<T, App, Trans>(
+    res: Result<T, LayerError<App, Trans>>,
+) -> Result<Result<T, App>, Trans> {
+    match res {
+        Ok(x) => Ok(Ok(x)),
+        Err(LayerError::App(app)) => Ok(Err(app)),
+        Err(LayerError::Transport(trans)) => Err(trans),
+    }
+}
+
 /// A serializable [`std::io::Error`] that supports converting it into specific,
 /// recognizable kinds of errors.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]

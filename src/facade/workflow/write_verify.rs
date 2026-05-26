@@ -6,11 +6,11 @@ use tracing::{info, trace};
 use crate::{
     codec::compression::CompressionFormat,
     facade::workflow::WorkflowState,
-    herder_api::{client::ClientError,  write_verify::*},
+    herder_api::{client::ClientError, error::LayerError, write_verify::*},
     util::{
         byteseries::{ByteSeries, EstimatedTime},
         device::WriteTarget,
-        stdiomux::{self, util::LayerError},
+        stdiomux,
     },
 };
 
