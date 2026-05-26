@@ -1,4 +1,8 @@
-use std::{error::Error, fmt::Display, io};
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+    io,
+};
 
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -13,15 +17,54 @@ pub enum LayerError<App, Trans> {
     Transport(Trans),
 }
 
-/// Given a [`Result`] with [`LayerError`]s, eliminate the [`LayerError`]s by
-/// rotating the application-level errors into the [`Ok`].
-pub fn rotate_layer_error<T, App, Trans>(
-    res: Result<T, LayerError<App, Trans>>,
-) -> Result<Result<T, App>, Trans> {
-    match res {
-        Ok(x) => Ok(Ok(x)),
-        Err(LayerError::App(app)) => Ok(Err(app)),
-        Err(LayerError::Transport(trans)) => Err(trans),
+impl<App, Trans> LayerError<App, Trans> {
+    pub fn unwrap_app(self) -> App
+    where
+        Trans: Debug,
+    {
+        match self {
+            LayerError::App(err) => err,
+            LayerError::Transport(err) => panic!(".unwrap_app() failed {err:?}"),
+        }
+    }
+
+    pub fn map_trans<T2>(self, f: impl FnOnce(Trans) -> T2) -> LayerError<App, T2> {
+        match self {
+            LayerError::App(err) => LayerError::App(err),
+            LayerError::Transport(err) => LayerError::Transport(f(err)),
+        }
+    }
+}
+
+pub trait NestedResultExt<T, App, Trans> {
+    /// Unnest this [`Result`] by rotating the inner error into a
+    /// [`LayerError`].
+    fn flatten_into_layered(self) -> Result<T, LayerError<App, Trans>>;
+}
+
+impl<T, App, Trans> NestedResultExt<T, App, Trans> for Result<Result<T, App>, Trans> {
+    fn flatten_into_layered(self) -> Result<T, LayerError<App, Trans>> {
+        match self {
+            Ok(Ok(x)) => Ok(x),
+            Ok(Err(app)) => Err(LayerError::App(app)),
+            Err(trans) => Err(LayerError::Transport(trans)),
+        }
+    }
+}
+
+pub trait LayerResultExt<T, App, Trans> {
+    /// Eliminate this [`Result`]'s [`LayerError`] by rotating the
+    /// application-level errors into the [`Ok`].
+    fn rotate_into_ok(self) -> Result<Result<T, App>, Trans>;
+}
+
+impl<T, App, Trans> LayerResultExt<T, App, Trans> for Result<T, LayerError<App, Trans>> {
+    fn rotate_into_ok(self) -> Result<Result<T, App>, Trans> {
+        match self {
+            Ok(x) => Ok(Ok(x)),
+            Err(LayerError::App(app)) => Ok(Err(app)),
+            Err(LayerError::Transport(trans)) => Err(trans),
+        }
     }
 }
 

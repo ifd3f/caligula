@@ -5,12 +5,17 @@ use std::error::Error;
 use auto_impl::auto_impl;
 use bytes::Bytes;
 use futures::Stream;
+pub use preamble::{
+    PreambleReadError, PreambleRequestClient, PreambleWriteError, preamble_request_client,
+    preamble_request_server,
+};
+pub use sync::{RemoteThreadBytestreamClient, make_remote};
 
 mod channel_map;
 pub mod client;
-pub mod server;
-pub use sync::{RemoteThreadBytestreamClient, make_remote};
 mod common;
+mod preamble;
+pub mod server;
 mod sync;
 
 #[cfg(test)]

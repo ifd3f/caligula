@@ -1,20 +1,17 @@
 use std::process::Stdio;
 
-use bytes::Bytes;
-use futures::{FutureExt as _, stream::BoxStream};
-use tokio::{process::Child, try_join};
+use tokio::process::Child;
 
 use super::escalation::{EscalationError, run_escalate};
 use crate::{
     herder_api::{
-        HerderAction, HerderActionResponse, HerderActionService, client::HerderClient,
+        self, HerderAction, HerderActionResponse, HerderActionService, client::HerderClient,
         error::LayerError,
     },
-    util::stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
+    util::stdiomux::{self, client::LocalBytestreamClient},
 };
 
-type Client =
-    HerderClient<RemoteThreadBytestreamClient<LocalBytestreamClient, BoxStream<'static, Bytes>>>;
+type RawClient = HerderClient<herder_api::Request, LocalBytestreamClient>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpawnDaemonError {
@@ -80,18 +77,12 @@ pub async fn spawn(
     let child_tx = child.stdin.take().unwrap();
 
     // open the client
-    let (client, fut1) = stdiomux::client::open(child_rx, child_tx);
-
-    // this client can only run on our current thread, create a remote handle for it
-    let (client, fut2) = stdiomux::make_remote(client);
-
-    // the driver future will drive both of these
-    let fut = async move { try_join!(fut1, fut2.map(|_| Ok(()))).map(|_| ()) };
+    let (client, fut) = stdiomux::client::open(child_rx, child_tx);
 
     Ok((
         ChildHerderClient {
             _child: child,
-            client: HerderClient::new(client),
+            client: RawClient::new(client),
         },
         fut,
     ))
@@ -99,16 +90,22 @@ pub async fn spawn(
 
 pub struct ChildHerderClient {
     _child: Child,
-    client: Client,
+    client: RawClient,
 }
 
-impl<A: HerderAction> HerderActionService<A> for ChildHerderClient {
-    type Error = <Client as HerderActionService<A>>::Error;
+impl<A> HerderActionService<A> for ChildHerderClient
+where
+    A: Into<herder_api::Request> + TryFrom<herder_api::Request> + HerderAction,
+{
+    type Error = <RawClient as HerderActionService<A>>::Error;
 
     async fn start(
         &self,
         action: A,
-    ) -> Result<HerderActionResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
+    ) -> Result<
+        HerderActionResponse<A, Self::Error>,
+        LayerError<<A as HerderAction>::Error, Self::Error>,
+    > {
         self.client.start(action).await
     }
 }

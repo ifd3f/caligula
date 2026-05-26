@@ -23,6 +23,7 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
+use futures::stream::BoxStream;
 
 pub mod byteseries;
 pub mod candidate;
@@ -31,6 +32,7 @@ pub mod io_graph;
 pub mod legacy_io;
 pub mod runtime;
 pub mod stdiomux;
+pub mod stream;
 
 /// Create the directory to shove invocation-specific data into, like log files
 /// and sockets.
