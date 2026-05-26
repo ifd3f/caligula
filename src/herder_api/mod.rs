@@ -15,7 +15,7 @@ use auto_impl::auto_impl;
 use futures::stream::LocalBoxStream;
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::herder_api::error::LayerError;
+use crate::util::layer_error::LayerError;
 
 pub struct HerderResponse<A: HerderAction, E> {
     pub start: A::Start,

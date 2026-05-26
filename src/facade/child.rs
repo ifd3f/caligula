@@ -6,10 +6,11 @@ use tokio::{process::Child, try_join};
 
 use super::escalation::{EscalationError, run_escalate};
 use crate::{
-    herder_api::{
-        HerderAction, HerderResponse, HerderService, client::HerderClient, error::LayerError,
+    herder_api::{HerderAction, HerderResponse, HerderService, client::HerderClient},
+    util::{
+        layer_error::LayerError,
+        stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
     },
-    util::stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
 };
 
 type Client =

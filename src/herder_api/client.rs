@@ -5,8 +5,9 @@ use futures::{
 };
 
 use crate::{
-    herder_api::{HerderAction, HerderResponse, HerderService, LayerError},
+    herder_api::{HerderAction, HerderResponse, HerderService},
     util::{
+        layer_error::LayerError,
         stdiomux::BytestreamService,
         wire::{deserialize, serialize},
     },

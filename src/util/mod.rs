@@ -28,6 +28,7 @@ pub mod byteseries;
 pub mod candidate;
 pub mod device;
 pub mod io_graph;
+pub mod layer_error;
 pub mod legacy_io;
 pub mod runtime;
 pub mod stdiomux;

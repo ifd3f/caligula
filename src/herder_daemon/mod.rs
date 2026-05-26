@@ -15,13 +15,13 @@ use tracing::{debug, info};
 use crate::{
     herder_api::{
         HerderResponse, HerderService,
-        error::LayerError,
         server::transportize,
         write_verify::{WVAction, WVError},
     },
     util::{
+        layer_error::LayerError,
         runtime::{AsyncRuntime, RemoteSpawn as _},
-        stdiomux,
+        stdiomux::{self},
     },
 };
 

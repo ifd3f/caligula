@@ -7,10 +7,9 @@ use futures::{
 };
 
 use crate::{
-    herder_api::{
-        HerderAction, HerderResponse, HerderService, LayerError, error::rotate_layer_error,
-    },
+    herder_api::{HerderAction, HerderResponse, HerderService},
     util::{
+        layer_error::{LayerError, LayerResultExt as _},
         stdiomux::{self, BytestreamService},
         wire::{deserialize, serialize},
     },
@@ -101,7 +100,7 @@ fn serialize_response<A: HerderAction, Trans>(
         Err(e) => (Err(e), None),
     };
 
-    let first = rotate_layer_error(first).map(|msg| serialize(&msg));
+    let first = first.rotate_into_ok().map(|msg| serialize(&msg));
 
     let rest = stream::iter(rest).flat_map(|evs| serialize_events::<A, Trans>(evs));
 
@@ -112,6 +111,6 @@ fn serialize_response<A: HerderAction, Trans>(
 fn serialize_events<A: HerderAction, Trans>(
     res: impl Stream<Item = Result<A::Event, LayerError<A::Error, Trans>>> + Unpin,
 ) -> impl Stream<Item = Result<Bytes, Trans>> + Unpin {
-    res.map(|res| rotate_layer_error(res))
+    res.map(|res| res.rotate_into_ok())
         .map_ok(|msg| serialize(&msg))
 }

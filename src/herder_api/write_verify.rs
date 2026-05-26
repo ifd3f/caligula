@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 use super::HerderAction;
 use crate::{
     codec::compression::CompressionFormat,
-    herder_api::error::{DiskError, InputFileError, IoError, LayerError, UnmountError},
-    util::device::Type,
+    herder_api::error::{DiskError, InputFileError, IoError, UnmountError},
+    util::{device::Type, layer_error::LayerError},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
