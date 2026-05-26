@@ -6,7 +6,9 @@ use futures::{
 };
 
 use crate::{
-    herder_api::{HerderAction, HerderResponse, HerderService, LayerError, bincode_options},
+    herder_api::{
+        HerderAction, HerderActionResponse, HerderActionService, LayerError, bincode_options,
+    },
     util::stdiomux::BytestreamService,
 };
 
@@ -46,7 +48,7 @@ where
     }
 }
 
-impl<A, S> HerderService<A> for HerderClient<S>
+impl<A, S> HerderActionService<A> for HerderClient<S>
 where
     A: HerderAction,
     S: BytestreamService<BoxStream<'static, Bytes>>,
@@ -58,8 +60,7 @@ where
     async fn start(
         &self,
         action: A,
-    ) -> Result<HerderResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
-        // TODO: implement multiplexing
+    ) -> Result<HerderActionResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
         let req = request_into_stream(action);
 
         let mut res = self.client.call(req);
@@ -67,7 +68,7 @@ where
         let start = take_first::<A, _>(&mut res).await?;
         let events = stream_into_events::<A, _>(Box::pin(res));
 
-        Ok(HerderResponse {
+        Ok(HerderActionResponse {
             start,
             events: Box::pin(events),
         })

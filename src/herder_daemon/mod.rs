@@ -14,7 +14,7 @@ use tracing::{debug, info};
 
 use crate::{
     herder_api::{
-        HerderResponse, HerderService,
+        HerderActionResponse, HerderActionService,
         error::LayerError,
         server::transportize,
         write_verify::{WVAction, WVError},
@@ -49,14 +49,14 @@ impl HerderServer {
     }
 }
 
-impl HerderService<WVAction> for HerderServer {
+impl HerderActionService<WVAction> for HerderServer {
     type Error = Infallible;
 
     #[tracing::instrument(skip_all)]
     async fn start(
         &self,
         action: WVAction,
-    ) -> Result<HerderResponse<WVAction, Self::Error>, LayerError<WVError, Self::Error>> {
+    ) -> Result<HerderActionResponse<WVAction, Self::Error>, LayerError<WVError, Self::Error>> {
         info!(?action, "Received WVAction request");
 
         let (start_tx, start_rx) = oneshot::channel();
@@ -76,7 +76,7 @@ impl HerderService<WVAction> for HerderServer {
         let start = start_rx.await.map_err(|_| WVError::UnexpectedTermination)?;
         info!(?child, ?start, "Successfully spawned writer thread");
 
-        Ok(HerderResponse {
+        Ok(HerderActionResponse {
             start,
             events: Box::pin(UnboundedReceiverStream::new(ev_rx).map_err(LayerError::App)),
         })

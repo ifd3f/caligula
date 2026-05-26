@@ -18,36 +18,39 @@ use serde::{Serialize, de::DeserializeOwned};
 
 use crate::herder_api::error::LayerError;
 
-pub struct HerderResponse<A: HerderAction, E> {
+/// A generic service for starting and managing individual [`HerderAction`]s.
+#[auto_impl(&, Box, Rc, Arc)]
+pub trait HerderActionService<A: HerderAction> {
+    /// Errors that the transport of this [`HerderActionService`] may introduce.
+    type Error: Error;
+
+    /// Start the given [`HerderAction`].
+    async fn start(
+        &self,
+        action: A,
+    ) -> Result<HerderActionResponse<A, Self::Error>, LayerError<A::Error, Self::Error>>;
+}
+
+/// Successful response from a [`HerderActionService`].
+pub struct HerderActionResponse<A: HerderAction, E> {
+    /// Initialization information.
     pub start: A::Start,
 
-    /// Outer [`Result`] represents transport failures, inner [`Result`]
-    /// represents application-level failures.
+    /// Stream of events that may come out of this.
     #[expect(clippy::type_complexity)]
     pub events: LocalBoxStream<'static, Result<A::Event, LayerError<A::Error, E>>>,
 }
 
-#[auto_impl(&, Box, Rc, Arc)]
-pub trait HerderService<A: HerderAction> {
-    /// Errors that this transport may introduce.
-    type Error: Error;
-
-    /// Outer [`Result`] represents transport failures, inner [`Result`]
-    /// represents application-level failures.
-    async fn start(
-        &self,
-        action: A,
-    ) -> Result<HerderResponse<A, Self::Error>, LayerError<A::Error, Self::Error>>;
-}
-
-/// Arbitrary herd initialization action. This can be anything, from writing to
-/// verifying to voiding.
+/// Arbitrary long-running action that emits a stream of events. This can be
+/// anything, from writing to verifying to voiding.
 pub trait HerderAction: Message {
+    /// Successful initialization data.
     type Start: Message;
 
+    /// Errors that may be encountered.
     type Error: Message + Error;
 
-    /// The events emitted by the herd afterwards.
+    /// The events emitted by the herd after start.
     type Event: Message;
 }
 

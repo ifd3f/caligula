@@ -7,7 +7,8 @@ use tokio::{process::Child, try_join};
 use super::escalation::{EscalationError, run_escalate};
 use crate::{
     herder_api::{
-        HerderAction, HerderResponse, HerderService, client::HerderClient, error::LayerError,
+        HerderAction, HerderActionResponse, HerderActionService, client::HerderClient,
+        error::LayerError,
     },
     util::stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
 };
@@ -101,13 +102,13 @@ pub struct ChildHerderClient {
     client: Client,
 }
 
-impl<A: HerderAction> HerderService<A> for ChildHerderClient {
-    type Error = <Client as HerderService<A>>::Error;
+impl<A: HerderAction> HerderActionService<A> for ChildHerderClient {
+    type Error = <Client as HerderActionService<A>>::Error;
 
     async fn start(
         &self,
         action: A,
-    ) -> Result<HerderResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
+    ) -> Result<HerderActionResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
         self.client.start(action).await
     }
 }

@@ -11,7 +11,7 @@ use crate::{
         watch::Watch,
         workflow::hash::{self, HashWorkflow, HashingState},
     },
-    herder_api::HerderService,
+    herder_api::HerderActionService,
 };
 
 /// Actual CaligulaFacade implementation used by Caligula.
