@@ -7,7 +7,7 @@ use futures::{
 };
 
 use crate::{
-    herder_api::{HerderAction, HerderResponse, HerderService},
+    herder_api::{HerderAction, HerderActionResponse, HerderActionService},
     util::{
         layer_error::{LayerError, LayerResultExt as _},
         stdiomux::{self, BytestreamService},
@@ -36,7 +36,7 @@ pub fn transportize<A, S>(
 >
 where
     A: HerderAction,
-    S: HerderService<A> + 'static,
+    S: HerderActionService<A> + 'static,
     S::Error: 'static,
 {
     let svc = Rc::new(svc);
@@ -69,12 +69,12 @@ async fn handle_request<A, S>(
 ) -> Result<impl Stream<Item = Result<Bytes, ServerError<S::Error>>>, ServerError<S::Error>>
 where
     A: HerderAction,
-    S: HerderService<A>,
+    S: HerderActionService<A>,
 {
     let req: A = take_req_first::<A, S::Error>(&mut req).await?;
 
     #[expect(clippy::type_complexity)]
-    let res: Result<HerderResponse<A, S::Error>, LayerError<A::Error, S::Error>> =
+    let res: Result<HerderActionResponse<A, S::Error>, LayerError<A::Error, S::Error>> =
         svc.start(req).await;
 
     let res = serialize_response::<A, S::Error>(res);
@@ -93,7 +93,7 @@ async fn take_req_first<A: HerderAction, Trans>(
 
 /// Serialize a response value into Bytes.
 fn serialize_response<A: HerderAction, Trans>(
-    res: Result<HerderResponse<A, Trans>, LayerError<A::Error, Trans>>,
+    res: Result<HerderActionResponse<A, Trans>, LayerError<A::Error, Trans>>,
 ) -> impl Stream<Item = Result<Bytes, Trans>> + Unpin {
     let (first, rest) = match res {
         Ok(x) => (Ok(x.start), Some(x.events)),

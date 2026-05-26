@@ -6,14 +6,14 @@ use tokio::{process::Child, try_join};
 
 use super::escalation::{EscalationError, run_escalate};
 use crate::{
-    herder_api::{HerderAction, HerderResponse, HerderService, client::HerderClient},
+    herder_api::{HerderAction, HerderActionResponse, HerderActionService, client::HerderClient},
     util::{
         layer_error::LayerError,
         stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
     },
 };
 
-type Client =
+type RawClient =
     HerderClient<RemoteThreadBytestreamClient<LocalBytestreamClient, BoxStream<'static, Bytes>>>;
 
 #[derive(Debug, thiserror::Error)]
@@ -99,16 +99,16 @@ pub async fn spawn(
 
 pub struct ChildHerderClient {
     _child: Child,
-    client: Client,
+    client: RawClient,
 }
 
-impl<A: HerderAction> HerderService<A> for ChildHerderClient {
-    type Error = <Client as HerderService<A>>::Error;
+impl<A: HerderAction> HerderActionService<A> for ChildHerderClient {
+    type Error = <RawClient as HerderActionService<A>>::Error;
 
     async fn start(
         &self,
         action: A,
-    ) -> Result<HerderResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
+    ) -> Result<HerderActionResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
         self.client.start(action).await
     }
 }

@@ -24,7 +24,7 @@ use crate::{
         watch::Watch,
         workflow::hash::{self, HashWorkflow, HashingState},
     },
-    herder_api::HerderService,
+    herder_api::HerderActionService,
     util::runtime::RemoteSpawn,
 };
 
