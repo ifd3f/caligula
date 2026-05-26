@@ -57,7 +57,7 @@ pub enum WVError {
     #[error("Failed to unmount disk: {0}")]
     FailedToUnmount(#[from] UnmountError),
     #[error("The child process unexpectedly terminated!")]
-    UnexpectedTermination,
+    ProcessTerminated,
     #[error("Disk verification failed!")]
     VerificationFailed,
     #[error("Error handling input: {0}")]

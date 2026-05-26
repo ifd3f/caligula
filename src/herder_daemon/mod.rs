@@ -73,7 +73,10 @@ impl HerderService<WVAction> for HerderServer {
         );
         debug!(?child, "Spawned writer thread, waiting for start response");
 
-        let start = start_rx.await.map_err(|_| WVError::UnexpectedTermination)?;
+        let start = start_rx
+            .await
+            .expect("thread did not send us start info")
+            .map_err(LayerError::App)?;
         info!(?child, ?start, "Successfully spawned writer thread");
 
         Ok(HerderResponse {

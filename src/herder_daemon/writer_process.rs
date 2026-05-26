@@ -32,7 +32,7 @@ const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
 const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
 pub fn spawn_writer(
-    tx_start: impl FnOnce(WVStart) + Send + 'static,
+    tx_start: impl FnOnce(Result<WVStart, WVError>) + Send + 'static,
     mut tx: impl FnMut(Result<WVEvent, WVError>) + Send + 'static,
     init_config: WVAction,
 ) -> JoinHandle<()> {
@@ -40,9 +40,21 @@ pub fn spawn_writer(
         .name("writer".into())
         .spawn(move || {
             debug!("Spawned child thread {:?}", std::thread::current().id());
+            let start = setup(&init_config);
+            let (f, d) = match start {
+                Ok((f, d, s)) => {
+                    tx_start(Ok(s));
+                    (f, d)
+                }
+                Err(e) => {
+                    tx_start(Err(e));
+                    return;
+                }
+            };
+
             let borrowed = &mut tx;
             let result =
-                run(tx_start, move |x| borrowed(Ok(x)), &init_config).map(|_| WVEvent::Success);
+                run(f, d, move |x| borrowed(Ok(x)), &init_config).map(|_| WVEvent::Success);
 
             info!(?result, "Thread terminated");
             tx(result);
@@ -50,15 +62,10 @@ pub fn spawn_writer(
         .unwrap()
 }
 
-fn run(
-    tx_start: impl FnOnce(WVStart) + Send + 'static,
-    mut tx: impl FnMut(WVEvent),
-    args: &WVAction,
-) -> Result<(), WVError> {
+fn setup(args: &WVAction) -> Result<(File, SyncDataFile, WVStart), WVError> {
     if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
         run_diskutil_umount(args).map_err(UnmountError::Diskutil)?;
     }
-
     info!("Opening file {}", args.src.to_string_lossy());
     let mut file = File::open(&args.src).unwrap_or_log();
     let size = file
@@ -66,12 +73,9 @@ fn run(
         .map_err(IoError::<InputFileError>::from)?;
     file.seek(io::SeekFrom::Start(0))
         .map_err(IoError::<InputFileError>::from)?;
-
     info!(size, "Got input file size");
-
     info!("Opening {} for writing", args.dest.to_string_lossy());
-
-    let mut disk = SyncDataFile(match args.target_type {
+    let disk = SyncDataFile(match args.target_type {
         device::Type::File => OpenOptions::new()
             .read(true)
             .write(true)
@@ -84,10 +88,21 @@ fn run(
         }
     });
 
-    tx_start(WVStart {
-        input_file_bytes: size,
-    });
+    Ok((
+        file,
+        disk,
+        WVStart {
+            input_file_bytes: size,
+        },
+    ))
+}
 
+fn run(
+    mut file: File,
+    mut disk: SyncDataFile,
+    mut tx: impl FnMut(WVEvent),
+    args: &WVAction,
+) -> Result<(), WVError> {
     let bs = match args.block_size {
         Some(bs) => bs,
         None => {

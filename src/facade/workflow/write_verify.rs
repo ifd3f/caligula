@@ -143,7 +143,7 @@ impl WVState {
         // peel off EOF
         let Some(msg) = msg else {
             info!("Messages terminated unexpectedly");
-            return self.into_finished(now, Err(WVError::UnexpectedTermination.into()));
+            return self.into_finished(now, Err(WVError::ProcessTerminated.into()));
         };
 
         // peel off errors
@@ -410,7 +410,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(finish_time - t0, Duration::from_secs(2));
-                assert_eq!(error, Err(Arc::new(WVError::UnexpectedTermination.into())));
+                assert_eq!(error, Err(Arc::new(WVError::ProcessTerminated.into())));
             }
             s => panic!("Unexpected {s:#?}"),
         }
