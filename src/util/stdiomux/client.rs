@@ -35,7 +35,7 @@ pub fn open<R, W>(
     rx: R,
     tx: W,
 ) -> (
-    LocalBytestreamClient,
+    BytestreamClient,
     impl Future<Output = Result<(), ClientError>>,
 )
 where
@@ -74,7 +74,7 @@ where
     }
     .instrument(info_span!("driver"));
 
-    let client = LocalBytestreamClient {
+    let client = BytestreamClient {
         channel_map,
         err_notify,
         txq,
@@ -83,15 +83,15 @@ where
     (client, driver)
 }
 
-/// A client to a remote [`BytestreamClient`] over a transport. Created using
+/// A client to a remote [`BytestreamService`] over a transport. Created using
 /// the [`open()`] function.
-pub struct LocalBytestreamClient {
+pub struct BytestreamClient {
     channel_map: Rc<ChannelMap>,
     err_notify: Arc<SetOnce<ClientError>>,
     txq: Sender<(u16, Bytes)>,
 }
 
-impl<Req> BytestreamService<Req> for LocalBytestreamClient
+impl<Req> BytestreamService<Req> for BytestreamClient
 where
     Req: Stream<Item = Bytes> + Unpin + 'static,
 {
