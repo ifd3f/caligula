@@ -1,4 +1,3 @@
-
 use clap::{CommandFactory as _, Parser};
 use tracing::debug;
 

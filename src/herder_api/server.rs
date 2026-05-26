@@ -1,6 +1,5 @@
 use std::rc::Rc;
 
-use bincode::Options;
 use bytes::Bytes;
 use futures::{
     Stream, StreamExt, TryStreamExt as _,
@@ -9,10 +8,12 @@ use futures::{
 
 use crate::{
     herder_api::{
-        HerderAction, HerderResponse, HerderService, LayerError, bincode_options,
-        error::rotate_layer_error,
+        HerderAction, HerderResponse, HerderService, LayerError, error::rotate_layer_error,
     },
-    util::stdiomux::{self, BytestreamService},
+    util::{
+        stdiomux::{self, BytestreamService},
+        wire::{deserialize, serialize},
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -87,9 +88,7 @@ async fn take_req_first<A: HerderAction, Trans>(
     req: &mut (impl Stream<Item = Bytes> + Unpin),
 ) -> Result<A, ServerError<Trans>> {
     let first_payload = req.next().await.ok_or(ServerError::UnexpectedClientEof)?;
-    let app_req: A = bincode_options()
-        .deserialize(&first_payload)
-        .map_err(ServerError::Deserialization)?;
+    let app_req: A = deserialize(&first_payload).map_err(ServerError::Deserialization)?;
     Ok(app_req)
 }
 
@@ -102,13 +101,7 @@ fn serialize_response<A: HerderAction, Trans>(
         Err(e) => (Err(e), None),
     };
 
-    let first = rotate_layer_error(first).map(|msg| {
-        Bytes::from_owner(
-            bincode_options()
-                .serialize(&msg)
-                .expect("serialization error is impossible"),
-        )
-    });
+    let first = rotate_layer_error(first).map(|msg| serialize(&msg));
 
     let rest = stream::iter(rest).flat_map(|evs| serialize_events::<A, Trans>(evs));
 
@@ -119,11 +112,6 @@ fn serialize_response<A: HerderAction, Trans>(
 fn serialize_events<A: HerderAction, Trans>(
     res: impl Stream<Item = Result<A::Event, LayerError<A::Error, Trans>>> + Unpin,
 ) -> impl Stream<Item = Result<Bytes, Trans>> + Unpin {
-    res.map(|res| rotate_layer_error(res)).map_ok(|msg| {
-        Bytes::from_owner(
-            bincode_options()
-                .serialize(&msg)
-                .expect("serialization error is impossible"),
-        )
-    })
+    res.map(|res| rotate_layer_error(res))
+        .map_ok(|msg| serialize(&msg))
 }

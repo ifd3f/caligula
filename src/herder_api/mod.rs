@@ -12,7 +12,6 @@ pub mod write_verify;
 use std::{error::Error, fmt::Debug};
 
 use auto_impl::auto_impl;
-use bincode::Options;
 use futures::stream::LocalBoxStream;
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -58,12 +57,3 @@ pub trait Message:
 }
 
 impl<T: Serialize + DeserializeOwned + Debug + Clone + PartialEq + Send + 'static> Message for T {}
-
-/// Common bincode options to use for inter-process communication.
-#[inline]
-fn bincode_options() -> impl bincode::Options {
-    bincode::DefaultOptions::new()
-        .with_fixint_encoding()
-        .with_native_endian()
-        .with_limit(1024)
-}

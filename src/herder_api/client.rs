@@ -1,4 +1,3 @@
-use bincode::Options as _;
 use bytes::Bytes;
 use futures::{
     Stream, StreamExt, TryStreamExt,
@@ -6,8 +5,11 @@ use futures::{
 };
 
 use crate::{
-    herder_api::{HerderAction, HerderResponse, HerderService, LayerError, bincode_options},
-    util::stdiomux::BytestreamService,
+    herder_api::{HerderAction, HerderResponse, HerderService, LayerError},
+    util::{
+        stdiomux::BytestreamService,
+        wire::{deserialize, serialize},
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -76,12 +78,7 @@ where
 
 /// Package a given request into a byte stream.
 fn request_into_stream(action: impl HerderAction) -> BoxStream<'static, Bytes> {
-    let msg = Bytes::from_owner(
-        bincode_options()
-            .serialize(&action)
-            .expect("Serialization error is impossible"),
-    );
-    Box::pin(stream::once(std::future::ready(msg)))
+    Box::pin(stream::once(std::future::ready(serialize(&action))))
 }
 
 /// Take the first thing off a response stream and try to treat it as
@@ -91,9 +88,8 @@ async fn take_first<A: HerderAction, Trans>(
 ) -> Result<A::Start, LayerError<A::Error, ClientError<Trans>>> {
     let first_result = res.next().await.ok_or(ClientError::UnexpectedServerEof)?;
     let first_payload = first_result.map_err(ClientError::Transport)?;
-    let first_app_msg: Result<A::Start, A::Error> = bincode_options()
-        .deserialize(&first_payload)
-        .map_err(ClientError::Deserialization)?;
+    let first_app_msg: Result<A::Start, A::Error> =
+        deserialize(&first_payload).map_err(ClientError::Deserialization)?;
     let start = first_app_msg.map_err(LayerError::App)?;
     Ok(start)
 }
@@ -104,8 +100,7 @@ fn stream_into_events<A: HerderAction, Trans>(
 ) -> impl Stream<Item = Result<A::Event, LayerError<A::Error, ClientError<Trans>>>> {
     res.map_err(ClientError::Transport).map(|res| {
         let bs = res.map_err(LayerError::Transport)?;
-        let msg: Result<A::Event, A::Error> = bincode_options()
-            .deserialize(&bs)
+        let msg: Result<A::Event, A::Error> = deserialize(bs)
             .map_err(ClientError::Deserialization)
             .map_err(LayerError::Transport)?;
         msg.map_err(LayerError::App)
