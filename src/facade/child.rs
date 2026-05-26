@@ -8,9 +8,8 @@ use super::escalation::{EscalationError, run_escalate};
 use crate::{
     herder_api::{
         HerderAction, HerderActionResponse, HerderActionService, client::HerderClient,
-        error::LayerError,
     },
-    util::stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
+    util::stdiomux::{self, client::LocalBytestreamClient, util::{LayerError, RemoteThreadBytestreamClient}},
 };
 
 type Client =
@@ -83,7 +82,7 @@ pub async fn spawn(
     let (client, fut1) = stdiomux::client::open(child_rx, child_tx);
 
     // this client can only run on our current thread, create a remote handle for it
-    let (client, fut2) = stdiomux::make_remote(client);
+    let (client, fut2) = stdiomux::util::make_remote(client);
 
     // the driver future will drive both of these
     let fut = async move { try_join!(fut1, fut2.map(|_| Ok(()))).map(|_| ()) };

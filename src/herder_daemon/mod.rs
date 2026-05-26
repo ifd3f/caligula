@@ -5,23 +5,25 @@
 // caligula delegate writing to remote hosts over SSH. This may be a very
 // strange but funny feature to implement.
 
-use std::convert::Infallible;
+use std::{convert::Infallible, rc::Rc};
 
-use futures::TryStreamExt;
+use bytes::Bytes;
+use futures::{TryStreamExt, stream::LocalBoxStream};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, info};
 
 use crate::{
     herder_api::{
-        HerderActionResponse, HerderActionService,
-        error::LayerError,
-        server::transportize,
+        self, HerderActionResponse, HerderActionService,
         write_verify::{WVAction, WVError},
     },
     util::{
         runtime::{AsyncRuntime, RemoteSpawn as _},
-        stdiomux,
+        stdiomux::{
+            self, StreamService as _,
+            util::{LayerError, preamble_request_server, service_fn},
+        },
     },
 };
 
@@ -30,11 +32,19 @@ mod writer_process;
 pub fn main() {
     AsyncRuntime::start()
         .spawn(|| {
-            stdiomux::server::run(
-                tokio::io::stdin(),
-                tokio::io::stdout(),
-                transportize(HerderServer::new()),
-            )
+            let s = Rc::new(HerderServer::new());
+            let wv = Rc::new(herder_api::server::transportize::<WVAction, _>(s));
+
+            let s = service_fn(
+                move |(req, body): (herder_api::Request, LocalBoxStream<'static, Bytes>)| match req
+                {
+                    herder_api::Request::WriteVerify(a) => wv.call((a, body)),
+                },
+            );
+
+            let s = preamble_request_server(s);
+
+            stdiomux::server::run(tokio::io::stdin(), tokio::io::stdout(), s)
         })
         .blocking_recv()
         .expect("Daemon dropped!")

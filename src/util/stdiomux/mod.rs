@@ -8,17 +8,16 @@ use futures::Stream;
 
 mod channel_map;
 pub mod client;
-pub mod server;
-pub use sync::{RemoteThreadBytestreamClient, make_remote};
 mod common;
-mod sync;
+pub mod server;
+pub mod util;
 
 #[cfg(test)]
 mod tests;
 
 /// A service that, when called with a generic request type, returns a stream of
 /// bytes.
-#[auto_impl(&, Box, Rc, Arc)]
+#[auto_impl(Box, Rc, Arc)]
 pub trait StreamService<Req> {
     /// Error this service may return.
     type Error: Error;
@@ -30,28 +29,14 @@ pub trait StreamService<Req> {
     fn call(&self, req: Req) -> Self::Response;
 }
 
-/// Construct a [`StreamService`] from a function.
-pub fn service_fn<F, E, Req, Res>(f: F) -> ServiceFn<F>
+impl<S, Req> StreamService<Req> for &S
 where
-    F: Fn(Req) -> Res,
-    E: Error,
-    Res: Stream<Item = Result<Bytes, E>>,
+    S: StreamService<Req>,
 {
-    ServiceFn(f)
-}
-/// A [`StreamService`] built off of a simple function.
-pub struct ServiceFn<F>(F);
-
-impl<F, E, Req, Res> StreamService<Req> for ServiceFn<F>
-where
-    F: Fn(Req) -> Res,
-    E: Error,
-    Res: Stream<Item = Result<Bytes, E>>,
-{
-    type Error = E;
-    type Response = Res;
+    type Error = S::Error;
+    type Response = S::Response;
 
     fn call(&self, req: Req) -> Self::Response {
-        (self.0)(req)
+        S::call(self, req)
     }
 }

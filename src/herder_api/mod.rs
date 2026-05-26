@@ -14,9 +14,16 @@ use std::{error::Error, fmt::Debug};
 use auto_impl::auto_impl;
 use bincode::Options;
 use futures::stream::LocalBoxStream;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::herder_api::error::LayerError;
+use crate::util::stdiomux::util::LayerError;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::EnumDiscriminants)]
+#[strum_discriminants(name(RequestTag))]
+pub enum Request {
+    WriteVerify(write_verify::WVAction),
+    // TODO: add more request arms
+}
 
 /// A generic service for starting and managing individual [`HerderAction`]s.
 #[auto_impl(&, Box, Rc, Arc)]

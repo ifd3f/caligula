@@ -6,10 +6,11 @@ use futures::{
 };
 
 use crate::{
-    herder_api::{
-        HerderAction, HerderActionResponse, HerderActionService, LayerError, bincode_options,
+    herder_api::{HerderAction, HerderActionResponse, HerderActionService, bincode_options},
+    util::stdiomux::{
+        StreamService,
+        util::{LayerError, preamble_request_client, preamble_request_server},
     },
-    util::stdiomux::StreamService,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -27,6 +28,7 @@ impl<App, Trans> From<ClientError<Trans>> for LayerError<App, ClientError<Trans>
         LayerError::Transport(value)
     }
 }
+
 /// A client to a remote [`HerderService`] over a transport. Created using the
 /// [`create()`] function.
 ///
@@ -38,7 +40,7 @@ pub struct HerderClient<S> {
 
 impl<S> HerderClient<S>
 where
-    S: StreamService<BoxStream<'static, Bytes>>,
+    S: StreamService<LocalBoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,
     S::Error: 'static,
 {
@@ -51,7 +53,7 @@ where
 impl<A, S> HerderActionService<A> for HerderClient<S>
 where
     A: HerderAction,
-    S: StreamService<BoxStream<'static, Bytes>>,
+    S: StreamService<LocalBoxStream<'static, Bytes>>,
     S::Response: Unpin + 'static,
     S::Error: 'static,
 {
@@ -61,9 +63,8 @@ where
         &self,
         action: A,
     ) -> Result<HerderActionResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
-        let req = request_into_stream(action);
-
-        let mut res = self.client.call(req);
+        let s = preamble_request_client::<A, _>(&self.client);
+        let mut res = s.call((action, stream::empty().boxed_local()));
 
         let start = take_first::<A, _>(&mut res).await?;
         let events = stream_into_events::<A, _>(Box::pin(res));

@@ -16,7 +16,7 @@ use super::{
     StreamService,
     channel_map::ChannelMap,
     common::{common_driver, drive_channel_tx, inject_err_stream},
-    service_fn,
+    util::service_fn,
 };
 
 #[derive(Debug, thiserror::Error, Clone)]
