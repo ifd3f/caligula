@@ -33,13 +33,13 @@ macro_rules! gen_facade {
         /// This trait is split up into several subtraits, each representing a different
         /// kind of shared action the UI can take.
         pub trait CaligulaFacade:
-            Send + Sync + 'static $(+ $traits)*
+            Sync + Send + 'static $(+ $traits)*
         {
         }
 
 
         impl<F> CaligulaFacade for F where
-            F: Send + Sync + 'static $(+ $traits)*
+            F: Sync + Send + 'static $(+ $traits)*
         {
         }
     };

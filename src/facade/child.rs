@@ -4,14 +4,16 @@ use tokio::process::Child;
 
 use super::escalation::{EscalationError, run_escalate};
 use crate::{
-    herder_api::{HerderAction, HerderActionResponse, HerderActionService, client::HerderClient},
+    herder_api::{
+        self, HerderAction, HerderActionResponse, HerderActionService, client::HerderClient,
+    },
     util::{
         layer_error::LayerError,
         stdiomux::{self, client::BytestreamClient},
     },
 };
 
-type RawClient = HerderClient<BytestreamClient>;
+type RawClient = HerderClient<herder_api::Request, BytestreamClient>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SpawnDaemonError {
@@ -82,7 +84,7 @@ pub async fn spawn(
     Ok((
         ChildHerderClient {
             _child: child,
-            client: HerderClient::new(client),
+            client: RawClient::new(client),
         },
         fut,
     ))
@@ -93,13 +95,19 @@ pub struct ChildHerderClient {
     client: RawClient,
 }
 
-impl<A: HerderAction> HerderActionService<A> for ChildHerderClient {
+impl<A> HerderActionService<A> for ChildHerderClient
+where
+    A: Into<herder_api::Request> + TryFrom<herder_api::Request> + HerderAction,
+{
     type Error = <RawClient as HerderActionService<A>>::Error;
 
     async fn start(
         &self,
         action: A,
-    ) -> Result<HerderActionResponse<A, Self::Error>, LayerError<A::Error, Self::Error>> {
+    ) -> Result<
+        HerderActionResponse<A, Self::Error>,
+        LayerError<<A as HerderAction>::Error, Self::Error>,
+    > {
         self.client.start(action).await
     }
 }

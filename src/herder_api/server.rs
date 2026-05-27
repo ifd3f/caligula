@@ -7,9 +7,9 @@ use futures::{
 };
 
 use crate::{
-    herder_api::{HerderAction, HerderActionResponse, HerderActionService},
+    herder_api::{HerderAction, HerderActionResponse, HerderActionService, LayerError},
     util::{
-        layer_error::{LayerError, LayerResultExt as _},
+        layer_error::LayerResultExt as _,
         stdiomux::{self, BytestreamService},
         wire::{deserialize, serialize},
     },
@@ -25,7 +25,7 @@ pub enum ServerError<Trans> {
     Deserialization(#[from] bincode::Error),
 }
 
-/// Convert a [`HerderService`] server into a [`BytestreamService`] server.
+/// Convert a [`HerderService`] server into a [`BytestreamService`] over bytes.
 #[expect(clippy::type_complexity)]
 pub fn transportize<A, S>(
     svc: S,

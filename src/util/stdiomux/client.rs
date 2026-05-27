@@ -83,7 +83,7 @@ where
     (client, driver)
 }
 
-/// A client to a remote [`BytestreamService`] over a transport. Created using
+/// A client to a remote [`BytestreamClient`] over a transport. Created using
 /// the [`open()`] function.
 pub struct BytestreamClient {
     channel_map: Rc<ChannelMap>,
@@ -91,10 +91,7 @@ pub struct BytestreamClient {
     txq: Sender<(u16, Bytes)>,
 }
 
-impl<Req> BytestreamService<Req> for BytestreamClient
-where
-    Req: Stream<Item = Bytes> + Unpin + 'static,
-{
+impl<Req: Stream<Item = Bytes> + Unpin + 'static> BytestreamService<Req> for BytestreamClient {
     type Error = ClientError;
     type Response = BoxStream<'static, Result<Bytes, Self::Error>>;
 

@@ -31,7 +31,7 @@ impl<E: Error> Clone for ServerError<E> {
     }
 }
 
-/// Run a [`BytestreamService`] as a server over the given transport.
+/// Run a [`BytestreamService`] over bytes as a server over the given transport.
 #[tracing::instrument(skip_all, name = "stdiomux_server")]
 pub async fn run<R, W, S>(rx: R, tx: W, s: S) -> Result<(), ServerError<S::Error>>
 where

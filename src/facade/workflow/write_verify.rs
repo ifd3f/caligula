@@ -11,7 +11,7 @@ use crate::{
         byteseries::{ByteSeries, EstimatedTime},
         device::WriteTarget,
         layer_error::LayerError,
-        stdiomux::{self},
+        stdiomux,
     },
 };
 
@@ -143,7 +143,7 @@ impl WVState {
         // peel off EOF
         let Some(msg) = msg else {
             info!("Messages terminated unexpectedly");
-            return self.into_finished(now, Err(WVError::ProcessTerminated.into()));
+            return self.into_finished(now, Err(WVError::UnexpectedTermination.into()));
         };
 
         // peel off errors
@@ -211,11 +211,7 @@ impl WVState {
         };
     }
 
-    pub fn into_finished(
-        self,
-        now: Instant,
-        error: Result<(), WriteVerifyWorkflowError>,
-    ) -> WVState {
+    fn into_finished(self, now: Instant, error: Result<(), WriteVerifyWorkflowError>) -> WVState {
         match self {
             WVState::Writing(st) => {
                 let total_write_bytes = st.write_hist.bytes_encountered();
@@ -410,7 +406,7 @@ mod tests {
                 ..
             } => {
                 assert_eq!(finish_time - t0, Duration::from_secs(2));
-                assert_eq!(error, Err(Arc::new(WVError::ProcessTerminated.into())));
+                assert_eq!(error, Err(Arc::new(WVError::UnexpectedTermination.into())));
             }
             s => panic!("Unexpected {s:#?}"),
         }

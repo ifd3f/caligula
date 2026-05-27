@@ -5,10 +5,12 @@ use std::error::Error;
 use auto_impl::auto_impl;
 use bytes::Bytes;
 use futures::Stream;
+pub use preamble::{PreambleRequestClient, preamble_request_client, preamble_request_server};
 
 mod channel_map;
 pub mod client;
 mod common;
+mod preamble;
 pub mod server;
 
 #[cfg(test)]

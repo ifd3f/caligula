@@ -51,8 +51,8 @@ fn happy_path_strat(
     full_transmission.prop_map(HappyPathCase).boxed()
 }
 
-/// Given a [`HappyPathCase`], returns a [`BytestreamService`] that behaves
-/// according to the test case.
+/// Given a [`HappyPathCase`], returns a [`BytestreamService`] over bytes that
+/// behaves according to the test case.
 fn infallible_service_for_pairs(
     case: HappyPathCase,
 ) -> Box<

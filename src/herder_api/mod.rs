@@ -13,11 +13,27 @@ use std::{error::Error, fmt::Debug};
 
 use auto_impl::auto_impl;
 use futures::stream::LocalBoxStream;
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::util::layer_error::LayerError;
+use crate::{herder_api::write_verify::WVAction, util::layer_error::LayerError};
 
-/// A generic service for starting [`HerderAction`]s.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Serialize,
+    Deserialize,
+    strum::EnumDiscriminants,
+    derive_more::TryInto,
+    derive_more::From,
+)]
+#[strum_discriminants(name(RequestTag), derive(Serialize, Deserialize))]
+pub enum Request {
+    WriteVerify(WVAction),
+}
+
+/// A generic service for starting and managing individual [`HerderAction`]s.
 #[auto_impl(&, Box, Rc, Arc)]
 pub trait HerderActionService<A: HerderAction> {
     /// Errors that the transport of this [`HerderActionService`] may introduce.

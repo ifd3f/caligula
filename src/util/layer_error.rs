@@ -11,7 +11,6 @@ pub enum LayerError<App, Trans> {
 }
 
 impl<App, Trans> LayerError<App, Trans> {
-    #[expect(unused)]
     pub fn unwrap_app(self) -> App
     where
         Trans: Debug,
@@ -31,7 +30,6 @@ impl<App, Trans> LayerError<App, Trans> {
     }
 }
 
-#[expect(unused)]
 pub trait NestedResultExt<T, App, Trans> {
     /// Unnest this [`Result`] by rotating the inner error into a
     /// [`LayerError`].
