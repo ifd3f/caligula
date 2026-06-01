@@ -5,7 +5,7 @@
 // caligula delegate writing to remote hosts over SSH. This may be a very
 // strange but funny feature to implement.
 
-use std::{convert::Infallible, rc::Rc};
+use std::{convert::Infallible, io::ErrorKind, process::ExitCode, rc::Rc};
 
 use bytes::Bytes;
 use futures::{TryStreamExt, stream::LocalBoxStream};
@@ -22,14 +22,16 @@ use crate::{
     util::{
         layer_error::LayerError,
         runtime::{AsyncRuntime, RemoteSpawn as _},
-        stdiomux::{self, BytestreamService, preamble_request_server, service_fn},
+        stdiomux::{
+            self, BytestreamService, preamble_request_server, server::ServerError, service_fn,
+        },
     },
 };
 
 mod writer_process;
 
-pub fn main() {
-    AsyncRuntime::start()
+pub fn main() -> std::process::ExitCode {
+    let res = AsyncRuntime::start()
         .spawn(|| {
             // construct the base `HerderServer`
             let hs = HerderServer::new();
@@ -47,8 +49,18 @@ pub fn main() {
             stdiomux::server::run(tokio::io::stdin(), tokio::io::stdout(), s)
         })
         .blocking_recv()
-        .expect("Daemon dropped!")
-        .expect("Daemon errored!");
+        .expect("Daemon panicked!");
+
+    match res {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => match e {
+            ServerError::Rx(io) | ServerError::Tx(io) if io.kind() == ErrorKind::UnexpectedEof => {
+                info!("Pipe closed, exiting");
+                ExitCode::SUCCESS
+            }
+            e => panic!("Server failed with error: {e}"),
+        },
+    }
 }
 
 struct HerderServer {}
