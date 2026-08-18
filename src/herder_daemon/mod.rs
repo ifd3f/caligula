@@ -8,6 +8,8 @@
 use std::convert::Infallible;
 
 use futures::TryStreamExt;
+use http_body_util::BodyStream;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, info};
@@ -20,6 +22,7 @@ use crate::{
         write_verify::{WVAction, WVError},
     },
     util::{
+        hyper::TokioLocalExecutor,
         runtime::{AsyncRuntime, RemoteSpawn as _},
         stdiomux,
     },
@@ -30,11 +33,12 @@ mod writer_process;
 pub fn main() {
     AsyncRuntime::start()
         .spawn(|| {
-            stdiomux::server::run(
-                tokio::io::stdin(),
-                tokio::io::stdout(),
-                transportize(HerderServer::new()),
-            )
+            hyper::server::conn::http2::Builder::new(TokioLocalExecutor::new())
+                .keep_alive_interval(None)
+                .serve_connection(
+                    TokioIo::new(tokio::io::join(tokio::io::stdin(), tokio::io::stdout())),
+                    HerderServer::new(),
+                )
         })
         .blocking_recv()
         .expect("Daemon dropped!")
@@ -82,3 +86,4 @@ impl HerderService<WVAction> for HerderServer {
         })
     }
 }
+
