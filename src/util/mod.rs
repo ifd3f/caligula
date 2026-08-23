@@ -6,11 +6,11 @@
 //! - Self-contained functions and utilities that are fairly small, but shared
 //!   enough that they don't really make much sense elsewhere
 //! - Libraries that would theoretically make sense to split into their own
-//!   crates later, like [stdiomux] and [io_graph]
+//!   crates later, like [io_graph]
 //!
 //! As a rule of thumb, if a utility is only used by one subsystem, it should go
 //! inside there rather than here. The exception to this is rule those
-//! aforementioned large libraries like [stdiomux] and [io_graph].
+//! aforementioned large libraries like [io_graph].
 
 use std::{
     alloc::{Layout, alloc},
@@ -30,7 +30,6 @@ pub mod device;
 pub mod io_graph;
 pub mod legacy_io;
 pub mod runtime;
-pub mod stdiomux;
 
 /// Create the directory to shove invocation-specific data into, like log files
 /// and sockets.
