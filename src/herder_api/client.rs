@@ -14,8 +14,10 @@ use crate::{
 pub enum ClientError<Trans> {
     #[error("Unexpected Server EOF")]
     UnexpectedServerEof,
-    #[error("Transport error: {0}")]
-    Transport(Trans),
+    #[error("Transport error decoding first message: {0}")]
+    FirstMsgTransport(Trans),
+    #[error("Transport error in event stream: {0}")]
+    RestTransport(Trans),
     #[error("Deserialization error: {0}")]
     Deserialization(#[from] bincode::Error),
 }
@@ -90,7 +92,7 @@ async fn take_first<A: HerderAction, Trans>(
     res: &mut (impl Stream<Item = Result<Bytes, Trans>> + Unpin),
 ) -> Result<A::Start, LayerError<A::Error, ClientError<Trans>>> {
     let first_result = res.next().await.ok_or(ClientError::UnexpectedServerEof)?;
-    let first_payload = first_result.map_err(ClientError::Transport)?;
+    let first_payload = first_result.map_err(ClientError::FirstMsgTransport)?;
     let first_app_msg: Result<A::Start, A::Error> = bincode_options()
         .deserialize(&first_payload)
         .map_err(ClientError::Deserialization)?;
@@ -102,7 +104,7 @@ async fn take_first<A: HerderAction, Trans>(
 fn stream_into_events<A: HerderAction, Trans>(
     res: LocalBoxStream<'static, Result<Bytes, Trans>>,
 ) -> impl Stream<Item = Result<A::Event, LayerError<A::Error, ClientError<Trans>>>> {
-    res.map_err(ClientError::Transport).map(|res| {
+    res.map_err(ClientError::RestTransport).map(|res| {
         let bs = res.map_err(LayerError::Transport)?;
         let msg: Result<A::Event, A::Error> = bincode_options()
             .deserialize(&bs)

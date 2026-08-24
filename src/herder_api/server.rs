@@ -19,7 +19,7 @@ use crate::{
 pub enum ServerError<Trans> {
     #[error("Unexpected EOF")]
     UnexpectedClientEof,
-    #[error("Transport error: {0}")]
+    #[error("Server transport error: {0}")]
     Transport(Trans),
     #[error("Deserialization error: {0}")]
     Deserialization(#[from] bincode::Error),
