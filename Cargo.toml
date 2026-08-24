@@ -27,9 +27,10 @@ flate2 = "1.1.4"
 format-bytes = "0.3.0"
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
 futures-io = "0.3.31"
+http = "1.5.0"
 http-body-util = "0.1.5"
 hyper = { version = "1.11.0", features = ["client", "http2", "server"] }
-hyper-util = { version = "0.1.20", features = ["tokio", "http1", "http2", "server", "client"] }
+hyper-util = { version = "0.1.20", features = ["tokio", "http1", "http2", "server", "client", "service"] }
 indicatif = { version = "0.17.11", default-features = false }
 inquire = { version = "0.7.5", default-features = false, features = [
   "crossterm",
@@ -66,6 +67,8 @@ tokio = { version = "1.48.0", features = [
   "sync",
 ] }
 tokio-stream = "0.1.18"
+tower = { version = "0.5.3", features = ["util"] }
+tower-http = "0.7.0"
 tracing = { version = "0.1.41", default-features = false, features = ["std"] }
 tracing-panic = "0.1.2"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter", "fmt"] }

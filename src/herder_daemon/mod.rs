@@ -7,11 +7,18 @@
 
 use std::convert::Infallible;
 
+use bytes::Bytes;
 use futures::TryStreamExt;
-use http_body_util::BodyStream;
-use hyper_util::rt::{TokioExecutor, TokioIo};
+use http::{Method, StatusCode};
+use http_body_util::{BodyExt, BodyStream, combinators::BoxBody};
+use hyper::{body, service::service_fn};
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    service::TowerToHyperService,
+};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
+use tower::ServiceExt;
 use tracing::{debug, info};
 
 use crate::{
@@ -24,7 +31,6 @@ use crate::{
     util::{
         hyper::TokioLocalExecutor,
         runtime::{AsyncRuntime, RemoteSpawn as _},
-        stdiomux,
     },
 };
 
@@ -37,12 +43,45 @@ pub fn main() {
                 .keep_alive_interval(None)
                 .serve_connection(
                     TokioIo::new(tokio::io::join(tokio::io::stdin(), tokio::io::stdout())),
-                    HerderServer::new(),
+                    TowerToHyperService::new(tower::service_fn(handler)),
                 )
         })
         .blocking_recv()
-        .expect("Daemon dropped!")
-        .expect("Daemon errored!");
+        .expect("Daemon dropped!");
+}
+
+async fn handler(
+    req: http::Request<body::Incoming>,
+    hs: HerderServer,
+) -> hyper::Response<BoxBody<Bytes, Infallible>> {
+    match req.uri().path() {
+        "/actions/write_verify" => action_handler(req, service_fn(|r| {})).await,
+        _ => {
+            let mut r = http::Response::new(BoxBody::new(b"not found"));
+            *r.status_mut() = StatusCode::NOT_FOUND;
+            r
+        }
+    }
+}
+
+async fn action_handler(
+    req: http::Request<body::Incoming>,
+    s: impl tower::Service<body::Incoming, Response = BoxBody<Bytes, Infallible>, Error = Infallible>,
+) -> http::Response<BoxBody<Bytes, Infallible>> {
+    match *req.method() {
+        Method::POST => {
+            let body = s.oneshot(req.into_body()).await.unwrap();
+
+            let mut r = http::Response::new(body);
+            *r.status_mut() = StatusCode::OK;
+            r
+        }
+        _ => {
+            let mut r = http::Response::new(BoxBody::new(b"method not allowed"));
+            *r.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+            r
+        }
+    }
 }
 
 struct HerderServer {}
@@ -86,4 +125,3 @@ impl HerderService<WVAction> for HerderServer {
         })
     }
 }
-

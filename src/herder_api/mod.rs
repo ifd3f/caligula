@@ -1,5 +1,5 @@
 //! Defines traits and modules for IPC between the child process and parent
-//! process.
+//! process, along with helpers for turning them into and out of HTTP.
 //!
 //! The UI may speak some of these types, but it should prefer to use the
 //! higher-level interfaces defined in [`crate::facade`].
@@ -43,6 +43,9 @@ pub trait HerderService<A: HerderAction> {
 /// Arbitrary herd initialization action. This can be anything, from writing to
 /// verifying to voiding.
 pub trait HerderAction: Message {
+    /// The HTTP path this action is located at
+    const PATH: &str;
+
     type Start: Message;
 
     type Error: Message + Error;

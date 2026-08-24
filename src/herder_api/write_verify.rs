@@ -20,6 +20,8 @@ pub struct WVAction {
 }
 
 impl HerderAction for WVAction {
+    const PATH: &str = "write_verify";
+
     type Error = WVError;
     type Event = WVEvent;
     type Start = WVStart;

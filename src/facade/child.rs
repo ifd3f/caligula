@@ -9,7 +9,6 @@ use crate::{
     herder_api::{
         HerderAction, HerderResponse, HerderService, client::HerderClient, error::LayerError,
     },
-    util::stdiomux::{self, RemoteThreadBytestreamClient, client::LocalBytestreamClient},
 };
 
 type Client =
