@@ -12,7 +12,10 @@ use crate::{
         HerderAction, HerderResponse, HerderService, LayerError, bincode_options,
         error::rotate_layer_error,
     },
-    util::stdiomux::{self, BytestreamService},
+    util::{
+        stdiomux::{self, BytestreamService},
+        stream::flatten_result_of_stream_of_results,
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -44,22 +47,10 @@ where
         let svc = svc.clone();
         stream::once(async move {
             let result = handle_request::<A, _>(svc, req).await;
-            move_result_into_stream(result)
+            flatten_result_of_stream_of_results(result)
         })
         .flatten()
         .boxed_local()
-    })
-}
-
-fn move_result_into_stream<T, E>(
-    r: Result<impl Stream<Item = Result<T, E>>, E>,
-) -> impl Stream<Item = Result<T, E>> {
-    stream::once(std::future::ready(r)).flat_map(|x| {
-        let (ok, err) = match x {
-            Ok(v) => (Some(v), None),
-            Err(e) => (None, Some(Err(e))),
-        };
-        stream::iter(err).chain(stream::iter(ok).flatten())
     })
 }
 
