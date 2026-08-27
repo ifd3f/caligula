@@ -1,6 +1,7 @@
 use std::{path::PathBuf, time::Instant};
 
 use futures::StreamExt;
+use tokio::task::JoinHandle;
 
 use crate::{
     facade::{
@@ -12,6 +13,7 @@ use crate::{
         workflow::hash::{self, HashWorkflow, HashingState},
     },
     herder_api::HerderService,
+    util::stdiomux,
 };
 
 /// Actual CaligulaFacade implementation used by Caligula.
@@ -22,29 +24,35 @@ pub struct FacadeImpl {
 struct Inner {
     log_path: String,
 
-    child: ChildHerderClient,
-    escalated_child: Option<ChildHerderClient>,
+    child: SpawnedChild,
+    escalated_child: Option<SpawnedChild>,
+}
+
+/// Bundle of the client and a [JoinHandle] to the driver future
+struct SpawnedChild {
+    client: ChildHerderClient,
+    driver: JoinHandle<Result<(), stdiomux::client::ClientError>>,
 }
 
 impl Inner {
     fn pick_child_process(&self) -> &ChildHerderClient {
         if let Some(c) = self.escalated_child.as_ref() {
-            c
+            &c.client
         } else {
-            &self.child
+            &self.child.client
         }
     }
 }
 
 impl FacadeImpl {
     pub async fn new(log_path: String) -> Result<Self, SpawnDaemonError> {
-        let (child, fut) = super::child::spawn(log_path.clone(), false).await?;
-        tokio::task::spawn_local(fut);
+        let (client, driver) = super::child::spawn(log_path.clone(), false).await?;
+        let driver = tokio::task::spawn_local(driver);
 
         Ok(Self {
             inner: Inner {
                 log_path,
-                child,
+                child: SpawnedChild { client, driver },
                 escalated_child: None,
             }
             .into(),
@@ -112,9 +120,9 @@ impl Escalator for FacadeImpl {
             return Ok(());
         }
 
-        let (child, fut) = super::child::spawn(inner.log_path.clone(), true).await?;
-        tokio::task::spawn_local(fut);
-        inner.escalated_child = Some(child);
+        let (client, driver) = super::child::spawn(inner.log_path.clone(), true).await?;
+        let driver = tokio::task::spawn_local(driver);
+        inner.escalated_child = Some(SpawnedChild { client, driver });
         Ok(())
     }
 
