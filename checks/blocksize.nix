@@ -27,10 +27,10 @@ testers.runNixOSTest {
   };
 
   testScript = with lib; ''
-    import os
+    import subprocess
 
     print("Creating file image at ${diskFile}")
-    os.system("dd bs=1M count=${toString diskSizeMiB} if=/dev/urandom of=${diskFile}")
+    subprocess.check_output(["dd", "bs=1M", "count=${toString diskSizeMiB}", "if=/dev/urandom", "of=${diskFile}"])
 
     ${builtins.readFile ./common/common.py}
 
