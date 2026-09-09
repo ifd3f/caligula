@@ -1,6 +1,6 @@
 //! Extended stream utilities.
 
-use futures::{Stream, StreamExt as _, stream};
+use futures::{FutureExt, Stream, StreamExt as _, stream};
 use tokio::sync::SetOnce;
 
 /// Flattens [`Result<Stream<Result<T, E>>, E>`] by moving the `E` into the first item of the
@@ -40,5 +40,27 @@ pub trait StreamExt: Stream {
                 }
             }
         })
+    }
+
+    /// Awaits for the results of the given future. If it results in `Err`, adds an
+    /// `Err` onto the stream. If it is `()`, ends the stream without `Err`.
+    fn chain_err_from_future<T, E>(
+        self,
+        future: impl Future<Output = Result<(), E>>,
+    ) -> impl Stream<Item = Result<T, E>>
+    where
+        Self: Stream<Item = Result<T, E>> + Sized,
+    {
+        let stream_of_just_err = future
+            .map(|x| {
+                // if x is Err, this will be Some. otherwise it will be None.
+                let iter: Option<Result<T, E>> = x.err().map(Err);
+
+                // treat as stream
+                stream::iter(iter)
+            })
+            .flatten_stream();
+
+        self.chain(stream_of_just_err)
     }
 }

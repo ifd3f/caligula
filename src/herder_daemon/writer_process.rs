@@ -7,9 +7,9 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Seek},
     process::{Command, Stdio},
-    thread::JoinHandle,
 };
 
+use tokio::sync::oneshot;
 use tracing::{debug, info};
 use tracing_unwrap::ResultExt;
 
@@ -31,23 +31,42 @@ const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
 /// progress).
 const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
+/// Spawn a writer/verifier thing. Returns a future to await on its completion.
 pub fn spawn_writer(
     tx_start: impl FnOnce(WVStart) + Send + 'static,
-    mut tx: impl FnMut(Result<WVEvent, WVError>) + Send + 'static,
+    mut tx_event: impl FnMut(WVEvent) + Send + 'static,
     init_config: WVAction,
-) -> JoinHandle<()> {
-    std::thread::Builder::new()
+) -> impl Future<Output = Result<(), WVError>> {
+    let (out_tx, out_rx) = oneshot::channel();
+
+    let jh = std::thread::Builder::new()
         .name("writer".into())
         .spawn(move || {
             debug!("Spawned child thread {:?}", std::thread::current().id());
-            let borrowed = &mut tx;
-            let result =
-                run(tx_start, move |x| borrowed(Ok(x)), &init_config).map(|_| WVEvent::Success);
+            let result = run(tx_start, &mut tx_event, &init_config);
+            info!(?result, "Thread terminated gracefully");
 
-            info!(?result, "Thread terminated");
-            tx(result);
+            if result.is_ok() {
+                tx_event(WVEvent::Success);
+            }
+
+            out_tx.send(result).ok();
         })
-        .unwrap()
+        .expect("failed to spawn thread");
+
+    async move {
+        out_rx.await.unwrap_or_else(|_| {
+            let thread_result = if jh.is_finished() {
+                Some(jh.join())
+            } else {
+                None
+            };
+            Err(WVError::UnknownChildProcError(format!(
+                "Thread terminated abnormally! Join handle output: {:?}",
+                thread_result
+            )))
+        })
+    }
 }
 
 fn run(
