@@ -81,14 +81,15 @@ impl HerderService<WVAction> for HerderServer {
 
         // ensure it doesn't error before start
         let start = select! {
-            r = start_rx => {
-                r.map_err(|_| WVError::UnknownChildProcError("Failed to receive result from thread".into()))?
-            }
+            biased;
             r = &mut thread_result_future => {
                 return match r {
                     Ok(()) => Err(WVError::UnknownChildProcError("Thread ended without start event".into()))?,
                     Err(e) => Err(LayerError::App(e))
                 }
+            }
+            r = start_rx => {
+                r.map_err(|e| WVError::UnknownChildProcError(format!("Failed to receive start result from thread: {e:?}")))?
             }
         };
         info!(?start, "Successfully spawned writer thread");
