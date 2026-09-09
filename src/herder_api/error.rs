@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::Display, io};
+use std::{convert::Infallible, error::Error, fmt::Display, io};
 
 use serde::{Deserialize, Serialize};
 use tracing::debug;
@@ -11,6 +11,12 @@ pub enum LayerError<App, Trans> {
     App(App),
     #[error("Error from transport level: {0}")]
     Transport(Trans),
+}
+
+impl<App> From<App> for LayerError<App, Infallible> {
+    fn from(value: App) -> Self {
+        Self::App(value)
+    }
 }
 
 /// Given a [`Result`] with [`LayerError`]s, eliminate the [`LayerError`]s by

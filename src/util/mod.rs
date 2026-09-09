@@ -29,6 +29,7 @@ pub mod candidate;
 pub mod device;
 pub mod io_graph;
 pub mod legacy_io;
+pub mod phased_channel;
 pub mod runtime;
 pub mod stdiomux;
 pub mod stream;
@@ -77,4 +78,3 @@ pub unsafe fn alloc_uninit_bytes_with_layout(layout: Layout) -> BytesMut {
     };
     BytesMut::from(Bytes::from_owner(mem))
 }
-

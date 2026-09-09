@@ -65,9 +65,3 @@ pub enum WVError {
     #[error("Error handling output: {0}")]
     OutputFile(#[from] IoError<DiskError>),
 }
-
-impl<Trans> From<WVError> for LayerError<WVError, Trans> {
-    fn from(value: WVError) -> Self {
-        LayerError::App(value)
-    }
-}
