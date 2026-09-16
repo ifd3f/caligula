@@ -7,8 +7,8 @@ use futures::{FutureExt, Stream, StreamExt};
 use tokio::sync::{mpsc, oneshot};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-/// A two-phase message channel. There is an initial phase, and an event-emitting phase. For more info, see
-/// [`channel()`].
+/// A two-phase message channel. There is an initial phase, and an
+/// event-emitting phase. For more info, see [`channel()`].
 ///
 /// ## Examples
 ///
@@ -36,8 +36,8 @@ pub fn channel<T, V, E>() -> (UninitializedSender<T, V, E>, UninitializedReceive
 #[error("The other end disconnected")]
 pub struct ChannelDisconnected;
 
-/// A two-phase sender. There is an initial phase, and an event-emitting phase. For more info, see
-/// [`channel()`].
+/// A two-phase sender. There is an initial phase, and an event-emitting phase.
+/// For more info, see [`channel()`].
 pub struct UninitializedReceiver<T, V, E> {
     initial: oneshot::Receiver<Result<T, E>>,
     stream: Option<mpsc::UnboundedReceiver<V>>,
@@ -62,8 +62,8 @@ impl<T, V, E> Future for UninitializedReceiver<T, V, E> {
     }
 }
 
-/// A two-phase receiver. There is an initial phase, and an event-emitting phase. For more info, see
-/// [`channel()`].
+/// A two-phase receiver. There is an initial phase, and an event-emitting
+/// phase. For more info, see [`channel()`].
 pub struct InitializedReceiver<V> {
     stream: UnboundedReceiverStream<V>,
 }
@@ -110,8 +110,9 @@ impl<V> InitializedSender<V> {
 mod tests {
     use std::convert::Infallible;
 
-    use super::*;
     use tokio::join;
+
+    use super::*;
 
     #[tokio::test]
     async fn run() {

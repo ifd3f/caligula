@@ -12,14 +12,13 @@ use tokio::{
 };
 use tracing::{Instrument, debug_span, info_span};
 
-use crate::util::stream::StreamExt as _;
-
 use super::{
     BytestreamService,
     channel_map::ChannelMap,
     common::{common_driver, drive_channel_tx},
     service_fn,
 };
+use crate::util::stream::StreamExt as _;
 
 #[derive(Debug, thiserror::Error, Clone)]
 pub enum ClientError {

@@ -62,8 +62,8 @@ impl<S: Read, D: Write> WriteOp<S, D> {
                 }
 
                 // Write the entire buffer, because we're doing direct writes.
-                // Even if we didn't fill the whole buffer, we are still writing the whole
-                // buffer.
+                // Even if we didn't fill the whole buffer, we are still writing
+                // the whole buffer.
                 let written_bytes = disk.write(&buf[..]).map_err(IoError::<DiskError>::from)?;
                 if written_bytes == 0 {
                     checkpoint!();

@@ -123,8 +123,8 @@ fn parse_args_for_readme_generation() -> Args {
     match res {
         Ok(s) => s,
         Err(e) => {
-            // Since this is more of a development-time error, we aren't doing as fancy of a
-            // quit as `get_matches`
+            // Since this is more of a development-time error, we aren't doing
+            // as fancy of a quit as `get_matches`
             e.exit()
         }
     }

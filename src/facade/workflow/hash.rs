@@ -127,7 +127,8 @@ pub async fn run(params: HashWorkflow) -> (Watch<HashingState>, Option<JoinHandl
     let start = match rx_start.await {
         Ok(r) => r,
         Err(_) => {
-            // dropped without a value. check if end is populated and return error if so
+            // dropped without a value. check if end is populated and return
+            // error if so
             let err = rx_end
                 .await
                 .expect("Thread panicked!") // dropped
@@ -224,7 +225,8 @@ fn run_thread(
             other => Some(DecompressorWorker::new(other)),
         };
 
-        // calculate pipeline topology and what buffers are needed to connect things
+        // calculate pipeline topology and what buffers are needed to connect
+        // things
         let (robjs, dobjs, hobjs) = match decompressor {
             Some(d) => {
                 let (reader_send, reader_recv) = io_graph::buf(1024);

@@ -56,8 +56,8 @@ impl<Tx: SendBytes> Worker<Tx> for FileReader {
         let mut tx = args;
 
         while !context.halt() {
-            // SAFETY: these bytes will get filled up immediately. everything else that
-            // wasn't filled up will get truncated
+            // SAFETY: these bytes will get filled up immediately. everything
+            // else that wasn't filled up will get truncated
             let mut buf = unsafe { alloc_uninit_bytes_with_layout(ALLOC_LAYOUT) };
 
             let count = self.file.read(&mut buf)?;

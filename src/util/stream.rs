@@ -3,8 +3,8 @@
 use futures::{FutureExt, Stream, StreamExt as _, stream};
 use tokio::sync::SetOnce;
 
-/// Flattens [`Result<Stream<Result<T, E>>, E>`] by moving the `E` into the first item of the
-/// stream.
+/// Flattens [`Result<Stream<Result<T, E>>, E>`] by moving the `E` into the
+/// first item of the stream.
 pub fn flatten_result_of_stream_of_results<T, E>(
     r: Result<impl Stream<Item = Result<T, E>>, E>,
 ) -> impl Stream<Item = Result<T, E>> {
@@ -42,8 +42,10 @@ pub trait StreamExt: Stream {
         })
     }
 
-    /// Awaits for the results of the given future. If it results in `Err`, adds an
-    /// `Err` onto the stream. If it is `()`, ends the stream without `Err`.
+    /// Awaits for the results of the given future. If it results in `Err`, adds
+    /// an `Err` onto the stream. If it is `()`, ends the stream without
+    /// `Err`.
+    #[expect(unused)]
     fn chain_err_from_future<T, E>(
         self,
         future: impl Future<Output = Result<(), E>>,

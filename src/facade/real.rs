@@ -31,7 +31,7 @@ struct Inner {
 /// Bundle of the client and a [JoinHandle] to the driver future
 struct SpawnedChild {
     client: ChildHerderClient,
-    driver: JoinHandle<Result<(), stdiomux::client::ClientError>>,
+    _driver: JoinHandle<Result<(), stdiomux::client::ClientError>>,
 }
 
 impl Inner {
@@ -52,7 +52,10 @@ impl FacadeImpl {
         Ok(Self {
             inner: Inner {
                 log_path,
-                child: SpawnedChild { client, driver },
+                child: SpawnedChild {
+                    client,
+                    _driver: driver,
+                },
                 escalated_child: None,
             }
             .into(),
@@ -122,13 +125,17 @@ impl Escalator for FacadeImpl {
 
         let (client, driver) = super::child::spawn(inner.log_path.clone(), true).await?;
         let driver = tokio::task::spawn_local(driver);
-        inner.escalated_child = Some(SpawnedChild { client, driver });
+        inner.escalated_child = Some(SpawnedChild {
+            client,
+            _driver: driver,
+        });
         Ok(())
     }
 
     fn is_escalated(&self) -> bool {
-        // TODO: this is badly implemented but it's good enough for writing new UIs
-        // against. It will be improved when we get rid of herder facade.
+        // TODO: this is badly implemented but it's good enough for writing new
+        // UIs against. It will be improved when we get rid of herder
+        // facade.
         let Ok(lock) = self.inner.try_lock() else {
             return false;
         };

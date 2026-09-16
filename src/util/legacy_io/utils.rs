@@ -119,8 +119,8 @@ impl Write for SyncDataFile {
             self.0.sync_data()
         }
 
-        // On MacOS, calling sync_data() on a disk yields "Inappropriate ioctl for
-        // device (os error 25)" so for now we will just no-op.
+        // On MacOS, calling sync_data() on a disk yields "Inappropriate ioctl
+        // for device (os error 25)" so for now we will just no-op.
         #[cfg(target_os = "macos")]
         {
             Ok(())

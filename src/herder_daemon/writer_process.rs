@@ -10,7 +10,6 @@ use std::{
     rc::Rc,
 };
 
-use tokio::sync::oneshot;
 use tracing::{debug, info};
 use tracing_unwrap::ResultExt;
 
@@ -22,7 +21,7 @@ use crate::{
     util::{
         device,
         legacy_io::{SyncDataFile, VerifyOp, WriteOp, open_blockdev},
-        phased_channel::{self, UninitializedReceiver, UninitializedSender},
+        phased_channel::{self, UninitializedReceiver},
     },
 };
 
@@ -49,7 +48,7 @@ pub fn spawn_writer(
             let (file, size, disk) = match initialize(&init_config) {
                 Ok(v) => v,
                 Err(e) => {
-                    tx.error(e);
+                    tx.error(e).expect("failed to send initialization error");
                     return;
                 }
             };
@@ -162,7 +161,7 @@ fn initialize(args: &WVAction) -> Result<(File, u64, SyncDataFile), WVError> {
         .map_err(IoError::<InputFileError>::from)?;
     info!(size, "Got input file size");
     info!("Opening {} for writing", args.dest.to_string_lossy());
-    let mut disk = SyncDataFile(match args.target_type {
+    let disk = SyncDataFile(match args.target_type {
         device::Type::File => OpenOptions::new()
             .read(true)
             .write(true)

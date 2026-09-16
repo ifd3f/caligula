@@ -8,10 +8,7 @@ use futures::{
 use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader, BufWriter},
     join,
-    sync::{
-        SetOnce,
-        mpsc::{Receiver, Sender, channel},
-    },
+    sync::mpsc::{Receiver, Sender, channel},
 };
 use tracing::{Instrument as _, debug, debug_span, info_span, trace, trace_span};
 

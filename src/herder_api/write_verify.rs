@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::HerderAction;
 use crate::{
     codec::compression::CompressionFormat,
-    herder_api::error::{DiskError, InputFileError, IoError, LayerError, UnmountError},
+    herder_api::error::{DiskError, InputFileError, IoError, UnmountError},
     util::device::Type,
 };
 

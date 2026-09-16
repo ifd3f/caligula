@@ -8,11 +8,6 @@
 use std::convert::Infallible;
 
 use futures::{StreamExt as _, stream::BoxStream};
-use tokio::{
-    select,
-    sync::{mpsc, oneshot},
-};
-use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, info};
 
 use crate::{

@@ -44,7 +44,8 @@ impl<T: Ord> Candidates<T> {
             return vec![];
         };
 
-        // Find all values with same certainty as the maximum value to search for ties
+        // Find all values with same certainty as the maximum value to search
+        // for ties
         self.inner.iter().filter(|x| *x == max).collect()
     }
 
