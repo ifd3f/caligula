@@ -13,6 +13,9 @@
       pkgs = import inputs.nixpkgs {
         inherit system;
         overlays = [ self.overlays._rust-overlay ];
+
+        # needed because official support dropped
+        config.allowDeprecatedx86_64Darwin = "force";
       };
 
       supportedTargets = self.lib.calculateSupportedTargets system;
