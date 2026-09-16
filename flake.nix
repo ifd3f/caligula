@@ -2,7 +2,10 @@
   description = "Caligula flake";
 
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # x86_64-darwin is dropped on latest nixos.
+    # TODO: figure out a way to somehow support it while still using nixpkgs-unstable for others?
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+
     flake-parts.url = "github:hercules-ci/flake-parts";
 
     naersk = {
