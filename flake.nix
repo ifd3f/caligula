@@ -58,6 +58,9 @@
           # Modules that need to tweak it must instantiate their own.
           _module.args.pkgs = import inputs.nixpkgs {
             inherit system;
+
+            # needed because official support dropped
+            config.allowDeprecatedx86_64Darwin = "force";
           };
 
           packages.default = self'.packages.caligula;
