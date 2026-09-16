@@ -19,6 +19,77 @@ pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
         .filter_map(|d| WriteTarget::try_from(d.path().as_ref()).ok())
 }
 
+/// Buses whose devices can be attached and detached while the machine is
+/// running.
+///
+/// Sitting on one of these is what makes a disk something the user can unplug,
+/// and it is deliberately *not* the same question as
+/// `/sys/class/block/<dev>/removable`, which reports whether the medium leaves
+/// the drive. A USB stick whose flash is fixed inside its case answers "no" to
+/// that and "yes" to this one. See [`is_hotplug_bus`].
+///
+/// `usb` is the entry with a measurement behind it; `mmc`, `memstick`,
+/// `ieee1394` and `pcmcia` are here on the same reasoning, but UNVERIFIED — no
+/// device on those buses was available to check.
+#[cfg(target_os = "linux")]
+const HOTPLUG_SUBSYSTEMS: &[&str] = &["usb", "mmc", "memstick", "ieee1394", "pcmcia"];
+
+/// Whether the block device at `sysnode` hangs off a [hot-pluggable
+/// bus](HOTPLUG_SUBSYSTEMS), found by walking its device-tree ancestors and
+/// reading the subsystem each one links to.
+///
+/// This exists because `removable` alone is not enough to find the disks a user
+/// might want to write to. Measured 2026-09-06 on a Kingston DataTraveler Max:
+/// `/sys/class/block/sda/removable` read `0` while its ancestry ran
+/// `.../usb2/2-3/2-3:1.0/host1/...`, so filtering on that attribute hid the
+/// only disk the user could safely pick. `lsblk` agreed the drive was
+/// detachable — `RM=0 HOTPLUG=1 TRAN=usb` — because it asks this question
+/// instead.
+///
+/// The macOS side has never had this problem: `enumdisk.m` already treats a
+/// disk as removable when it is *ejectable*, which is the same idea by another
+/// name.
+///
+/// Partitions have no `device` link — measured the same day on
+/// `/sys/class/block/nvme0n1p1`, which has neither that nor `removable` — so
+/// they answer `false` here and stay out of the disk list.
+#[cfg(target_os = "linux")]
+fn is_hotplug_bus(sysnode: &Path) -> bool {
+    let Ok(mut dir) = sysnode.join("device").canonicalize() else {
+        return false;
+    };
+
+    loop {
+        if let Ok(subsystem) = dir.join("subsystem").canonicalize()
+            && let Some(name) = subsystem.file_name().and_then(OsStr::to_str)
+            && HOTPLUG_SUBSYSTEMS.contains(&name)
+        {
+            return true;
+        }
+
+        match dir.parent() {
+            Some(parent) => dir = parent.to_owned(),
+            None => return false,
+        }
+    }
+}
+
+/// Combine the two things Linux tells us about detachability: the contents of
+/// `/sys/class/block/<dev>/removable`, and whether the device sits on a
+/// [hot-pluggable bus](HOTPLUG_SUBSYSTEMS).
+///
+/// Either one saying yes is enough. An unreadable attribute is only
+/// [`Removable::Unknown`] when the bus does not settle it.
+#[cfg(target_os = "linux")]
+fn resolve_removable(removable_attr: Option<&str>, hotplug_bus: bool) -> Removable {
+    match removable_attr {
+        Some("1") => Removable::Yes,
+        _ if hotplug_bus => Removable::Yes,
+        Some("0") => Removable::No,
+        _ => Removable::Unknown,
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
     use std::{
@@ -156,14 +227,10 @@ impl WriteTarget {
 
         let sysnode = Path::new("/sys/class/block").join(name);
 
-        let removable = match read_sys_file(sysnode.join("removable"))?
-            .as_ref()
-            .map(String::as_ref)
-        {
-            Some("0") => Removable::No,
-            Some("1") => Removable::Yes,
-            _ => Removable::Unknown,
-        };
+        let removable = resolve_removable(
+            read_sys_file(sysnode.join("removable"))?.as_deref(),
+            is_hotplug_bus(&sysnode),
+        );
 
         let size = TargetSize(
             read_sys_file(sysnode.join("size"))?
@@ -336,5 +403,101 @@ impl Display for BlockSize {
             Some(bs) => write!(f, "{}", bs),
             None => write!(f, "[unknown block size]"),
         }
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::{env, fs, os::unix::fs::symlink, path::PathBuf, process};
+
+    use test_case::test_case;
+
+    use super::{Removable, is_hotplug_bus, resolve_removable};
+
+    /// Builds a throwaway sysfs-shaped tree and returns the path standing in
+    /// for `/sys/class/block/<dev>`.
+    ///
+    /// `device_chain` runs from the top of the device tree down to the node
+    /// that `<dev>/device` points at, naming the subsystem each level links to
+    /// where it has one.
+    fn fake_sysnode(case: &str, device_chain: &[(&str, &str)]) -> PathBuf {
+        let root = env::temp_dir().join(format!("caligula-test-{case}-{}", process::id()));
+        let _ = fs::remove_dir_all(&root);
+
+        let mut device = root.join("devices");
+        fs::create_dir_all(&device).unwrap();
+
+        for (name, subsystem) in device_chain {
+            device = device.join(name);
+            fs::create_dir_all(&device).unwrap();
+
+            let bus = root.join("bus").join(subsystem);
+            fs::create_dir_all(&bus).unwrap();
+            symlink(&bus, device.join("subsystem")).unwrap();
+        }
+
+        let sysnode = root.join("class").join("block").join("disk");
+        fs::create_dir_all(&sysnode).unwrap();
+        symlink(&device, sysnode.join("device")).unwrap();
+
+        sysnode
+    }
+
+    #[test]
+    fn usb_flash_drive_is_on_a_hotplug_bus() {
+        // The ancestry of a Kingston DataTraveler Max, read off
+        // /sys/class/block/sda on 2026-09-06: a SCSI chain hanging off a USB
+        // host controller.
+        let sysnode = fake_sysnode(
+            "usb",
+            &[
+                ("pci0000:00", "pci"),
+                ("usb2", "usb"),
+                ("2-3", "usb"),
+                ("2-3:1.0", "usb"),
+                ("host1", "scsi"),
+                ("target1:0:0", "scsi"),
+                ("1:0:0:0", "scsi"),
+            ],
+        );
+
+        assert!(is_hotplug_bus(&sysnode));
+    }
+
+    #[test]
+    fn internal_nvme_is_not_on_a_hotplug_bus() {
+        // Negative control: the ancestry of /sys/class/block/nvme0n1 on the
+        // same machine, same day.
+        let sysnode = fake_sysnode(
+            "nvme",
+            &[
+                ("pci0000:00", "pci"),
+                ("0000:02:00.0", "pci"),
+                ("nvme0", "nvme"),
+            ],
+        );
+
+        assert!(!is_hotplug_bus(&sysnode));
+    }
+
+    #[test]
+    fn node_without_a_device_link_is_not_on_a_hotplug_bus() {
+        // Partitions are the real instance of this: measured 2026-09-06,
+        // /sys/class/block/nvme0n1p1 has neither `removable` nor `device`.
+        let sysnode = env::temp_dir().join(format!("caligula-test-bare-{}", process::id()));
+        let _ = fs::remove_dir_all(&sysnode);
+        fs::create_dir_all(&sysnode).unwrap();
+
+        assert!(!is_hotplug_bus(&sysnode));
+    }
+
+    #[test_case(Some("1"), false => Removable::Yes; "removable medium")]
+    #[test_case(Some("1"), true => Removable::Yes; "removable medium on hotplug bus")]
+    #[test_case(Some("0"), true => Removable::Yes; "fixed medium on hotplug bus")]
+    #[test_case(None, true => Removable::Yes; "unreadable attribute on hotplug bus")]
+    #[test_case(Some("0"), false => Removable::No; "fixed medium on fixed bus")]
+    #[test_case(None, false => Removable::Unknown; "nothing known")]
+    fn resolves_removable(removable_attr: Option<&str>, hotplug_bus: bool) -> Removable {
+        resolve_removable(removable_attr, hotplug_bus)
     }
 }
