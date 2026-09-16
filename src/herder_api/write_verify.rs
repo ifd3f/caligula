@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::HerderAction;
 use crate::{
     codec::compression::CompressionFormat,
-    herder_api::error::{DiskError, InputFileError, IoError, LayerError, UnmountError},
+    herder_api::error::{DiskError, InputFileError, IoError, UnmountError},
     util::device::Type,
 };
 
@@ -64,10 +64,4 @@ pub enum WVError {
     InputFile(#[from] IoError<InputFileError>),
     #[error("Error handling output: {0}")]
     OutputFile(#[from] IoError<DiskError>),
-}
-
-impl<Trans> From<WVError> for LayerError<WVError, Trans> {
-    fn from(value: WVError) -> Self {
-        LayerError::App(value)
-    }
 }

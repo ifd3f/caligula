@@ -7,7 +7,7 @@ use std::{
     fs::{File, OpenOptions},
     io::{self, Read, Seek},
     process::{Command, Stdio},
-    thread::JoinHandle,
+    rc::Rc,
 };
 
 use tracing::{debug, info};
@@ -21,6 +21,7 @@ use crate::{
     util::{
         device,
         legacy_io::{SyncDataFile, VerifyOp, WriteOp, open_blockdev},
+        phased_channel::{self, UninitializedReceiver},
     },
 };
 
@@ -31,63 +32,61 @@ const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
 /// progress).
 const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
+/// Spawn a writer/verifier thing. Returns a future to await on its completion.
 pub fn spawn_writer(
-    tx_start: impl FnOnce(WVStart) + Send + 'static,
-    mut tx: impl FnMut(Result<WVEvent, WVError>) + Send + 'static,
     init_config: WVAction,
-) -> JoinHandle<()> {
-    std::thread::Builder::new()
+) -> (
+    UninitializedReceiver<WVStart, Result<WVEvent, WVError>, WVError>,
+    std::thread::JoinHandle<()>,
+) {
+    let (tx, rx) = phased_channel::channel();
+
+    let jh = std::thread::Builder::new()
         .name("writer".into())
         .spawn(move || {
             debug!("Spawned child thread {:?}", std::thread::current().id());
-            let borrowed = &mut tx;
-            let result =
-                run(tx_start, move |x| borrowed(Ok(x)), &init_config).map(|_| WVEvent::Success);
+            let (file, size, disk) = match initialize(&init_config) {
+                Ok(v) => v,
+                Err(e) => {
+                    tx.error(e).expect("failed to send initialization error");
+                    return;
+                }
+            };
 
-            info!(?result, "Thread terminated");
-            tx(result);
+            let tx = Rc::new(
+                tx.send(WVStart {
+                    input_file_bytes: size,
+                })
+                .unwrap_or_log(),
+            );
+
+            let result = run(
+                |e| tx.send(Ok(e)).expect_or_log("error sending event"),
+                &init_config,
+                file,
+                disk,
+            );
+
+            if let Err(e) = result {
+                tx.send(Err(e)).expect_or_log("error sending error");
+                return;
+            }
+            tx.send(Ok(WVEvent::Success))
+                .expect_or_log("error sending final success message");
+
+            info!(?result, "Thread terminated gracefully");
         })
-        .unwrap()
+        .expect("failed to spawn thread");
+
+    (rx, jh)
 }
 
 fn run(
-    tx_start: impl FnOnce(WVStart) + Send + 'static,
-    mut tx: impl FnMut(WVEvent),
+    mut tx: impl Fn(WVEvent),
     args: &WVAction,
+    mut file: File,
+    mut disk: SyncDataFile,
 ) -> Result<(), WVError> {
-    if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
-        run_diskutil_umount(args).map_err(UnmountError::Diskutil)?;
-    }
-
-    info!("Opening file {}", args.src.to_string_lossy());
-    let mut file = File::open(&args.src).unwrap_or_log();
-    let size = file
-        .seek(io::SeekFrom::End(0))
-        .map_err(IoError::<InputFileError>::from)?;
-    file.seek(io::SeekFrom::Start(0))
-        .map_err(IoError::<InputFileError>::from)?;
-
-    info!(size, "Got input file size");
-
-    info!("Opening {} for writing", args.dest.to_string_lossy());
-
-    let mut disk = SyncDataFile(match args.target_type {
-        device::Type::File => OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&args.dest)
-            .map_err(IoError::<DiskError>::from)?,
-        device::Type::Disk | device::Type::Partition => {
-            open_blockdev(&args.dest).map_err(IoError::<DiskError>::from)?
-        }
-    });
-
-    tx_start(WVStart {
-        input_file_bytes: size,
-    });
-
     let bs = match args.block_size {
         Some(bs) => bs,
         None => {
@@ -147,6 +146,34 @@ fn run(
     .execute(tx)?;
 
     Ok(())
+}
+
+fn initialize(args: &WVAction) -> Result<(File, u64, SyncDataFile), WVError> {
+    if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
+        run_diskutil_umount(args).map_err(UnmountError::Diskutil)?;
+    }
+    info!("Opening file {}", args.src.to_string_lossy());
+    let mut file = File::open(&args.src).unwrap_or_log();
+    let size = file
+        .seek(io::SeekFrom::End(0))
+        .map_err(IoError::<InputFileError>::from)?;
+    file.seek(io::SeekFrom::Start(0))
+        .map_err(IoError::<InputFileError>::from)?;
+    info!(size, "Got input file size");
+    info!("Opening {} for writing", args.dest.to_string_lossy());
+    let disk = SyncDataFile(match args.target_type {
+        device::Type::File => OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&args.dest)
+            .map_err(IoError::<DiskError>::from)?,
+        device::Type::Disk | device::Type::Partition => {
+            open_blockdev(&args.dest).map_err(IoError::<DiskError>::from)?
+        }
+    });
+    Ok((file, size, disk))
 }
 
 /// Raw routine to execute `diskutil unmountdisk` on MacOS.

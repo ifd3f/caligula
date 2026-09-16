@@ -7,9 +7,7 @@
 
 use std::convert::Infallible;
 
-use futures::TryStreamExt;
-use tokio::sync::{mpsc, oneshot};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use futures::{StreamExt as _, stream::BoxStream};
 use tracing::{debug, info};
 
 use crate::{
@@ -17,9 +15,10 @@ use crate::{
         HerderResponse, HerderService,
         error::LayerError,
         server::transportize,
-        write_verify::{WVAction, WVError},
+        write_verify::{WVAction, WVError, WVEvent},
     },
     util::{
+        phased_channel::ChannelDisconnected,
         runtime::{AsyncRuntime, RemoteSpawn as _},
         stdiomux,
     },
@@ -59,26 +58,28 @@ impl HerderService<WVAction> for HerderServer {
     ) -> Result<HerderResponse<WVAction, Self::Error>, LayerError<WVError, Self::Error>> {
         info!(?action, "Received WVAction request");
 
-        let (start_tx, start_rx) = oneshot::channel();
-        let (ev_tx, ev_rx) = mpsc::unbounded_channel();
+        // now spawn this ugly thing
+        let (rx, _) = writer_process::spawn_writer(action);
+        debug!("Spawned writer thread, waiting for start response");
 
-        let child = writer_process::spawn_writer(
-            move |m| {
-                start_tx.send(m).ok();
-            },
-            move |m| {
-                ev_tx.send(m).ok();
-            },
-            action,
-        );
-        debug!(?child, "Spawned writer thread, waiting for start response");
+        let (start, rx) = match rx.await {
+            Ok(Ok(x)) => x,
+            Ok(Err(e)) => {
+                return Err(LayerError::App(e));
+            }
+            Err(ChannelDisconnected) => {
+                return Err(LayerError::App(WVError::UnknownChildProcError(
+                    "failed to spawn".into(),
+                )));
+            }
+        };
 
-        let start = start_rx.await.map_err(|_| WVError::UnexpectedTermination)?;
-        info!(?child, ?start, "Successfully spawned writer thread");
+        info!(?start, "Successfully spawned writer thread");
 
-        Ok(HerderResponse {
-            start,
-            events: Box::pin(UnboundedReceiverStream::new(ev_rx).map_err(LayerError::App)),
-        })
+        // and now to shape it into that stupid type sig
+        let events: BoxStream<'static, Result<WVEvent, LayerError<WVError, Infallible>>> =
+            rx.map(|x| x.map_err(LayerError::App)).boxed();
+
+        Ok(HerderResponse { start, events })
     }
 }

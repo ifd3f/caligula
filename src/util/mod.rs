@@ -29,8 +29,10 @@ pub mod candidate;
 pub mod device;
 pub mod io_graph;
 pub mod legacy_io;
+pub mod phased_channel;
 pub mod runtime;
 pub mod stdiomux;
+pub mod stream;
 
 /// Create the directory to shove invocation-specific data into, like log files
 /// and sockets.

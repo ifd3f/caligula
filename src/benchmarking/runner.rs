@@ -29,8 +29,8 @@ pub fn run_benchmark<B: BenchmarkParams>(bench_params: B) {
         // run bench in this thread
         bench.run(ctx);
 
-        // now that we're done, notify and wake up the progress bar thread so we finish
-        // asap
+        // now that we're done, notify and wake up the progress bar thread so we
+        // finish asap
         ctx.finished.store(true, Ordering::SeqCst);
         jh.thread().unpark();
     });

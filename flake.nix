@@ -8,9 +8,16 @@
     naersk = {
       url = "github:nix-community/naersk";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.fenix.follows = "fenix";
     };
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # not directly used, just for keeping naersk's input running ahead
+    fenix = {
+      url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -58,6 +65,9 @@
           # Modules that need to tweak it must instantiate their own.
           _module.args.pkgs = import inputs.nixpkgs {
             inherit system;
+
+            # needed because official support dropped
+            config.allowDeprecatedx86_64Darwin = "force";
           };
 
           packages.default = self'.packages.caligula;

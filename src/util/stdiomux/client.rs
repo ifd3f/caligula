@@ -2,7 +2,7 @@ use std::{convert::Infallible, rc::Rc, sync::Arc};
 
 use bytes::Bytes;
 use futures::{
-    Stream, StreamExt,
+    Stream, StreamExt as _,
     stream::{BoxStream, LocalBoxStream},
 };
 use tokio::{
@@ -15,9 +15,10 @@ use tracing::{Instrument, debug_span, info_span};
 use super::{
     BytestreamService,
     channel_map::ChannelMap,
-    common::{common_driver, drive_channel_tx, inject_err_stream},
+    common::{common_driver, drive_channel_tx},
     service_fn,
 };
+use crate::util::stream::StreamExt as _;
 
 #[derive(Debug, thiserror::Error, Clone)]
 pub enum ClientError {
@@ -107,9 +108,9 @@ impl<Req: Stream<Item = Bytes> + Unpin + 'static> BytestreamService<Req> for Loc
                 .instrument(debug_span!("stdiomux_client_drive_tx")),
         );
 
-        Box::pin(inject_err_stream(
-            rx.map(Ok::<_, ClientError>),
-            self.err_notify.clone(),
-        ))
+        Box::pin(
+            rx.map(Ok::<_, ClientError>)
+                .inject_err_from_set_once(self.err_notify.clone()),
+        )
     }
 }

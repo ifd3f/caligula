@@ -8,10 +8,7 @@ use futures::{
 use tokio::{
     io::{AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader, BufWriter},
     join,
-    sync::{
-        SetOnce,
-        mpsc::{Receiver, Sender, channel},
-    },
+    sync::mpsc::{Receiver, Sender, channel},
 };
 use tracing::{Instrument as _, debug, debug_span, info_span, trace, trace_span};
 
@@ -247,26 +244,4 @@ async fn read_msg(mut rx: impl AsyncRead + Unpin) -> Result<(u16, Option<Bytes>)
         .await?;
 
     Ok((channel, Some(msg.freeze())))
-}
-
-pub fn inject_err_stream<T, E, E0, S>(
-    stream: S,
-    err_notify: impl AsRef<SetOnce<E>>,
-) -> impl Stream<Item = Result<T, E>>
-where
-    S: Stream<Item = Result<T, E0>>,
-    E: Clone + From<E0>,
-{
-    stream.map(move |r| {
-        let err_notify = err_notify.as_ref();
-        match (r.map_err(E::from), err_notify.get()) {
-            (_, Some(err)) => Err(err.clone()), // inject error from err_notify
-            (Ok(r), None) => Ok(r),
-            (Err(e), None) => {
-                // inject error into err_notify
-                err_notify.set(e.clone()).ok();
-                Err(e)
-            }
-        }
-    })
 }

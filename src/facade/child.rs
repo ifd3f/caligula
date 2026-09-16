@@ -81,7 +81,8 @@ pub async fn spawn(
     // open the client
     let (client, fut1) = stdiomux::client::open(child_rx, child_tx);
 
-    // this client can only run on our current thread, create a remote handle for it
+    // this client can only run on our current thread, create a remote handle
+    // for it
     let (client, fut2) = stdiomux::make_remote(client);
 
     // the driver future will drive both of these

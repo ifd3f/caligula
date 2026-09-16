@@ -41,14 +41,14 @@ impl<Rx: RecvBytes, Tx: SendBytes> Worker<(Rx, Tx)> for DecompressorWorker {
         _context: &GraphContext,
         (rx, mut tx): (Rx, Tx),
     ) -> Result<Self::Output, Self::Error> {
-        // Strategy is to read this decompressor into an intermediate BytesMut, then
-        // send off the bytes chunk-by-chunk.
+        // Strategy is to read this decompressor into an intermediate BytesMut,
+        // then send off the bytes chunk-by-chunk.
         let mut read = decompress(self.cf, RecvBytesReader::from(rx))?;
         let mut reader_empty = false;
 
         while !reader_empty {
-            // SAFETY: these bytes will get filled up immediately. everything else that
-            // wasn't filled up will get truncated
+            // SAFETY: these bytes will get filled up immediately. everything
+            // else that wasn't filled up will get truncated
             let mut buf = unsafe { alloc_uninit_bytes_with_layout(ALLOC_LAYOUT) };
 
             // fill up the buffer as much as possible

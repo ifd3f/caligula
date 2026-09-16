@@ -37,11 +37,11 @@ pub fn crash_and_burn(ctx: &ErrorContext, error: impl ErrorWithInfo) {
     write_error_message_to_terminal(&mut w, ctx, error).ok();
 
     if let ErrorSeverity::Panic = info.severity {
-        // Panics should trigger a coredump for developers and very motivated users to
-        // debug the memory state.
+        // Panics should trigger a coredump for developers and very motivated
+        // users to debug the memory state.
 
-        // add extra newlines at end to break the "core dumped" message onto its own
-        // line
+        // add extra newlines at end to break the "core dumped" message onto its
+        // own line
         write!(w, "\n\n").ok();
 
         // abort to trigger coredump
