@@ -73,6 +73,8 @@ where
 pub enum UnmountError {
     #[error("Error executing diskutil unmount: {0}")]
     Diskutil(CommandError),
+    #[error("{0}")]
+    Linux(IoError<DiskError>),
 }
 
 /// Errors that come up when running one-off shell commands.
@@ -135,6 +137,8 @@ pub enum DiskError {
     ReadOnly,
     #[error("File was not found! Was it ejected?")]
     NotFound,
+    #[error("Device is busy. Close files and unmount its filesystems before retrying.")]
+    Busy,
 }
 
 impl TryFrom<std::io::Error> for DiskError {
@@ -142,6 +146,9 @@ impl TryFrom<std::io::Error> for DiskError {
 
     fn try_from(value: std::io::Error) -> Result<Self, Self::Error> {
         debug!("Attempting to convert std::io::Error into a known value: {value:?}");
+        if value.raw_os_error() == Some(libc::EBUSY) {
+            return Ok(Self::Busy);
+        }
         match value.kind() {
             io::ErrorKind::PermissionDenied => Ok(Self::PermissionDenied),
             io::ErrorKind::NotFound => Ok(Self::NotFound),

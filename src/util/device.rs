@@ -9,6 +9,9 @@ use bytesize::ByteSize;
 use serde::{Deserialize, Serialize};
 
 #[cfg(target_os = "linux")]
+pub mod mounts;
+
+#[cfg(target_os = "linux")]
 pub fn enumerate_devices() -> impl Iterator<Item = WriteTarget> {
     use std::fs::read_dir;
 
@@ -107,7 +110,23 @@ pub struct WriteTarget {
     pub block_size: BlockSize,
 }
 
+/// A Linux mount approved for unmounting, identified independently of its path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mount {
+    pub id: u64,
+    pub path: PathBuf,
+}
+
 impl WriteTarget {
+    /// Mounts on this target (including its partitions), in unmount order.
+    pub fn mountpoints(&self) -> io::Result<Vec<Mount>> {
+        #[cfg(target_os = "linux")]
+        if self.target_type != Type::File {
+            return mounts::mountpoints(&self.devnode);
+        }
+        Ok(Vec::new())
+    }
+
     #[cfg(target_os = "macos")]
     fn from_dev_name(name: &OsStr) -> Result<Self, DeviceParseError> {
         use std::os::unix::prelude::OsStrExt;
@@ -224,6 +243,25 @@ impl TryFrom<&Path> for WriteTarget {
     type Error = DeviceParseError;
 
     fn try_from(value: &Path) -> Result<Self, Self::Error> {
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::{FileTypeExt, MetadataExt};
+
+            // Identify block devices by device number, including aliases
+            // outside /dev.
+            if let Ok(metadata) = std::fs::metadata(value)
+                && metadata.file_type().is_block_device()
+            {
+                let dev = metadata.rdev();
+                let sysnode = std::fs::canonicalize(format!(
+                    "/sys/dev/block/{}:{}",
+                    libc::major(dev),
+                    libc::minor(dev)
+                ))?;
+                return Self::from_dev_name(sysnode.file_name().ok_or(DeviceParseError::NotFound)?);
+            }
+        }
+
         #[cfg(target_os = "linux")]
         if (value.starts_with("/sys/class/block") || value.starts_with("/dev"))
             && let Some(n) = value.file_name()

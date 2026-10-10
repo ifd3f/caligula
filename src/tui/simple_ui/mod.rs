@@ -12,7 +12,7 @@ use tracing::debug;
 
 use self::{
     ask_hash::ask_hash,
-    ask_outfile::{ask_compression, ask_outfile, confirm_write},
+    ask_outfile::{ask_compression, ask_outfile, confirm_unmount, confirm_write},
     facade_ext::FacadeExt as _,
 };
 use super::cli::BurnArgs;
@@ -22,7 +22,10 @@ use crate::{
         watch::Watch,
         workflow::{hash::HashWorkflow, write_verify::WriteVerifyWorkflowError},
     },
-    herder_api::{error::DiskError, write_verify::WVError},
+    herder_api::{
+        error::{DiskError, UnmountError},
+        write_verify::WVError,
+    },
     logging::LogPaths,
     tui::cli::UseSudo,
     util::{device::WriteTarget, runtime::RemoteSpawn},
@@ -48,11 +51,18 @@ pub fn do_setup_wizard(
 ) -> Result<Option<WriteVerifyWorkflow>, anyhow::Error> {
     let compression = ask_compression(args)?;
     let _hash_info = ask_hash(runtime, orc, args, compression)?;
-    let target = match &args.out {
-        Some(f) => WriteTarget::try_from(f.as_ref())?,
-        None => ask_outfile(args)?,
+    let mut output = args.out.as_deref();
+    let (target, unmount) = loop {
+        let target = match output.take() {
+            Some(f) => WriteTarget::try_from(f)?,
+            None => ask_outfile(args)?,
+        };
+        if let Some(mounts) = confirm_unmount(args, &target)? {
+            break (target, mounts);
+        }
     };
-    let begin_params = WriteVerifyWorkflow::new(args.image.clone(), compression, target)?;
+    let mut begin_params = WriteVerifyWorkflow::new(args.image.clone(), compression, target)?;
+    begin_params.unmount = unmount;
     if !confirm_write(args, &begin_params)? {
         eprintln!("Aborting.");
         return Ok(None);
@@ -101,7 +111,9 @@ pub fn try_start_write_or_escalate(
 
     match err.as_ref() {
         WriteVerifyWorkflowError::Worker(e) => match e {
-            WVError::OutputFile(e) if e.kind() == Some(&DiskError::PermissionDenied) => {
+            WVError::OutputFile(e) | WVError::FailedToUnmount(UnmountError::Linux(e))
+                if e.kind() == Some(&DiskError::PermissionDenied) =>
+            {
                 request_escalation(runtime, facade.clone(), root, interactive, args)?;
                 Ok(facade.start_write_verify_blocking(runtime, args.clone())?)
             }

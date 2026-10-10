@@ -153,13 +153,18 @@ fn initialize(args: &WVAction) -> Result<(File, u64, SyncDataFile), WVError> {
         run_diskutil_umount(args).map_err(UnmountError::Diskutil)?;
     }
     info!("Opening file {}", args.src.to_string_lossy());
-    let mut file = File::open(&args.src).unwrap_or_log();
+    let mut file = File::open(&args.src).map_err(IoError::<InputFileError>::from)?;
     let size = file
         .seek(io::SeekFrom::End(0))
         .map_err(IoError::<InputFileError>::from)?;
     file.seek(io::SeekFrom::Start(0))
         .map_err(IoError::<InputFileError>::from)?;
     info!(size, "Got input file size");
+    #[cfg(target_os = "linux")]
+    if args.target_type != device::Type::File {
+        device::mounts::unmount(&args.dest, &args.unmount)
+            .map_err(|e| UnmountError::Linux(e.into()))?;
+    }
     info!("Opening {} for writing", args.dest.to_string_lossy());
     let disk = SyncDataFile(match args.target_type {
         device::Type::File => OpenOptions::new()
