@@ -6,7 +6,7 @@ use super::HerderAction;
 use crate::{
     codec::compression::CompressionFormat,
     herder_api::error::{DiskError, InputFileError, IoError, UnmountError},
-    util::device::Type,
+    util::device::{Mount, Type},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,6 +17,7 @@ pub struct WVAction {
     pub compression: CompressionFormat,
     pub target_type: Type,
     pub block_size: Option<u64>,
+    pub unmount: Vec<Mount>,
 }
 
 impl HerderAction for WVAction {

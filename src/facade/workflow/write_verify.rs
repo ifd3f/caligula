@@ -9,7 +9,7 @@ use crate::{
     herder_api::{client::ClientError, error::LayerError, write_verify::*},
     util::{
         byteseries::{ByteSeries, EstimatedTime},
-        device::WriteTarget,
+        device::{Mount, WriteTarget},
         stdiomux,
     },
 };
@@ -21,6 +21,8 @@ pub struct WriteVerifyWorkflow {
     pub input_file_size: ByteSize,
     pub compression: CompressionFormat,
     pub target: WriteTarget,
+    /// Mountpoints the user has agreed to unmount before writing.
+    pub unmount: Vec<Mount>,
 }
 
 impl super::Workflow for WriteVerifyWorkflow {
@@ -39,6 +41,7 @@ impl WriteVerifyWorkflow {
             input_file_size,
             compression,
             target,
+            unmount: Vec::new(),
         })
     }
 
@@ -50,6 +53,7 @@ impl WriteVerifyWorkflow {
             compression: self.compression,
             target_type: self.target.target_type,
             block_size: self.target.block_size.0.map(|s| s.as_u64()),
+            unmount: self.unmount.clone(),
         }
     }
 }

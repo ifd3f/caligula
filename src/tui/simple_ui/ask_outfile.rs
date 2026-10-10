@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, io};
 
 use inquire::{Confirm, InquireError, Select};
 use tracing::debug;
@@ -7,7 +7,7 @@ use crate::{
     codec::compression::{AVAILABLE_FORMATS, CompressionArg, CompressionFormat},
     facade::WriteVerifyWorkflow,
     tui::cli::BurnArgs,
-    util::device::{self, Removable, WriteTarget, enumerate_devices},
+    util::device::{self, Mount, Removable, WriteTarget, enumerate_devices},
 };
 
 #[tracing::instrument(skip_all)]
@@ -53,7 +53,7 @@ pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<WriteTarget> {
     loop {
         debug!(show_all_disks, "Beginning loop");
 
-        let targets = enumerate_options(show_all_disks)?;
+        let targets = enumerate_options(show_all_disks, enumerate_devices())?;
 
         let ans = Select::new("Select target disk", targets)
             .with_help_message(if show_all_disks {
@@ -64,7 +64,7 @@ pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<WriteTarget> {
             .prompt()?;
 
         let dev = match ans {
-            ListOption::Device(dev) => dev,
+            ListOption::Device(dev, _) => dev,
             ListOption::RetryWithShowAll(sa) => {
                 show_all_disks = sa;
                 continue;
@@ -74,6 +74,36 @@ pub fn ask_outfile(args: &BurnArgs) -> anyhow::Result<WriteTarget> {
             }
         };
         return Ok(dev);
+    }
+}
+
+pub fn confirm_unmount(
+    args: &BurnArgs,
+    target: &WriteTarget,
+) -> anyhow::Result<Option<Vec<Mount>>> {
+    let mounts = target.mountpoints()?;
+    if mounts.is_empty() {
+        return Ok(Some(mounts));
+    }
+
+    eprintln!("Mounted filesystems on {}:", target.devnode.display());
+    for mount in &mounts {
+        eprintln!("  {}", mount.path.display());
+    }
+    if args.force {
+        eprintln!("Since --force was provided, these will be unmounted before writing.");
+        return Ok(Some(mounts));
+    }
+    if Confirm::new("Unmount these filesystems before writing?")
+        .with_default(false)
+        .with_help_message(
+            "Choose no to return to disk selection. Close any files on the drive first.",
+        )
+        .prompt()?
+    {
+        Ok(Some(mounts))
+    } else {
+        Ok(None)
     }
 }
 
@@ -118,7 +148,7 @@ fn print_begin_params(params: &WriteVerifyWorkflow) {
 }
 
 enum ListOption {
-    Device(WriteTarget),
+    Device(WriteTarget, bool),
     Refresh,
     RetryWithShowAll(bool),
 }
@@ -126,18 +156,23 @@ enum ListOption {
 impl fmt::Display for ListOption {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ListOption::Device(dev) => match dev.target_type {
-                device::Type::Disk => write!(
-                    f,
-                    "{} | {} - {} ({}, removable: {})",
-                    dev.name, dev.model, dev.size, dev.target_type, dev.removable
-                )?,
-                _ => write!(
-                    f,
-                    "{} | {} - {} ({})",
-                    dev.name, dev.model, dev.size, dev.target_type
-                )?,
-            },
+            ListOption::Device(dev, mounted) => {
+                match dev.target_type {
+                    device::Type::Disk => write!(
+                        f,
+                        "{} | {} - {} ({}, removable: {})",
+                        dev.name, dev.model, dev.size, dev.target_type, dev.removable
+                    )?,
+                    _ => write!(
+                        f,
+                        "{} | {} - {} ({})",
+                        dev.name, dev.model, dev.size, dev.target_type
+                    )?,
+                }
+                if *mounted {
+                    write!(f, " [mounted]")?;
+                }
+            }
             ListOption::RetryWithShowAll(true) => {
                 write!(f, "<Show all disks, removable or not>")?;
             }
@@ -152,18 +187,55 @@ impl fmt::Display for ListOption {
     }
 }
 
-#[tracing::instrument]
-fn enumerate_options(show_all_disks: bool) -> anyhow::Result<Vec<ListOption>> {
-    let mut burn_targets: Vec<WriteTarget> = enumerate_devices()
+#[tracing::instrument(skip(devices))]
+fn enumerate_options(
+    show_all_disks: bool,
+    devices: impl Iterator<Item = WriteTarget>,
+) -> anyhow::Result<Vec<ListOption>> {
+    let mut burn_targets: Vec<WriteTarget> = devices
         .filter(|d| show_all_disks || d.removable == Removable::Yes)
         .collect();
 
     burn_targets.sort();
 
-    let options = burn_targets.into_iter().map(ListOption::Device).chain([
+    let devices = burn_targets
+        .into_iter()
+        .filter_map(|dev| match dev.mountpoints() {
+            Ok(mounts) => Some(Ok(ListOption::Device(dev, !mounts.is_empty()))),
+            // Hot-unplug may remove a device after enumeration.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => Some(Err(error)),
+        })
+        .collect::<std::io::Result<Vec<_>>>()?;
+    let options = devices.into_iter().chain([
         ListOption::Refresh,
         ListOption::RetryWithShowAll(!show_all_disks),
     ]);
 
     Ok(options.collect())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    #[test]
+    fn vanished_device_does_not_hide_healthy_targets() {
+        let mut vanished =
+            WriteTarget::try_from(Path::new("/proc/self/caligula-missing-device")).unwrap();
+        vanished.target_type = device::Type::Disk;
+        // The same error must still stop a selected target before writing.
+        assert_eq!(
+            vanished.mountpoints().unwrap_err().kind(),
+            io::ErrorKind::NotFound
+        );
+        let healthy = WriteTarget::try_from(Path::new("/tmp/healthy-target")).unwrap();
+        let options = enumerate_options(true, [vanished, healthy.clone()].into_iter()).unwrap();
+        assert_eq!(options.len(), 3);
+        assert!(matches!(&options[0], ListOption::Device(dev, false) if *dev == healthy));
+        assert!(matches!(options[1], ListOption::Refresh));
+        assert!(matches!(options[2], ListOption::RetryWithShowAll(false)));
+    }
 }

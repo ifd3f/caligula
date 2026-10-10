@@ -13,6 +13,7 @@
 
       headless = pkgs'.callPackage ./headless { };
       smoke-test-simple = pkgs'.callPackage ./smoke-test-simple { };
+      mounted-targets = pkgs'.callPackage ./mounted { };
 
       autoescalateTests =
         map (escalationTool: pkgs'.callPackage ./autoescalate { inherit escalationTool; })
@@ -54,7 +55,9 @@
           headless
           smoke-test-simple
         ]
-        ++ lib.optionals (system == "x86_64-linux") (autoescalateTests ++ blocksizeTests)
+        ++ lib.optionals (system == "x86_64-linux") (
+          autoescalateTests ++ blocksizeTests ++ [ mounted-targets ]
+        )
       );
     };
 }

@@ -50,6 +50,7 @@ Print this message or the help of the given subcommand(s)
 - **Validating your input file against a hash before burning**, with support for md5, sha1, sha256, and more!
 - **Running sudo/doas/su** if you forgot to run as `root` earlier (it happens)
 - **Rich confirmation dialogs** so you don't accidentally nuke your filesystem
+- **Unmounting target filesystems on Linux** after confirmation, with mounted targets marked in the disk picker. Declining returns to disk selection; `--force` also approves unmounting. Busy filesystems or unexpected new mounts stop the write.
 - **Verifying your disk after writing** to make sure it was written correctly
 - **Small binary size** of <5 megabytes, even when statically linked
 - Did I mention _**cool graphs**_?

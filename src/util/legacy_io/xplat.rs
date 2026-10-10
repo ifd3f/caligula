@@ -7,10 +7,12 @@ use std::{
 pub fn open_blockdev(path: impl AsRef<Path>) -> std::io::Result<File> {
     use std::os::unix::fs::OpenOptionsExt;
 
-    use libc::O_DIRECT;
+    use libc::{O_DIRECT, O_EXCL};
 
     let mut opts = OpenOptions::new();
-    opts.write(true).read(true).custom_flags(O_DIRECT);
+    // Refuse mounted/in-use devices, and prevent mounts while
+    // writing/verifying.
+    opts.write(true).read(true).custom_flags(O_DIRECT | O_EXCL);
 
     opts.open(path)
 }
