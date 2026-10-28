@@ -15,6 +15,7 @@ pub use self::{
 
 mod buf;
 mod junction;
+mod sys;
 pub mod util;
 pub mod worker;
 
@@ -83,4 +84,9 @@ pub trait RecvBytes {
     /// Try to receive some [`Bytes`]. If it returns `None`, there are no more
     /// bytes to be read. Blocks until result is received.
     fn recv(&mut self) -> std::io::Result<Option<Bytes>>;
+}
+
+pub enum FileType {
+    File,
+    Disk,
 }

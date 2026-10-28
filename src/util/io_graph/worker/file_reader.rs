@@ -10,6 +10,8 @@ use crate::util::{
 };
 
 /// A worker optimized for reading a file on disk.
+///
+/// It uses boring `read()` calls.
 pub struct FileReader {
     path: PathBuf,
     size: u64,
