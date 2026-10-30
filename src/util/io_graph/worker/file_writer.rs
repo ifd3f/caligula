@@ -9,9 +9,9 @@ use crate::util::io_graph::{
     sys::{DiskMode, open_blockdev},
 };
 
-/// A worker optimized for writing directly to a disk.
+/// A worker optimized for writing to a file or disk.
 ///
-/// It uses boring `write()` calls.
+/// It uses boring `write()` and `pwrite()` calls.
 pub struct FileWriter {
     path: PathBuf,
     size: u64,
@@ -57,10 +57,11 @@ impl<Rx: RecvBytes> Worker<Rx> for FileWriter {
     ) -> Result<Self::Output, Self::Error> {
         let mut rx = args;
 
-        // TODO: thread this mf
+        // TODO: multithread this mf
         while !context.halt()
             && let Some(buf) = rx.recv()?
         {
+            // Even for disks, this is fine if the input arrives in exact chunks.
             self.file.write(&buf)?;
         }
 

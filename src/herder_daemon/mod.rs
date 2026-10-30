@@ -24,6 +24,7 @@ use crate::{
     },
 };
 
+pub mod write;
 mod writer_process;
 
 pub fn main() {

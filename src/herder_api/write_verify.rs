@@ -6,7 +6,7 @@ use super::HerderAction;
 use crate::{
     codec::compression::CompressionFormat,
     herder_api::error::{DiskError, InputFileError, IoError, UnmountError},
-    util::device::Type,
+    util::{device::Type, io_graph::worker::DecompressError},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,4 +64,10 @@ pub enum WVError {
     InputFile(#[from] IoError<InputFileError>),
     #[error("Error handling output: {0}")]
     OutputFile(#[from] IoError<DiskError>),
+    #[error("Decompression error: {0}")]
+    Decompress(String), // TODO: make it a proper type. needed bc decompresserror is anyhow::error
+    #[error("Output has invalid path name: {0}")]
+    OutputHasInvalidPathName(String),
+    #[error("Target is too small! Input file has size {in_size}, output disk has size {out_size}")]
+    TargetTooSmall { in_size: u64, out_size: u64 },
 }
