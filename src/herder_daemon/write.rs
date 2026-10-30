@@ -12,10 +12,7 @@ use crate::{
     herder_api::write_verify::{WVError, WVEvent},
     util::{
         device,
-        io_graph::{
-            self, GraphContext, JunctionTracker, SendJunction, Worker as _,
-            worker::{DecompressorWorker, FileReader, FileWriter},
-        },
+        io_graph::{self, GraphContext, JunctionTracker, SendJunction, Worker as _},
     },
 };
 

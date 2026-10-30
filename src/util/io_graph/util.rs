@@ -1,8 +1,17 @@
-use std::io::{BufRead, Read};
+use std::{
+    error::Error,
+    io::{BufRead, Read},
+    sync::{Arc, atomic},
+    thread::JoinHandle,
+};
 
 use bytes::{Buf, Bytes};
+use futures::{StreamExt, stream::FuturesUnordered};
+use itertools::Itertools;
+use tokio::sync::oneshot;
 
 use super::RecvBytes;
+use crate::util::io_graph::{GraphContext, Worker};
 
 /// Simple adapter turning a [`RecvBytes`] into a blocking [`Read`].
 pub struct RecvBytesReader<Rx: RecvBytes> {
@@ -78,3 +87,56 @@ impl<Rx: RecvBytes> BufRead for RecvBytesReader<Rx> {
         self.buf.advance(amount);
     }
 }
+
+pub trait WorkerExt: Worker {
+    /// Allows the caller to wait on the result of the worker.
+    ///
+    /// If the worker returns successfully, then it will be returned in the
+    /// future. If the worker fails, the future will never complete.
+    fn into_future(
+        self: Box<Self>,
+    ) -> (
+        impl Future<Output = Self::Output>,
+        impl Worker<Output = (), Error = Self::Error>,
+    ) {
+        let (tx, rx) = oneshot::channel();
+
+        let w = self.map(|x| {
+            tx.send(x).ok();
+        });
+
+        let f = async move {
+            let Ok(r) = rx.await else {
+                return std::future::pending().await;
+            };
+            r
+        };
+
+        (f, w)
+    }
+
+    /// Maps the successful result type.
+    fn map<T>(
+        self: Box<Self>,
+        f: impl FnOnce(Self::Output) -> T + Send,
+    ) -> impl Worker<Output = T, Error = Self::Error>
+    where
+        T: Send + 'static,
+    {
+        move |ctx: &GraphContext| self.run(ctx).map(f)
+    }
+
+    /// Maps the error type.
+    fn map_err<E>(
+        self: Box<Self>,
+        f: impl FnOnce(Self::Error) -> E + Send,
+    ) -> impl Worker<Output = Self::Output, Error = E>
+    where
+        E: Send + Error + 'static,
+    {
+        move |ctx: &GraphContext| self.run(ctx).map_err(f)
+    }
+}
+
+impl<W: Worker> WorkerExt for W {}
+
