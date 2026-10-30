@@ -4,7 +4,7 @@ use clap::Parser;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    benchmarking::{BenchContext, Benchmark, runner::BenchmarkParams},
+    benchmarking::{BenchContext, runner::Benchmark},
     codec::compression::CompressionFormat,
     herder_api::write_verify::WVEvent,
     util::legacy_io::{WriteOp, open_blockdev},
@@ -36,32 +36,30 @@ pub struct WriteBench {
     pub disk_block_size: usize,
 }
 
-impl BenchmarkParams for WriteBench {
+impl Benchmark for WriteBench {
     type Report = ();
 
-    fn setup(&self, ctx: &BenchContext) -> Box<dyn Benchmark<Report = Self::Report>> {
+    fn run(&self, ctx: &BenchContext) -> Self::Report {
         let this = self.clone();
 
         let file = File::open(&this.image).expect("failed to open image");
         let disk = open_blockdev(&this.disk).expect("failed to open disk");
         ctx.set_progress_denominator(file.metadata().unwrap().len());
 
-        Box::new(move |ctx: &BenchContext| {
-            WriteOp {
-                file,
-                disk,
-                cf: this.compression,
-                buf_size: this.disk_write_buf_size,
-                disk_block_size: this.disk_block_size,
-                checkpoint_period: 32,
-                file_read_buf_size: this.file_read_buf_size,
+        WriteOp {
+            file,
+            disk,
+            cf: this.compression,
+            buf_size: this.disk_write_buf_size,
+            disk_block_size: this.disk_block_size,
+            checkpoint_period: 32,
+            file_read_buf_size: this.file_read_buf_size,
+        }
+        .execute(|e| {
+            if let WVEvent::TotalBytes { src, .. } = e {
+                ctx.log_progress(src);
             }
-            .execute(|e| {
-                if let WVEvent::TotalBytes { src, .. } = e {
-                    ctx.log_progress(src);
-                }
-            })
-            .expect("operation failed");
         })
+        .expect("operation failed");
     }
 }

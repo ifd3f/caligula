@@ -8,7 +8,7 @@ use serde::{Serialize, de::DeserializeOwned};
 
 const REFRESH_PERIOD: Duration = Duration::from_millis(250);
 
-pub fn run_benchmark<B: BenchmarkParams>(bench_params: B) {
+pub fn run_benchmark<B: Benchmark>(bench: B) {
     let ctx = BenchContext {
         progress: 0.into(),
         denominator: 0.into(),
@@ -17,9 +17,6 @@ pub fn run_benchmark<B: BenchmarkParams>(bench_params: B) {
     let ctx = &ctx;
 
     std::thread::scope(move |s| {
-        // set up the bench
-        let bench = bench_params.setup(ctx);
-
         // spawn progress bar thread
         let jh = std::thread::Builder::new()
             .name("benchbar".into())
@@ -60,34 +57,13 @@ impl BenchContext {
     }
 }
 
-/// Canned arguments for creating benchmarks.
-pub trait BenchmarkParams: Clone + Sync + Serialize + DeserializeOwned + 'static {
-    /// Additional data to report from this benchmark.
-    type Report: Serialize + DeserializeOwned + Send + 'static;
-
-    /// Prepare a benchmark to be executed.
-    fn setup(&self, ctx: &BenchContext) -> Box<dyn Benchmark<Report = Self::Report>>;
-}
-
-/// A benchmark that has been fully set up, and is ready to be executed.
-pub trait Benchmark: Send + 'static {
+/// A benchmark that is ready to execute.
+pub trait Benchmark: Clone + Sync + Serialize + DeserializeOwned + 'static {
     /// Additional data to report from this benchmark.
     type Report: Serialize + DeserializeOwned + Send + 'static;
 
     /// Execute the benchmark.
-    fn run(self: Box<Self>, ctx: &BenchContext) -> Self::Report;
-}
-
-impl<F, R> Benchmark for F
-where
-    F: FnOnce(&BenchContext) -> R + Send + 'static,
-    R: Serialize + DeserializeOwned + Send + 'static,
-{
-    type Report = R;
-
-    fn run(self: Box<Self>, ctx: &BenchContext) -> Self::Report {
-        self(ctx)
-    }
+    fn run(&self, ctx: &BenchContext) -> Self::Report;
 }
 
 /// renders a progress bar!
