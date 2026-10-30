@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU32, Ordering},
@@ -6,11 +7,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+use futures::{Stream, StreamExt, stream::BoxStream};
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
+pub type TransferStatBundle=Vec<(JunctionId, Vec<TransferStat>)>;
+
 /// The [Vec] capacity of the shared junction state.
 const STATS_VEC_CAPACITY: usize = 10000;
+
 
 /// Allocate a [`Vec<TransferStat>`] with adequate capacity to prevent excessive
 /// resizing.

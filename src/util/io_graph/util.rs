@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     error::Error,
     io::{BufRead, Read},
     time::Instant,
@@ -8,7 +9,11 @@ use bytes::{Buf, Bytes};
 use tokio::sync::oneshot;
 
 use super::RecvBytes;
-use crate::util::io_graph::{GraphContext, Junction, SendBytes, Worker, junction::TransferStat};
+use crate::util::io_graph::{
+    GraphContext, Junction, SendBytes, Worker,
+    junction::{JunctionId, TransferStat},
+    worker_fn,
+};
 
 /// Simple adapter turning a [`RecvBytes`] into a blocking [`Read`].
 pub struct RecvBytesReader<Rx: RecvBytes> {
@@ -94,8 +99,11 @@ pub trait WorkerExt: Worker {
         self: Box<Self>,
     ) -> (
         impl Future<Output = Self::Output>,
-        impl Worker<Output = (), Error = Self::Error>,
-    ) {
+        Box<dyn Worker<Output = (), Error = Self::Error>>,
+    )
+    where
+        Self: 'static,
+    {
         let (tx, rx) = oneshot::channel();
 
         let w = self.map(|x| {
@@ -115,32 +123,34 @@ pub trait WorkerExt: Worker {
     /// Maps the successful result type.
     fn map<T>(
         self: Box<Self>,
-        f: impl FnOnce(Self::Output) -> T + Send,
-    ) -> impl Worker<Output = T, Error = Self::Error>
+        f: impl FnOnce(Self::Output) -> T + Send + 'static,
+    ) -> Box<dyn Worker<Output = T, Error = Self::Error>>
     where
         T: Send + 'static,
+        Self: 'static,
     {
-        move |ctx: &GraphContext| self.run(ctx).map(f)
+        worker_fn(move |ctx: &GraphContext| self.run(ctx).map(f))
     }
 
     /// Maps the error type.
     fn map_err<E>(
         self: Box<Self>,
-        f: impl FnOnce(Self::Error) -> E + Send,
-    ) -> impl Worker<Output = Self::Output, Error = E>
+        f: impl FnOnce(Self::Error) -> E + Send + 'static,
+    ) -> Box<dyn Worker<Output = Self::Output, Error = E>>
     where
         E: Send + Error + 'static,
+        Self: 'static,
     {
-        move |ctx: &GraphContext| self.run(ctx).map_err(f)
+        worker_fn(move |ctx: &GraphContext| self.run(ctx).map_err(f))
     }
 }
 
-impl<W: Worker> WorkerExt for W {}
+impl<W: Worker + ?Sized> WorkerExt for W {}
 
 pub trait SendBytesExt: SendBytes {
     /// Wrap this object in a new [SendBytes] that logs transfers to the given
     /// junction.
-    fn junctionize(self, junction: Junction) -> SendJunction<Self>
+    fn junctionize_send(self, junction: Junction) -> SendJunction<Self>
     where
         Self: Sized,
     {
@@ -156,7 +166,7 @@ impl<T: SendBytes> SendBytesExt for T {}
 pub trait RecvBytesExt: RecvBytes {
     /// Wrap this object in a new [RecvBytes] that logs transfers to the given
     /// junction.
-    fn junctionize(self, junction: Junction) -> RecvJunction<Self>
+    fn junctionize_recv(self, junction: Junction) -> RecvJunction<Self>
     where
         Self: Sized,
     {
@@ -235,5 +245,40 @@ impl<Tx: SendBytes> SendBytes for SendJunction<Tx> {
 
     fn close(self) -> std::io::Result<()> {
         self.send.close()
+    }
+}
+
+/// Helper for accumulating and grouping junction statistics output.
+#[derive(Default, Clone)]
+pub struct JunctionAccumulator {
+    junctions: HashMap<JunctionId, Vec<TransferStat>>,
+}
+
+impl JunctionAccumulator {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn stats(&self, id: JunctionId) -> &[TransferStat] {
+        self.junctions
+            .get(&id)
+            .map(|x| x.as_ref())
+            .unwrap_or_default()
+    }
+
+    pub fn accumulate(
+        &mut self,
+        transfers: impl IntoIterator<Item = (JunctionId, Vec<TransferStat>)>,
+    ) {
+        for (id, transfers) in transfers {
+            self.junctions
+                .entry(id)
+                .or_default()
+                .extend_from_slice(&transfers);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.junctions.clear();
     }
 }

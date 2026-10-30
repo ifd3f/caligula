@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::mpsc};
+use std::sync::mpsc;
 
 use bytes::Bytes;
 
@@ -24,39 +24,12 @@ pub struct BufSender {
 
 impl BufSender {
     /// Bind this to the currently-running thread.
-    pub fn bind_to_thread(self) -> LocalBufSender {
-        LocalBufSender {
-            tx: self.tx,
-            _phantom: PhantomData,
-        }
+    pub fn bind_to_thread(self) -> BufSender {
+        BufSender { tx: self.tx }
     }
 }
 
-#[must_use]
-pub struct BufReceiver {
-    rx: mpsc::Receiver<Bytes>,
-}
-
-impl BufReceiver {
-    /// Bind this to the currently-running thread.
-    pub fn bind_to_thread(self) -> LocalBufReceiver {
-        LocalBufReceiver {
-            rx: self.rx,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-#[must_use]
-pub struct LocalBufSender {
-    /// tx handle to receiver end. Send 0 bytes to signal EOF.
-    tx: mpsc::SyncSender<Bytes>,
-
-    /// Forces this to be non-[`Send`].
-    _phantom: PhantomData<*const ()>,
-}
-
-impl LocalBufSender {
+impl BufSender {
     fn _send(&mut self, bytes: Bytes) -> std::io::Result<()> {
         self.tx.send(bytes).map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::BrokenPipe, "mpsc receiver was dropped")
@@ -65,7 +38,7 @@ impl LocalBufSender {
     }
 }
 
-impl SendBytes for LocalBufSender {
+impl SendBytes for BufSender {
     fn send(&mut self, bytes: Bytes) -> std::io::Result<()> {
         if bytes.is_empty() {
             // don't send 0 bytes because that signals close
@@ -83,14 +56,19 @@ impl SendBytes for LocalBufSender {
 }
 
 #[must_use]
-pub struct LocalBufReceiver {
+pub struct BufReceiver {
+    // rx handle to sender end. 0 bytes indicates EOF
     rx: mpsc::Receiver<Bytes>,
-
-    /// Forces this to be non-[`Send`].
-    _phantom: PhantomData<*const ()>,
 }
 
-impl RecvBytes for LocalBufReceiver {
+impl BufReceiver {
+    /// Bind this to the currently-running thread.
+    pub fn bind_to_thread(self) -> BufReceiver {
+        BufReceiver { rx: self.rx }
+    }
+}
+
+impl RecvBytes for BufReceiver {
     fn recv(&mut self) -> std::io::Result<Option<Bytes>> {
         // see if we need to read from the buffer
         let msg = self.rx.recv().map_err(|_| {

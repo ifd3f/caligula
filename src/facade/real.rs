@@ -1,7 +1,7 @@
 use std::{path::PathBuf, time::Instant};
 
 use futures::StreamExt;
-use tokio::task::JoinHandle;
+use tokio::{sync::watch, task::JoinHandle};
 
 use crate::{
     facade::{
@@ -10,7 +10,10 @@ use crate::{
         child::{ChildHerderClient, SpawnDaemonError},
         escalation::EscalationMethod,
         watch::Watch,
-        workflow::hash::{self, HashWorkflow, HashingState},
+        workflow::{
+            WorkflowState,
+            hash::{self, HashWorkflow, HashingState},
+        },
     },
     herder_api::HerderService,
     util::stdiomux,
@@ -110,8 +113,7 @@ impl Orchestrator<WriteVerifyWorkflow> for FacadeImpl {
 
 impl Orchestrator<HashWorkflow> for FacadeImpl {
     async fn start_workflow(&self, workflow: HashWorkflow) -> Watch<HashingState> {
-        let (w, _jh) = hash::run(workflow).await;
-        w
+        hash::run(&workflow)
     }
 }
 

@@ -48,9 +48,9 @@ macro_rules! generate {
             ///
             /// Yes, it's completely efficient to do this because the vtable invocation only happens
             /// once, at `Worker::run()` invocation!
-            pub fn hash_worker<R: io_graph::RecvBytes>(&self) -> Box<dyn io_graph::Worker<R, Output=bytes::Bytes, Error=std::io::Error>> {
+            pub fn hash_worker<R: io_graph::RecvBytes + 'static>(&self, r: R) -> Box<dyn io_graph::Worker<Output=bytes::Bytes, Error=std::io::Error>> {
                 match self {
-                    $(Self::$enum_arm => io_graph::worker::HashWorker::<$hash_inner>::new(),)*
+                    $(Self::$enum_arm => io_graph::worker::hasher::<$hash_inner>(r),)*
                 }
             }
 

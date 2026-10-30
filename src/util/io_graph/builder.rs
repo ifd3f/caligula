@@ -8,8 +8,8 @@ use futures::{
 use tokio::sync::oneshot;
 
 use crate::util::io_graph::{
-    GraphContext, GraphHaltHandle, Junction, JunctionTracker, Worker,
-    junction::{JunctionId, TransferStat},
+    GraphContext, GraphHaltHandle, Junction, Worker,
+    junction::{JunctionId, JunctionTracker, TransferStat, TransferStatBundle},
 };
 
 pub struct GraphBuilder<E: Error + Send + 'static> {
@@ -33,24 +33,22 @@ impl<E: Error + Send + 'static> GraphBuilder<E> {
         Self::default()
     }
 
-    /// Create a new worker with the given name.
+    /// Create a new junction for tracking transfers.
+    pub fn new_junction(&mut self) -> Junction {
+        self.jt.create()
+    }
+
+    /// Register a new worker with the given thread name.
     ///
     /// Panics if the name is already in use.
-    pub fn add_worker<'a, T, W>(
-        &'a mut self,
+    pub fn add_worker(
+        &mut self,
         name: String,
-        f: impl FnOnce(BuilderContext) -> (W, T),
-    ) -> T
-    where
-        W: Worker<Output = (), Error = E> + 'static,
-    {
-        let (w, out) = f(BuilderContext { jt: &mut self.jt });
-
-        if self.workers.insert(name, Box::new(w)).is_some() {
+        w: Box<dyn Worker<Output = (), Error = E> + 'static>,
+    ) {
+        if self.workers.insert(name, w).is_some() {
             panic!("attempted to create two workers with same name")
         }
-
-        out
     }
 
     pub fn set_transfer_stat_poll_interval(&mut self, transfer_stat_poll_interval: Duration) {
@@ -136,23 +134,13 @@ pub struct GraphStartResult<E: Send + Error + 'static> {
     ///
     /// This is useful because [`Self::wait()`] will consume this object.
     pub halt: GraphHaltHandle,
-    /// Wait until all of the workers have completed. Returns the first error
-    /// that occurred.
+    /// Wait until all of the workers have completed. If there was an error,
+    /// this returns the first error that occurred.
     ///
     /// If a worker panics, then the panic will be propagated out by this
     /// future.
     ///
     /// Cancelling this future will not cancel the workers.
     pub wait: BoxFuture<'static, Result<(), E>>,
-    pub stats: BoxStream<'static, Vec<(JunctionId, Vec<TransferStat>)>>,
-}
-
-pub struct BuilderContext<'a> {
-    jt: &'a mut JunctionTracker,
-}
-
-impl<'a> BuilderContext<'a> {
-    pub fn new_junction(&mut self) -> Junction {
-        self.jt.create()
-    }
+    pub stats: BoxStream<'static, TransferStatBundle>,
 }

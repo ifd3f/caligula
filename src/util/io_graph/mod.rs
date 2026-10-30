@@ -18,8 +18,8 @@ pub mod worker;
 
 pub use self::{
     buf::buf,
-    builder::{BuilderContext, GraphBuilder, GraphStartResult},
-    junction::{Junction, JunctionId, TransferStat, JunctionTracker},
+    builder::GraphBuilder,
+    junction::{Junction, JunctionId, TransferStatBundle, TransferStat},
 };
 
 /// [`Layout`] to allocate buffer pages with.
@@ -54,7 +54,20 @@ pub trait Worker: Send {
     fn run(self: Box<Self>, ctx: &GraphContext) -> Result<Self::Output, Self::Error>;
 }
 
-impl<F, T, E> Worker for F
+/// A worker that is backed by a [`FnOnce`]. It is constructed via
+/// [`worker_fn()`].
+pub struct FnWorker<F>(F);
+
+pub fn worker_fn<F, T, E>(f: F) -> Box<FnWorker<F>>
+where
+    F: for<'a> FnOnce(&'a GraphContext) -> Result<T, E> + Send,
+    T: Send + 'static,
+    E: Error + Send + 'static,
+{
+    Box::new(FnWorker(f))
+}
+
+impl<F, T, E> Worker for FnWorker<F>
 where
     F: for<'a> FnOnce(&'a GraphContext) -> Result<T, E> + Send,
     T: Send + 'static,
@@ -64,7 +77,7 @@ where
     type Output = T;
 
     fn run(self: Box<Self>, ctx: &GraphContext) -> Result<Self::Output, Self::Error> {
-        (self)(ctx)
+        (self.0)(ctx)
     }
 }
 

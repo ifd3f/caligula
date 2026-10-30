@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     benchmarking::{BenchContext, Benchmark, runner::BenchmarkParams},
     codec::{compression::CompressionFormat, hash::HashAlg},
-    facade::workflow::{self, hash::HashWorkflow},
+    facade::workflow::{self, WorkflowState, hash::HashWorkflow},
 };
 
 /// File read and hash calculation benchmark.
@@ -38,13 +38,18 @@ impl BenchmarkParams for HashBenchParams {
         Box::new(move |_: &BenchContext| {
             let rt = tokio::runtime::LocalRuntime::new().unwrap();
             rt.block_on(async move {
-                let (_, jh) = workflow::hash::run(HashWorkflow {
+                let mut r = workflow::hash::run(&HashWorkflow {
                     file: this.input,
                     alg: this.alg,
                     compression: this.compression,
-                })
-                .await;
-                jh.unwrap().await.unwrap();
+                });
+
+                let x = r
+                    .wait_until(|x| x.result().is_some())
+                    .await
+                    .expect("could not wait for result");
+                let x = x.result().as_ref().unwrap().as_ref().cloned();
+                x.expect("hashing unexpectedly failed");
             });
         })
     }
