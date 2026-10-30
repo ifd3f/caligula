@@ -1,17 +1,14 @@
 use std::{
     error::Error,
     io::{BufRead, Read},
-    sync::{Arc, atomic},
-    thread::JoinHandle,
+    time::Instant,
 };
 
 use bytes::{Buf, Bytes};
-use futures::{StreamExt, stream::FuturesUnordered};
-use itertools::Itertools;
 use tokio::sync::oneshot;
 
 use super::RecvBytes;
-use crate::util::io_graph::{GraphContext, Worker};
+use crate::util::io_graph::{GraphContext, Junction, SendBytes, Worker, junction::TransferStat};
 
 /// Simple adapter turning a [`RecvBytes`] into a blocking [`Read`].
 pub struct RecvBytesReader<Rx: RecvBytes> {
@@ -93,7 +90,7 @@ pub trait WorkerExt: Worker {
     ///
     /// If the worker returns successfully, then it will be returned in the
     /// future. If the worker fails, the future will never complete.
-    fn into_future(
+    fn into_output_future(
         self: Box<Self>,
     ) -> (
         impl Future<Output = Self::Output>,
@@ -140,3 +137,103 @@ pub trait WorkerExt: Worker {
 
 impl<W: Worker> WorkerExt for W {}
 
+pub trait SendBytesExt: SendBytes {
+    /// Wrap this object in a new [SendBytes] that logs transfers to the given
+    /// junction.
+    fn junctionize(self, junction: Junction) -> SendJunction<Self>
+    where
+        Self: Sized,
+    {
+        SendJunction {
+            send: self,
+            junction,
+        }
+    }
+}
+
+impl<T: SendBytes> SendBytesExt for T {}
+
+pub trait RecvBytesExt: RecvBytes {
+    /// Wrap this object in a new [RecvBytes] that logs transfers to the given
+    /// junction.
+    fn junctionize(self, junction: Junction) -> RecvJunction<Self>
+    where
+        Self: Sized,
+    {
+        RecvJunction {
+            recv: self,
+            junction,
+        }
+    }
+}
+
+impl<T: RecvBytes> RecvBytesExt for T {}
+/// A [`RecvBytes`] that logs to a [`Junction`].
+#[must_use]
+pub struct RecvJunction<Rx: RecvBytes> {
+    recv: Rx,
+    junction: Junction,
+}
+
+impl<Rx: RecvBytes> RecvJunction<Rx> {
+    #[expect(unused)]
+    pub fn junction(&self) -> &Junction {
+        &self.junction
+    }
+}
+
+impl<Rx: RecvBytes> RecvBytes for RecvJunction<Rx> {
+    fn recv(&mut self) -> std::io::Result<Option<bytes::Bytes>> {
+        let start = Instant::now();
+        let result = self.recv.recv();
+        let end = Instant::now();
+
+        let len = match &result {
+            Ok(Some(b)) => b.len() as u64,
+            _ => 0,
+        };
+
+        self.junction.log(TransferStat::new(start, end, len));
+
+        result
+    }
+}
+
+/// A [`SendBytes`] that logs to a [`Junction`].
+#[must_use]
+pub struct SendJunction<Tx: SendBytes> {
+    send: Tx,
+    junction: Junction,
+}
+
+impl<Tx: SendBytes> SendJunction<Tx> {
+    pub fn new(send: Tx, junction: Junction) -> Self {
+        Self { send, junction }
+    }
+
+    #[expect(unused)]
+    pub fn junction(&self) -> &Junction {
+        &self.junction
+    }
+}
+
+impl<Tx: SendBytes> SendBytes for SendJunction<Tx> {
+    fn send(&mut self, bytes: bytes::Bytes) -> std::io::Result<()> {
+        let len = bytes.len();
+        let start = Instant::now();
+        let result = self.send.send(bytes);
+        let end = Instant::now();
+
+        self.junction.log(TransferStat::new(
+            start,
+            end,
+            result.as_ref().map(|_| len as u64).unwrap_or(0),
+        ));
+
+        result
+    }
+
+    fn close(self) -> std::io::Result<()> {
+        self.send.close()
+    }
+}

@@ -5,25 +5,22 @@ use std::{
         Arc,
         atomic::{self, AtomicBool},
     },
-    thread::JoinHandle,
 };
 
 use bytes::Bytes;
-use futures::{StreamExt as _, stream::FuturesUnordered};
-use tokio::sync::oneshot;
-
-#[expect(unused)]
-pub use self::junction::{Junction, RecvJunction};
-pub use self::{
-    buf::buf,
-    junction::{JunctionTracker, SendJunction},
-};
 
 mod buf;
+mod builder;
 mod junction;
 mod sys;
 pub mod util;
 pub mod worker;
+
+pub use self::{
+    buf::buf,
+    builder::{BuilderContext, GraphBuilder, GraphStartResult},
+    junction::{Junction, JunctionId, TransferStat, JunctionTracker},
+};
 
 /// [`Layout`] to allocate buffer pages with.
 ///
@@ -77,13 +74,28 @@ pub struct GraphContext {
 }
 
 impl GraphContext {
-    pub fn new() -> Self {
+    pub(self) fn new() -> Self {
         Self { halt: false.into() }
     }
 
     /// Returns `true` if a halt has been ordered.
     pub fn halt(&self) -> bool {
         self.halt.load(atomic::Ordering::Relaxed)
+    }
+}
+
+/// A handle that may be used to halt a set of workers running in the
+/// background.
+#[derive(Clone)]
+pub struct GraphHaltHandle {
+    ctx: Arc<GraphContext>,
+}
+
+impl GraphHaltHandle {
+    /// Issues a halt command to all workers. Workers will attempt to halt as
+    /// soon as possible.
+    pub fn halt(&self) {
+        self.ctx.halt.store(true, atomic::Ordering::Relaxed);
     }
 }
 
@@ -109,102 +121,4 @@ pub trait RecvBytes: Send {
 pub enum FileType {
     File,
     Disk,
-}
-
-/// A handle to a set of workers running in the background.
-pub struct GraphWorkersHandle<E: Send + Error + 'static> {
-    ctx: Arc<GraphContext>,
-    jhs: Vec<JoinHandle<()>>,
-    futures: FuturesUnordered<oneshot::Receiver<Result<(), E>>>,
-}
-
-impl<E: Send + Error + 'static> GraphWorkersHandle<E> {
-    /// Create a handle that may be used to remotely halt these workers.
-    ///
-    /// This is useful because [`Self::wait()`] will consume this object.
-    pub fn halt_handle(&self) -> GraphHaltHandle {
-        GraphHaltHandle {
-            ctx: self.ctx.clone(),
-        }
-    }
-
-    /// Issues a halt command to all workers. Workers will attempt to halt as
-    /// soon as possible.
-    pub fn halt(&self) {
-        self.ctx.halt.store(true, atomic::Ordering::Relaxed);
-    }
-
-    /// Wait until all of the workers have completed. Returns the first error
-    /// that occurred.
-    ///
-    /// If a worker panics, then the panic will be propagated out by this
-    /// future.
-    ///
-    /// Cancelling this future will not cancel the workers.
-    pub async fn wait(mut self) -> Result<(), E> {
-        // drop this early as it won't be needed
-        drop(self.ctx);
-
-        while let Some(x) = self.futures.next().await {
-            match x {
-                Ok(Ok(())) => continue,
-                Ok(Err(e)) => return Err(e),
-
-                // RecvError. Sender got dropped, so someone panicked. propagate panic out
-                Err(_) => {
-                    for jh in self.jhs {
-                        if jh.is_finished() {
-                            jh.join().expect("Worker thread panicked")
-                        }
-                    }
-                    panic!("Worker thread dropped sender but no thread panicked!");
-                }
-            }
-        }
-
-        Ok(())
-    }
-}
-
-/// A handle that may be used to halt a set of workers running in the
-/// background.
-#[derive(Clone)]
-pub struct GraphHaltHandle {
-    ctx: Arc<GraphContext>,
-}
-
-impl GraphHaltHandle {
-    /// Issues a halt command to all workers. Workers will attempt to halt as
-    /// soon as possible.
-    pub fn halt(&self) {
-        self.ctx.halt.store(true, atomic::Ordering::Relaxed);
-    }
-}
-
-/// Run a set of workers on threads. Returns a handle that can be used to wait
-/// on or cancel the workers.
-pub fn run_workers<E: Send + Error + 'static>(
-    workers: impl IntoIterator<Item = (String, Box<dyn Worker<Output = (), Error = E>>)>,
-) -> GraphWorkersHandle<E> {
-    let ctx = Arc::new(GraphContext::new());
-
-    let (jhs, futures): (
-        Vec<JoinHandle<()>>,
-        FuturesUnordered<oneshot::Receiver<Result<(), E>>>,
-    ) = workers
-        .into_iter()
-        .map(|(name, w)| {
-            let (tx, rx) = oneshot::channel();
-            let ctx = ctx.clone();
-            let jh = std::thread::Builder::new()
-                .name(name)
-                .spawn(move || {
-                    tx.send(w.run(&ctx)).ok();
-                })
-                .expect("failed to spawn worker thread");
-            (jh, rx)
-        })
-        .unzip();
-
-    GraphWorkersHandle { ctx, jhs, futures }
 }
