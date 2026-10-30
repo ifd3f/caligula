@@ -213,6 +213,7 @@ async fn tracker_coroutine(
             let Some(bundle) = val else {
                 return;
             };
+
             acc.accumulate(bundle);
 
             tx.send_modify(|s| {
@@ -222,7 +223,6 @@ async fn tracker_coroutine(
                     s.read_bytes_history
                         .push(txfr.started(), last + txfr.bytes());
                 }
-                acc.stats(reader_junction).last();
             });
 
             acc.clear();

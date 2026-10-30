@@ -1,4 +1,4 @@
-use std::{fs::File, path::PathBuf};
+use std::{fs::File, path::PathBuf, time::Duration};
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
@@ -35,21 +35,29 @@ impl BenchmarkParams for HashBenchParams {
         let size = file.metadata().unwrap().len();
         ctx.set_progress_denominator(size);
 
-        Box::new(move |_: &BenchContext| {
+        Box::new(move |ctx: &BenchContext| {
             let rt = tokio::runtime::LocalRuntime::new().unwrap();
             rt.block_on(async move {
-                let mut r = workflow::hash::run(&HashWorkflow {
+                let w = workflow::hash::run(&HashWorkflow {
                     file: this.input,
                     alg: this.alg,
                     compression: this.compression,
                 });
 
-                let x = r
-                    .wait_until(|x| x.result().is_some())
-                    .await
-                    .expect("could not wait for result");
-                let x = x.result().as_ref().unwrap().as_ref().cloned();
-                x.expect("hashing unexpectedly failed");
+                let mut interval = tokio::time::interval(Duration::from_secs(1));
+                let r = loop {
+                    interval.tick().await;
+
+                    let state = w.borrow();
+
+                    ctx.log_progress(state.read_bytes_history().bytes_encountered());
+
+                    if let Some(r) = state.result().cloned() {
+                        break r;
+                    }
+                };
+
+                println!("{:x?}", r.expect("hashing unexpectedly failed").to_vec());
             });
         })
     }
