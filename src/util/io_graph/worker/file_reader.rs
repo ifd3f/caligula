@@ -6,63 +6,37 @@ use std::{
 
 use crate::util::{
     alloc_uninit_bytes_with_layout,
-    io_graph::{self, ALLOC_LAYOUT, SendBytes, Worker},
+    io_graph::{self, ALLOC_LAYOUT, GraphContext, SendBytes, Worker},
 };
 
 /// A worker optimized for reading a file on disk.
 ///
 /// It uses boring `read()` calls.
-pub struct FileReader {
-    path: PathBuf,
-    size: u64,
-    file: File,
-}
+pub fn file_reader(
+    path: &Path,
+    mut tx: impl SendBytes,
+) -> Result<
+    (
+        std::fs::Metadata,
+        impl Worker<Output = (), Error = std::io::Error>,
+    ),
+    std::io::Error,
+> {
+    let mut file = File::open(path)?;
+    let metadata = file.metadata()?;
 
-impl FileReader {
-    pub fn new(path: &Path) -> std::io::Result<Box<Self>> {
-        let file = File::open(path)?;
-        let size = file.metadata()?.len();
+    /*
+    nix::fcntl::posix_fadvise(&file, 0, 0, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)
+        .ok_or_log();
+    */
 
-        /*
-        nix::fcntl::posix_fadvise(&file, 0, 0, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)
-            .ok_or_log();
-        */
-
-        Ok(Box::new(Self {
-            size,
-            path: path.to_owned(),
-            file,
-        }))
-    }
-
-    /// Size of the file we're reading.
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-
-    #[expect(unused)]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl<Tx: SendBytes> Worker<Tx> for FileReader {
-    type Error = std::io::Error;
-    type Output = ();
-
-    fn run(
-        mut self: Box<Self>,
-        context: &io_graph::GraphContext,
-        args: Tx,
-    ) -> Result<Self::Output, Self::Error> {
-        let mut tx = args;
-
-        while !context.halt() {
+    let w = move |ctx: &GraphContext| {
+        while !ctx.halt() {
             // SAFETY: these bytes will get filled up immediately. everything
             // else that wasn't filled up will get truncated
             let mut buf = unsafe { alloc_uninit_bytes_with_layout(ALLOC_LAYOUT) };
 
-            let count = self.file.read(&mut buf)?;
+            let count = file.read(&mut buf)?;
             if count == 0 {
                 break;
             }
@@ -74,5 +48,7 @@ impl<Tx: SendBytes> Worker<Tx> for FileReader {
         tx.close()?;
 
         Ok(())
-    }
+    };
+
+    Ok((metadata, w))
 }

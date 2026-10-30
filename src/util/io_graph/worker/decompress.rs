@@ -10,40 +10,23 @@ use crate::{
     },
 };
 
-pub struct DecompressorWorker {
-    cf: CompressionFormat,
-    _phantom: PhantomData<()>,
-}
-
 #[derive(Debug, thiserror::Error)]
 #[error("{error}")]
 pub struct DecompressError {
-    // TODO get rid of this
+    // TODO get rid of this anyhow usage
     #[from]
     error: anyhow::Error,
 }
 
-impl DecompressorWorker {
-    pub fn new(cf: CompressionFormat) -> Box<Self> {
-        Box::new(Self {
-            cf,
-            _phantom: PhantomData,
-        })
-    }
-}
-
-impl<Rx: RecvBytes, Tx: SendBytes> Worker<(Rx, Tx)> for DecompressorWorker {
-    type Error = DecompressError;
-    type Output = ();
-
-    fn run(
-        self: Box<Self>,
-        _context: &GraphContext,
-        (rx, mut tx): (Rx, Tx),
-    ) -> Result<Self::Output, Self::Error> {
+pub fn decompressor(
+    cf: CompressionFormat,
+    rx: impl RecvBytes,
+    mut tx: impl SendBytes,
+) -> impl Worker<Output = (), Error = DecompressError> {
+    move |_ctx: &GraphContext| {
         // Strategy is to read this decompressor into an intermediate BytesMut,
         // then send off the bytes chunk-by-chunk.
-        let mut read = decompress(self.cf, RecvBytesReader::from(rx))?;
+        let mut read = decompress(cf, RecvBytesReader::from(rx))?;
         let mut reader_empty = false;
 
         while !reader_empty {

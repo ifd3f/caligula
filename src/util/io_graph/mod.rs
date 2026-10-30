@@ -38,10 +38,9 @@ const READ_SIZE: usize = 65536;
 /// now, this hardcoded constant is probably reasonable.
 const BUFFER_ALIGNMENT: usize = 16384;
 
-/// A worker thread ready to be moved onto a thread and started with the given
-/// [`Args`].
+/// A worker routine that is ready to be moved onto a thread and executed.
 #[must_use]
-pub trait Worker<Args>: Send {
+pub trait Worker: Send {
     /// Final, successful value computed by this [`Worker`].
     type Output: Send + 'static;
 
@@ -49,13 +48,24 @@ pub trait Worker<Args>: Send {
     type Error: Error + Send + 'static;
 
     /// Run this worker thread.
-    fn run(
-        self: Box<Self>,
-        context: &GraphContext,
-        args: Args,
-    ) -> Result<Self::Output, Self::Error>;
+    fn run(self: Box<Self>, ctx: &GraphContext) -> Result<Self::Output, Self::Error>;
 }
 
+impl<F, T, E> Worker for F
+where
+    F: for<'a> FnOnce(&'a GraphContext) -> Result<T, E> + Send,
+    T: Send + 'static,
+    E: Error + Send + 'static,
+{
+    type Error = E;
+    type Output = T;
+
+    fn run(self: Box<Self>, ctx: &GraphContext) -> Result<Self::Output, Self::Error> {
+        (self)(ctx)
+    }
+}
+
+/// Coordination object for workers.
 pub struct GraphContext {
     halt: AtomicBool,
 }
@@ -71,7 +81,7 @@ impl GraphContext {
 }
 
 /// An object you can send [`Bytes`] to.
-pub trait SendBytes {
+pub trait SendBytes: Send {
     /// Send the given [`Bytes`]. Blocks until value is received.
     fn send(&mut self, bytes: Bytes) -> std::io::Result<()>;
 
@@ -80,7 +90,7 @@ pub trait SendBytes {
 }
 
 /// An object you can receive [`Bytes`] from.
-pub trait RecvBytes {
+pub trait RecvBytes: Send {
     /// Try to receive some [`Bytes`]. If it returns `None`, there are no more
     /// bytes to be read. Blocks until result is received.
     fn recv(&mut self) -> std::io::Result<Option<Bytes>>;

@@ -1,70 +1,42 @@
-use std::{
-    fs::File,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::{io::Write, path::Path};
 
 use crate::util::io_graph::{
-    self, RecvBytes, Worker,
+    GraphContext, RecvBytes, Worker,
     sys::{DiskMode, open_blockdev},
 };
 
 /// A worker optimized for writing to a file or disk.
 ///
 /// It uses boring `write()` and `pwrite()` calls.
-pub struct FileWriter {
-    path: PathBuf,
-    size: u64,
-    file: File,
-}
+pub fn file_writer(
+    path: &Path,
+    mut rx: impl RecvBytes,
+) -> Result<
+    (
+        std::fs::Metadata,
+        impl Worker<Output = (), Error = std::io::Error>,
+    ),
+    std::io::Error,
+> {
+    let mut file = open_blockdev(path, DiskMode::Write)?;
+    /*
+    nix::fcntl::posix_fadvise(&file, 0, 0, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)
+        .ok_or_log();
+    */
 
-impl FileWriter {
-    pub fn new(path: &Path) -> std::io::Result<Box<Self>> {
-        let file = open_blockdev(path, DiskMode::Write)?;
-        let size = file.metadata()?.len();
+    let metadata = file.metadata()?;
 
-        /*
-        nix::fcntl::posix_fadvise(&file, 0, 0, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)
-            .ok_or_log();
-        */
-
-        Ok(Box::new(Self {
-            size,
-            path: path.to_owned(),
-            file,
-        }))
-    }
-
-    /// Size of the disk we're writing to.
-    pub fn size(&self) -> u64 {
-        self.size
-    }
-
-    #[expect(unused)]
-    pub fn path(&self) -> &Path {
-        &self.path
-    }
-}
-
-impl<Rx: RecvBytes> Worker<Rx> for FileWriter {
-    type Error = std::io::Error;
-    type Output = ();
-
-    fn run(
-        mut self: Box<Self>,
-        context: &io_graph::GraphContext,
-        args: Rx,
-    ) -> Result<Self::Output, Self::Error> {
-        let mut rx = args;
-
+    let w = move |ctx: &GraphContext| {
         // TODO: multithread this mf
-        while !context.halt()
+        while !ctx.halt()
             && let Some(buf) = rx.recv()?
         {
-            // Even for disks, this is fine if the input arrives in exact chunks.
-            self.file.write(&buf)?;
+            // Even for disks, this is fine if the input arrives in exact
+            // chunks.
+            file.write(&buf)?;
         }
 
         Ok(())
-    }
+    };
+    Ok((metadata, w))
 }
