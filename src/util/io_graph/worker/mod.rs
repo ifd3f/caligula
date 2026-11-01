@@ -6,13 +6,14 @@ use std::{
     path::Path,
 };
 
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 use digest::Digest;
 
 use crate::{
     codec::compression::{CompressionFormat, decompress},
     util::{
         alloc_uninit_bytes_with_layout,
+        device::{self, WriteTarget},
         io_graph::{
             ALLOC_LAYOUT, GraphContext, RecvBytes, SendBytes, Worker,
             sys::{DiskMode, open_blockdev},
@@ -26,16 +27,22 @@ use crate::{
 ///
 /// It uses boring `write()` and `pwrite()` calls.
 pub fn file_writer(
-    path: &Path,
+    target: &WriteTarget,
     mut rx: impl RecvBytes + 'static,
 ) -> Result<
     (
         std::fs::Metadata,
-        Box<dyn Worker<Output = (), Error = std::io::Error>>,
+        Box<dyn Worker<Output = (), Error = std::io::Error> + 'static>,
     ),
     std::io::Error,
 > {
-    let mut file = open_blockdev(path, DiskMode::Write)?;
+    let mut file = match target.target_type {
+        device::Type::File => File::create(&target.name)?,
+        device::Type::Disk | device::Type::Partition => {
+            open_blockdev(&target.name, DiskMode::Write)?
+        }
+    };
+
     /*
     nix::fcntl::posix_fadvise(&file, 0, 0, PosixFadviseAdvice::POSIX_FADV_SEQUENTIAL)
         .ok_or_log();
@@ -46,11 +53,14 @@ pub fn file_writer(
     let w = worker_fn(move |ctx: &GraphContext| {
         // TODO: multithread this mf
         while !ctx.halt()
-            && let Some(buf) = rx.recv()?
+            && let Some(mut buf) = rx.recv()?
         {
-            // Even for disks, this is fine if the input arrives in exact
-            // chunks.
-            file.write(&buf)?;
+            while !buf.is_empty() {
+                // Even for disks, this is fine if the input arrives in exact
+                // chunks.
+                let written = file.write(&buf)?;
+                buf.advance(written);
+            }
         }
 
         Ok(())

@@ -1,7 +1,7 @@
 use std::{path::PathBuf, time::Instant};
 
 use futures::StreamExt;
-use tokio::{sync::watch, task::JoinHandle};
+use tokio::task::JoinHandle;
 
 use crate::{
     facade::{
@@ -10,10 +10,7 @@ use crate::{
         child::{ChildHerderClient, SpawnDaemonError},
         escalation::EscalationMethod,
         watch::Watch,
-        workflow::{
-            WorkflowState,
-            hash::{self, HashWorkflow, HashingState},
-        },
+        workflow::hash::{self, HashWorkflow, HashingState},
     },
     herder_api::HerderService,
     util::stdiomux,

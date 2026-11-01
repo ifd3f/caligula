@@ -71,3 +71,19 @@ pub enum WVError {
     #[error("Target is too small! Input file has size {in_size}, output disk has size {out_size}")]
     TargetTooSmall { in_size: u64, out_size: u64 },
 }
+
+impl WVError {
+    pub fn from_reader(error: std::io::Error) -> Self {
+        Self::InputFile(error.into())
+    }
+
+    pub fn from_writer(error: std::io::Error) -> Self {
+        Self::OutputFile(error.into())
+    }
+}
+
+impl From<DecompressError> for WVError {
+    fn from(error: DecompressError) -> Self {
+        Self::Decompress(error.to_string())
+    }
+}
