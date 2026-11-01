@@ -133,7 +133,7 @@ pub trait WorkerExt: Worker {
     }
 
     /// Maps the error type.
-    fn map_err<E>(
+    fn map_worker_err<E>(
         self: Box<Self>,
         f: impl FnOnce(Self::Error) -> E + Send + 'static,
     ) -> Box<dyn Worker<Output = Self::Output, Error = E>>

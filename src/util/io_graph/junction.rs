@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     sync::{
         Arc, Mutex,
         atomic::{AtomicU32, Ordering},
@@ -7,7 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::{Stream, StreamExt, stream::BoxStream};
+use futures::StreamExt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 
@@ -71,7 +70,7 @@ impl JunctionTracker {
         // now take all the vecs out by swapping the new ones in, and drop the
         // locks
         let mut taken_vecs: Vec<(JunctionId, Vec<TransferStat>)> = vec![];
-        for ((id, mut lock), mut new) in locks.into_iter().zip(new_vecs.into_iter()) {
+        for ((id, mut lock), mut new) in locks.into_iter().zip(new_vecs) {
             std::mem::swap(&mut *lock, &mut new);
             taken_vecs.push((id, new));
             drop(lock)

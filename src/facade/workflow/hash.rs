@@ -6,17 +6,8 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures::{
-    FutureExt as _, Stream, StreamExt as _,
-    future::{BoxFuture, Either, select},
-    stream::BoxStream,
-};
-use tokio::{
-    select,
-    sync::{oneshot, watch},
-    task::JoinHandle,
-    time::interval,
-};
+use futures::{FutureExt as _, Stream, StreamExt as _};
+use tokio::{select, sync::watch};
 
 use crate::{
     codec::{compression::CompressionFormat, hash::HashAlg},
@@ -27,9 +18,8 @@ use crate::{
     util::{
         byteseries::ByteSeries,
         io_graph::{
-            self, GraphBuilder, GraphContext, GraphHaltHandle, JunctionId, TransferStatBundle,
-            Worker as _,
-            util::{JunctionAccumulator, RecvBytesExt as _, SendBytesExt as _, WorkerExt as _},
+            self, GraphBuilder, GraphHaltHandle, JunctionId, TransferStatBundle,
+            util::{JunctionAccumulator, SendBytesExt as _, WorkerExt as _},
             worker::{self, DecompressError},
         },
     },
@@ -116,7 +106,7 @@ struct StartData {
 }
 
 pub fn run(wf: &HashWorkflow) -> Watch<HashingState> {
-    match run_inner(&wf) {
+    match run_inner(wf) {
         Ok((rx, _halt)) => Watch { rx },
         Err(err) => Watch {
             rx: watch::channel(HashingState::failed(Instant::now(), err)).1,
@@ -159,22 +149,22 @@ fn run_inner(
     )
     .map_err(HashingError::Read)?;
     let file_size = metadata.len();
-    builder.add_worker("reader".into(), reader.map_err(HashingError::Read));
+    builder.add_worker("reader".into(), reader.map_worker_err(HashingError::Read));
 
     // construct decompressor if you must
-    dparms.map(|(rx, cf, tx)| {
+    if let Some((rx, cf, tx)) = dparms {
         builder.add_worker(
             "decompressor".into(),
-            worker::decompressor(cf, rx, tx).map_err(HashingError::Decompress),
+            worker::decompressor(cf, rx, tx).map_worker_err(HashingError::Decompress),
         );
-    });
+    }
 
     // and hasher
     let hash_recv = hparms;
     let (hash_result, hasher) = wf
         .alg
         .hash_worker(hash_recv)
-        .map_err(HashingError::Hash)
+        .map_worker_err(HashingError::Hash)
         .into_output_future();
     builder.add_worker("hasher".into(), hasher);
 

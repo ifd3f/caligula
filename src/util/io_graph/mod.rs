@@ -18,8 +18,8 @@ pub mod worker;
 
 pub use self::{
     buf::buf,
-    builder::GraphBuilder,
-    junction::{Junction, JunctionId, TransferStatBundle, TransferStat},
+    builder::{GraphBuilder, GraphStartResult},
+    junction::{Junction, JunctionId, TransferStatBundle},
 };
 
 /// [`Layout`] to allocate buffer pages with.

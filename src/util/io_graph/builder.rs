@@ -9,7 +9,7 @@ use tokio::sync::oneshot;
 
 use crate::util::io_graph::{
     GraphContext, GraphHaltHandle, Junction, Worker,
-    junction::{JunctionId, JunctionTracker, TransferStat, TransferStatBundle},
+    junction::{JunctionTracker, TransferStatBundle},
 };
 
 pub struct GraphBuilder<E: Error + Send + 'static> {

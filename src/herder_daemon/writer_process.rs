@@ -8,20 +8,20 @@ use std::{
     io::{self, Read, Seek},
     process::{Command, Stdio},
     rc::Rc,
+    time::Instant,
 };
 
 use tracing::{debug, info};
 use tracing_unwrap::ResultExt;
 
 use crate::{
-    herder_api::{
+    codec::compression::CompressionFormat, facade::WriteVerifyWorkflow, herder_api::{
         error::{CommandError, DiskError, InputFileError, IoError, UnmountError},
         write_verify::*,
-    },
-    util::{
-        device,
-        legacy_io::{SyncDataFile, VerifyOp, WriteOp, open_blockdev},
-        phased_channel::{self, UninitializedReceiver},
+    }, util::{
+        device, io_graph::{
+            self, GraphBuilder, GraphStartResult, util::{RecvBytesExt, SendBytesExt as _, WorkerExt as _}, worker,
+        }, legacy_io::{SyncDataFile, VerifyOp, WriteOp, open_blockdev}, phased_channel::{self, UninitializedReceiver},
     },
 };
 
@@ -79,6 +79,61 @@ pub fn spawn_writer(
         .expect("failed to spawn thread");
 
     (rx, jh)
+}
+
+#[tracing::instrument(skip_all)]
+fn run_writer(wf: &WriteVerifyWorkflow) -> Result<GraphStartResult<WVError>, WVError> {
+    let start = Instant::now();
+    let mut builder = GraphBuilder::new();
+
+    // calculate pipeline topology and build buffers
+    let (rparms, dparms, wparms) = match wf.compression {
+        CompressionFormat::Identity => {
+            let (reader_send, hasher_recv) = io_graph::buf(1024);
+
+            (reader_send, None, hasher_recv)
+        }
+        cf => {
+            let (reader_send, decomp_recv) = io_graph::buf(1024);
+            let (decomp_send, hasher_recv) = io_graph::buf(1024);
+
+            (
+                reader_send,
+                Some((decomp_recv, cf, decomp_send)),
+                hasher_recv,
+            )
+        }
+    };
+
+    // open reader
+    let reader_send = rparms.junctionize_send(builder.new_junction());
+    let reader_junction = reader_send.junction().id();
+    let (metadata, reader) = worker::file_reader(
+        &wf.input_file,
+        reader_send.junctionize_send(builder.new_junction()),
+    )
+    .map_err(WVError::from_reader)?;
+    let file_size = metadata.len();
+    builder.add_worker("reader".into(), reader.map_worker_err(WVError::from_reader));
+
+    // construct decompressor if you must
+    if let Some((rx, cf, tx)) = dparms {
+        builder.add_worker(
+            "decompressor".into(),
+            worker::decompressor(cf, rx, tx).map_worker_err(WVError::from),
+        );
+    }
+
+    // and writer
+    let writer_recv = wparms.junctionize_recv(builder.new_junction());
+    let writer_junction = writer_recv.junction().id();
+    let (_metadata, writer) =
+        worker::file_writer(&wf.target, writer_recv).map_err(WVError::from_writer)?;
+    builder.add_worker("writer".into(), writer.map_worker_err(WVError::from_writer));
+
+    let r = builder.start();
+
+    Ok(r)
 }
 
 fn run(
