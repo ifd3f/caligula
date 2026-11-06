@@ -91,7 +91,7 @@ Notes on definitions:
 #### Platform notes
 
 - In theory, Linux for non-x86_64 does work, and people have used it successfully. However, we are not making any guarantees right now. It is in the works, though -- see tracking issues for [aarch64 e2e tests](https://github.com/ifd3f/caligula/issues/220) and [riscv64 support](https://github.com/ifd3f/caligula/issues/221).
-- MacOS has a couple of known bugs and support for it is very limited. A big barrier is that setting up end-to-end testing for it is hard (see [tracking issue](https://github.com/ifd3f/caligula/issues/219)), and [automated escalation being broken is a known issue](https://github.com/ifd3f/caligula/issues/125). Help would be appreciated here!
+- MacOS has a couple of known bugs and support for it is very limited. A big barrier is that setting up end-to-end testing for it is hard (see [tracking issue](https://github.com/ifd3f/caligula/issues/219)). Help would be appreciated here!
 - We plan on supporting [Windows](https://github.com/ifd3f/caligula/issues/2) and [BSDs](https://github.com/ifd3f/caligula/issues/3) Eventually™.
 - If you would like support for other OSes and architectures not already mentioned, please file an issue!
 
