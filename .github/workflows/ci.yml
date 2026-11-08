@@ -106,7 +106,7 @@ jobs:
       matrix:
         include:
           - runner: macos-latest
-            platform: x86_64-darwin
+            platform: aarch64-darwin
           - runner: ubuntu-latest
             platform: x86_64-linux
     runs-on: ${{ matrix.runner }}
