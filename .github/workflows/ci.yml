@@ -3,7 +3,6 @@ name: "CI"
 on:
   push:
   pull_request:
-  pull_request_target:
 
 jobs:
   lint:
@@ -106,7 +105,7 @@ jobs:
       matrix:
         include:
           - runner: macos-latest
-            platform: x86_64-darwin
+            platform: aarch64-darwin
           - runner: ubuntu-latest
             platform: x86_64-linux
     runs-on: ${{ matrix.runner }}
