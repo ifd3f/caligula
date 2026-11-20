@@ -6,7 +6,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use futures::StreamExt;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
 

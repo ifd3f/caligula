@@ -25,7 +25,6 @@ use crate::{
 };
 
 mod writer_process;
-mod write;
 
 pub fn main() {
     AsyncRuntime::start()
@@ -60,26 +59,20 @@ impl HerderService<WVAction> for HerderServer {
         info!(?action, "Received WVAction request");
 
         // now spawn this ugly thing
-        let (rx, _) = writer_process::spawn_writer(action);
+        let (bundle, start) = writer_process::spawn_writer(
+            action.compression,
+            &action.src,
+            &action.dest,
+            action.target_type,
+        )
+        .map_err(LayerError::App)?;
         debug!("Spawned writer thread, waiting for start response");
-
-        let (start, rx) = match rx.await {
-            Ok(Ok(x)) => x,
-            Ok(Err(e)) => {
-                return Err(LayerError::App(e));
-            }
-            Err(ChannelDisconnected) => {
-                return Err(LayerError::App(WVError::UnknownChildProcError(
-                    "failed to spawn".into(),
-                )));
-            }
-        };
 
         info!(?start, "Successfully spawned writer thread");
 
         // and now to shape it into that stupid type sig
         let events: BoxStream<'static, Result<WVEvent, LayerError<WVError, Infallible>>> =
-            rx.map(|x| x.map_err(LayerError::App)).boxed();
+            bundle.stats.map(|x| x.map_err(LayerError::App)).boxed();
 
         Ok(HerderResponse { start, events })
     }

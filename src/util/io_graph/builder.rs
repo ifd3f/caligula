@@ -1,4 +1,13 @@
-use std::{collections::BTreeMap, error::Error, sync::Arc, thread::JoinHandle, time::Duration};
+use std::{
+    collections::BTreeMap,
+    error::Error,
+    sync::{
+        Arc,
+        atomic::{self, AtomicBool},
+    },
+    thread::JoinHandle,
+    time::Duration,
+};
 
 use futures::{
     FutureExt, StreamExt as _,
@@ -78,36 +87,52 @@ impl<E: Error + Send + 'static> GraphBuilder<E> {
             })
             .unzip();
 
+        // this is really ugly but whatever, this flag is used to signal completion, and wait is the
+        // future that updates it while stats is the stream that needs it
+        // TODO: make this a bit nicer
+        let is_completed = Arc::new(AtomicBool::new(false));
+
         let halt = GraphHaltHandle { ctx };
 
         let stats = {
             let mut interval = tokio::time::interval(self.transfer_stat_poll_interval);
             interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-            futures::stream::unfold((self.jt, interval), |(mut jt, mut interval)| async move {
-                loop {
-                    interval.tick().await;
+            futures::stream::unfold(
+                (self.jt, interval, is_completed.clone()),
+                move |(mut jt, mut interval, is_completed)| async move {
+                    loop {
+                        interval.tick().await;
 
-                    let hist = jt.take_transfers();
+                        let hist = jt.take_transfers();
 
-                    // spin around again if empty
-                    if hist.is_empty() {
-                        continue;
+                        if hist.is_empty() {
+                            // empty and done? quit
+                            if is_completed.load(atomic::Ordering::Relaxed) {
+                                return None;
+                            }
+                            // otherwise spin around and keep waiting
+                            continue;
+                        }
+
+                        return Some((hist, (jt, interval, is_completed)));
                     }
-
-                    return Some((hist, (jt, interval)));
-                }
-            })
+                },
+            )
         };
 
         let wait = async move {
             while let Some(x) = wait_futures.next().await {
                 match x {
                     Ok(Ok(())) => continue,
-                    Ok(Err(e)) => return Err(e),
+                    Ok(Err(e)) => {
+                        is_completed.store(true, atomic::Ordering::Relaxed);
+                        return Err(e);
+                    }
 
                     // RecvError. Sender got dropped, so someone panicked. propagate panic out
                     Err(_) => {
+                        is_completed.store(true, atomic::Ordering::Relaxed);
                         for jh in jhs {
                             if jh.is_finished() {
                                 jh.join().expect("Worker thread panicked")

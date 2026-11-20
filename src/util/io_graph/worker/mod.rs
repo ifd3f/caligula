@@ -27,7 +27,8 @@ use crate::{
 ///
 /// It uses boring `write()` and `pwrite()` calls.
 pub fn file_writer(
-    target: &WriteTarget,
+    target: &Path,
+    target_type_hint: Option<device::Type>,
     mut rx: impl RecvBytes + 'static,
 ) -> Result<
     (
@@ -36,10 +37,10 @@ pub fn file_writer(
     ),
     std::io::Error,
 > {
-    let mut file = match target.target_type {
-        device::Type::File => File::create(&target.name)?,
-        device::Type::Disk | device::Type::Partition => {
-            open_blockdev(&target.name, DiskMode::Write)?
+    let mut file = match target_type_hint {
+        Some(device::Type::File) | None => File::create(target)?,
+        Some(device::Type::Disk) | Some(device::Type::Partition) => {
+            open_blockdev(target, DiskMode::Write)?
         }
     };
 

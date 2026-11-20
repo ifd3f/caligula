@@ -3,25 +3,21 @@
 //! IT IS NOT TO BE USED DIRECTLY BY THE USER! ITS API HAS NO STABILITY
 //! GUARANTEES!
 
-use std::{
-    fs::{File, OpenOptions},
-    io::{self, Read, Seek},
-    process::{Command, Stdio},
-    rc::Rc,
-    time::Instant,
-};
+use std::path::Path;
 
-use tracing::{debug, info};
-use tracing_unwrap::ResultExt;
+use par::{Session, exchange::Recv, queue::Dequeue};
+use tracing::debug;
 
 use crate::{
-    codec::compression::CompressionFormat, facade::WriteVerifyWorkflow, herder_api::{
-        error::{CommandError, DiskError, InputFileError, IoError, UnmountError},
-        write_verify::*,
-    }, util::{
-        device, io_graph::{
-            self, GraphBuilder, GraphStartResult, util::{RecvBytesExt, SendBytesExt as _, WorkerExt as _}, worker,
-        }, legacy_io::{SyncDataFile, VerifyOp, WriteOp, open_blockdev}, phased_channel::{self, UninitializedReceiver},
+    codec::compression::CompressionFormat,
+    herder_api::write_verify::*,
+    util::{
+        device::{self},
+        io_graph::{
+            self, GraphBuilder, GraphStartResult,
+            util::{RecvBytesExt, SendBytesExt as _, WorkerExt as _},
+            worker,
+        },
     },
 };
 
@@ -32,62 +28,22 @@ const MAX_BUF_SIZE: usize = 1 << 20; // 1MiB
 /// progress).
 const CHECKPOINT_BYTES: usize = 8 * (1 << 20); // 8MiB
 
-/// Spawn a writer/verifier thing. Returns a future to await on its completion.
-pub fn spawn_writer(
-    init_config: WVAction,
-) -> (
-    UninitializedReceiver<WVStart, Result<WVEvent, WVError>, WVError>,
-    std::thread::JoinHandle<()>,
-) {
-    let (tx, rx) = phased_channel::channel();
+pub type WriterProtocol = Recv<WVStart, Dequeue<WriterActive>>;
 
-    let jh = std::thread::Builder::new()
-        .name("writer".into())
-        .spawn(move || {
-            debug!("Spawned child thread {:?}", std::thread::current().id());
-            let (file, size, disk) = match initialize(&init_config) {
-                Ok(v) => v,
-                Err(e) => {
-                    tx.error(e).expect("failed to send initialization error");
-                    return;
-                }
-            };
+pub type WriterActive = Dequeue<WVEvent, Recv<Result<(), WVError>>>;
 
-            let tx = Rc::new(
-                tx.send(WVStart {
-                    input_file_bytes: size,
-                })
-                .unwrap_or_log(),
-            );
-
-            let result = run(
-                |e| tx.send(Ok(e)).expect_or_log("error sending event"),
-                &init_config,
-                file,
-                disk,
-            );
-
-            if let Err(e) = result {
-                tx.send(Err(e)).expect_or_log("error sending error");
-                return;
-            }
-            tx.send(Ok(WVEvent::Success))
-                .expect_or_log("error sending final success message");
-
-            info!(?result, "Thread terminated gracefully");
-        })
-        .expect("failed to spawn thread");
-
-    (rx, jh)
-}
-
+/// Spawn a writer thing. Returns a future to await on its completion.
 #[tracing::instrument(skip_all)]
-fn run_writer(wf: &WriteVerifyWorkflow) -> Result<GraphStartResult<WVError>, WVError> {
-    let start = Instant::now();
+pub fn spawn_writer(
+    compression: CompressionFormat,
+    input_file: &Path,
+    target_file: &Path,
+    target_type: device::Type,
+) -> Result<(GraphStartResult<WVError>, WVStart), WVError> {
     let mut builder = GraphBuilder::new();
 
     // calculate pipeline topology and build buffers
-    let (rparms, dparms, wparms) = match wf.compression {
+    let (rparms, dparms, wparms) = match compression {
         CompressionFormat::Identity => {
             let (reader_send, hasher_recv) = io_graph::buf(1024);
 
@@ -109,7 +65,7 @@ fn run_writer(wf: &WriteVerifyWorkflow) -> Result<GraphStartResult<WVError>, WVE
     let reader_send = rparms.junctionize_send(builder.new_junction());
     let reader_junction = reader_send.junction().id();
     let (metadata, reader) = worker::file_reader(
-        &wf.input_file,
+        input_file,
         reader_send.junctionize_send(builder.new_junction()),
     )
     .map_err(WVError::from_reader)?;
@@ -127,151 +83,18 @@ fn run_writer(wf: &WriteVerifyWorkflow) -> Result<GraphStartResult<WVError>, WVE
     // and writer
     let writer_recv = wparms.junctionize_recv(builder.new_junction());
     let writer_junction = writer_recv.junction().id();
-    let (_metadata, writer) =
-        worker::file_writer(&wf.target, writer_recv).map_err(WVError::from_writer)?;
+    let (_metadata, writer) = worker::file_writer(&target_file, Some(target_type), writer_recv)
+        .map_err(WVError::from_writer)?;
     builder.add_worker("writer".into(), writer.map_worker_err(WVError::from_writer));
 
     let r = builder.start();
 
-    Ok(r)
-}
-
-fn run(
-    mut tx: impl Fn(WVEvent),
-    args: &WVAction,
-    mut file: File,
-    mut disk: SyncDataFile,
-) -> Result<(), WVError> {
-    let bs = match args.block_size {
-        Some(bs) => bs,
-        None => {
-            info!("Unknown block size, assuming 512");
-            512
-        }
-    };
-    let buf_size = ((bs * 2048) as usize).min(MAX_BUF_SIZE);
-    let checkpoint_period = CHECKPOINT_BYTES / buf_size;
-
-    let actual_input_bytes = WriteOp {
-        file: &mut file,
-        disk: &mut disk,
-        cf: args.compression,
-        buf_size,
-        disk_block_size: bs as usize,
-        checkpoint_period,
-        file_read_buf_size: buf_size,
-    }
-    .execute(&mut tx)?;
-
-    tx(WVEvent::FinishedWriting {
-        verifying: args.verify,
-    });
-
-    if !args.verify {
-        info!("Verification skip was requested, stopping");
-        return Ok(());
-    }
-
-    info!("Rewinding source and target to beginning");
-    file.seek(io::SeekFrom::Start(0))
-        .map_err(IoError::<InputFileError>::from)?;
-    disk.seek(io::SeekFrom::Start(0))
-        .map_err(IoError::<DiskError>::from)?;
-
-    if args.target_type == device::Type::File {
-        info!(
-            ?actual_input_bytes,
-            "Output is a file, truncating to input length in case we wrote too much"
-        );
-        disk.0
-            .set_len(actual_input_bytes)
-            .map_err(IoError::<DiskError>::from)?;
-    };
-
-    info!("Executing verification");
-    VerifyOp {
-        file: &mut file,
-        disk: &mut disk,
-        cf: args.compression,
-        buf_size,
-        disk_block_size: bs as usize,
-        checkpoint_period,
-        file_read_buf_size: buf_size,
-    }
-    .execute(tx)?;
-
-    Ok(())
-}
-
-fn initialize(args: &WVAction) -> Result<(File, u64, SyncDataFile), WVError> {
-    if cfg!(target_os = "macos") && args.target_type == device::Type::Disk {
-        run_diskutil_umount(args).map_err(UnmountError::Diskutil)?;
-    }
-    info!("Opening file {}", args.src.to_string_lossy());
-    let mut file = File::open(&args.src).unwrap_or_log();
-    let size = file
-        .seek(io::SeekFrom::End(0))
-        .map_err(IoError::<InputFileError>::from)?;
-    file.seek(io::SeekFrom::Start(0))
-        .map_err(IoError::<InputFileError>::from)?;
-    info!(size, "Got input file size");
-    info!("Opening {} for writing", args.dest.to_string_lossy());
-    let disk = SyncDataFile(match args.target_type {
-        device::Type::File => OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(&args.dest)
-            .map_err(IoError::<DiskError>::from)?,
-        device::Type::Disk | device::Type::Partition => {
-            open_blockdev(&args.dest).map_err(IoError::<DiskError>::from)?
-        }
-    });
-    Ok((file, size, disk))
-}
-
-/// Raw routine to execute `diskutil unmountdisk` on MacOS.
-fn run_diskutil_umount(args: &WVAction) -> Result<(), CommandError> {
-    let mut command = Command::new("diskutil");
-    command
-        .arg("unmountdisk")
-        .arg(&args.dest)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    info!(?command, "spawning process to unmount disk");
-    let mut child = command
-        .spawn()
-        .map_err(|e| CommandError::Process(e.into()))?;
-
-    debug!("successfully ran diskutil, waiting on child process");
-    let exit = child.wait().map_err(|e| CommandError::Process(e.into()))?;
-
-    let mut stderr = String::new();
-    child
-        .stderr
-        .take()
-        .unwrap()
-        .read_to_string(&mut stderr)
-        .map_err(|e| CommandError::Comm(e.into()))?;
-    let mut stdout = String::new();
-    child
-        .stdout
-        .take()
-        .unwrap()
-        .read_to_string(&mut stdout)
-        .map_err(|e| CommandError::Comm(e.into()))?;
-
-    debug!(?exit, ?stderr, "child exited");
-
-    if !exit.success() {
-        return Err(CommandError::NonzeroExit {
-            exit: exit.code(),
-            stderr,
-            stdout,
-        });
-    }
-
-    Ok(())
+    Ok((
+        r,
+        WVStart {
+            input_file_bytes: file_size,
+            reader_junction,
+            writer_junction,
+        },
+    ))
 }

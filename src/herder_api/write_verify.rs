@@ -6,7 +6,10 @@ use super::HerderAction;
 use crate::{
     codec::compression::CompressionFormat,
     herder_api::error::{DiskError, InputFileError, IoError, UnmountError},
-    util::{device::Type, io_graph::worker::DecompressError},
+    util::{
+        device::Type,
+        io_graph::{self, worker::DecompressError},
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,6 +24,7 @@ pub struct WVAction {
 
 impl HerderAction for WVAction {
     type Error = WVError;
+    type Done = ();
     type Event = WVEvent;
     type Start = WVStart;
 }
@@ -46,6 +50,8 @@ pub enum WVEvent {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WVStart {
     pub input_file_bytes: u64,
+    pub(crate) writer_junction: io_graph::JunctionId,
+    pub(crate) reader_junction: io_graph::JunctionId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]

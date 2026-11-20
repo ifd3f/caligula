@@ -9,14 +9,19 @@ pub mod error;
 pub mod server;
 pub mod write_verify;
 
-use std::{error::Error, fmt::Debug};
+use std::{error::Error, fmt::Debug, marker::PhantomData};
 
 use auto_impl::auto_impl;
 use bincode::Options;
 use futures::stream::LocalBoxStream;
+use par::{
+    Session,
+    exchange::{self, Recv},
+    queue::Dequeue,
+};
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::herder_api::error::LayerError;
+use crate::herder_api::{error::LayerError, write_verify::WVError};
 
 pub struct HerderResponse<A: HerderAction, E> {
     pub start: A::Start,
@@ -43,13 +48,23 @@ pub trait HerderService<A: HerderAction> {
 /// Arbitrary herd initialization action. This can be anything, from writing to
 /// verifying to voiding.
 pub trait HerderAction: Message {
+    /// The first message sent back
     type Start: Message;
 
-    type Error: Message + Error;
+    /// The message sent when it's successful
+    type Done: Message;
 
     /// The events emitted by the herd afterwards.
     type Event: Message;
+
+    /// Message sent when there is an error
+    type Error: Message + Error;
 }
+
+pub type HerderSession<A: HerderAction, S: Session = ()> =
+    exchange::Send<A, Recv<Result<ActiveSession<A, S>, A::Error>>>;
+pub type ActiveSession<A: HerderAction, S: Session = ()> =
+    Dequeue<A::Event, Recv<Result<Recv<A::Done, S>, A::Error>>>;
 
 /// Trait alias for things we can work with on the wire or in RPC.
 pub trait Message:
